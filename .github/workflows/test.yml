@@ -1,0 +1,33 @@
+name: Test
+
+# Every pull request and every push to trunk: build everything and run the tests. No secrets here;
+# signing and releasing are the Release workflow's, behind its environment.
+on:
+  pull_request:
+  push:
+    branches: [trunk]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - run: swift build
+
+      - run: swift test
+
+      - name: Check the scripts parse
+        run: |
+          sh -n install.sh
+          bash -n Scripts/bundle.sh
+          bash -n Scripts/version.sh

@@ -85,10 +85,19 @@ if [[ -n "${OATCAKE_SIGN_KEYCHAIN:-}" ]]; then KEYCHAIN=(--keychain "$OATCAKE_SI
 # The recorder and llama.cpp sit in Resources, where --deep doesn't reach, so they're signed on
 # their own first: llama.cpp's files with the same identity as the app, in place of the ad-hoc
 # signatures they come with.
+#
+# Everything is signed for the hardened runtime, so macOS won't let another program on this Mac
+# load its own code into Oatcake or the recorder (and so borrow the recorder's microphone
+# permission, or Oatcake's Keychain items). The recorder says it uses the microphone, which the
+# hardened runtime asks it to; llama.cpp's server may load the libraries that came with it.
 for file in "${LLAMA_FILES[@]}"; do
-    codesign --force --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$LLAMA/$file"
+    if [[ "$file" == llama-server ]]; then
+        codesign --force --options runtime --entitlements Resources/Llama.entitlements --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$LLAMA/$file"
+    else
+        codesign --force --options runtime --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$LLAMA/$file"
+    fi
 done
-codesign --force --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$RECORDER"
-codesign --force --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$APP"
+codesign --force --options runtime --entitlements Resources/OatcakeRecorder.entitlements --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$RECORDER"
+codesign --force --options runtime --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$APP"
 codesign --verify --deep --strict "$APP"
 echo "Built $APP $VERSION, signed $([[ "$IDENTITY" == "-" ]] && echo ad-hoc || echo "with \"$IDENTITY\"")"

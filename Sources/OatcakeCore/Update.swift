@@ -12,7 +12,7 @@ import Foundation
 
 public enum Update {
     public static let feedURL = URL(string: "https://github.com/a8cteam51/oatcake/releases/latest/download/latest.json")!
-    public static let installCommand = "curl -fsSL https://raw.githubusercontent.com/a8cteam51/oatcake/trunk/install.sh | sh"
+    public static let installCommand = "curl -fsSL https://github.com/a8cteam51/oatcake/releases/latest/download/install.sh | sh"
     public static let bundleID = "local.oatcake"
     static let appName = "Oatcake.app"
 
