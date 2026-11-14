@@ -44,6 +44,8 @@ struct AppServices {
     var toast: @MainActor (_ text: String, _ isError: Bool) -> Void = { _, _ in }
     /// Asks a question with a destructive answer.
     var confirm: @MainActor (Confirmation) -> Void = { _ in }
+    /// Takes a question back if it's still the one being asked: what it asked about has been settled another way.
+    var withdraw: @MainActor (Confirmation.ID) -> Void = { _ in }
     /// Something on disk has changed: read the Meetings folder and the recordings again.
     var refresh: @MainActor () -> Void = {}
     var showWindow: @MainActor () -> Void = {}
@@ -102,6 +104,7 @@ final class AppModel {
         let app = AppServices(config: { [unowned self] in self.config },
                               toast: { [unowned self] text, isError in self.toast(text, isError: isError) },
                               confirm: { [unowned self] in self.confirmation = $0 },
+                              withdraw: { [unowned self] id in if self.confirmation?.id == id { self.confirmation = nil } },
                               refresh: { [unowned self] in self.refresh() },
                               showWindow: { [unowned self] in self.showWindow() },
                               selection: { [unowned self] in self.selection },

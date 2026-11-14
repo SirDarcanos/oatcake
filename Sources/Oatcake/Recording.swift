@@ -30,6 +30,8 @@ enum LiveTranscriptState: Equatable {
 final class RecordingController {
     /// What this part asks of the app around it.
     var app = AppServices()
+    /// The question being asked about the call being recorded ("Stop recording?"), if one is.
+    private var liveQuestion: Confirmation.ID?
     /// The calendar: the event a call belongs to, its call link, and the next call for the menu bar.
     private let calendar: CalendarController
     /// The language model, fetched while the first call is recorded.
@@ -237,6 +239,8 @@ final class RecordingController {
     }
 
     private func endLive() {
+        if let liveQuestion { app.withdraw(liveQuestion) }
+        liveQuestion = nil
         stopLiveTranscript()
         live = nil
         statusTimer?.invalidate()
@@ -353,10 +357,17 @@ final class RecordingController {
     }
 
     func confirmStop() {
-        app.confirm(Confirmation(
+        ask(Confirmation(
             title: "Stop recording?",
             text: "Oatcake will transcribe the call and ask you to check who’s who. You can’t add more to this recording afterwards.",
             ok: "Stop recording", cancel: "Keep recording") { [self] in await stopLive() })
+    }
+
+    /// A question about the call being recorded. If the recording ends some other way while it's
+    /// still up (the recorder stops by itself, the call ends), the question goes with it.
+    private func ask(_ question: Confirmation) {
+        liveQuestion = question.id
+        app.confirm(question)
     }
 
     /// Stops the call being recorded and starts processing it. If you're on its notes you go to its
@@ -396,7 +407,7 @@ final class RecordingController {
             Task { do { try await cancel() } catch { toast(error.localizedDescription, isError: true) } }
             return
         }
-        app.confirm(Confirmation(title: "Cancel this recording?",
+        ask(Confirmation(title: "Cancel this recording?",
                                     text: "Nothing has been recorded yet. The notes you’ve typed for it will be deleted.",
                                     ok: "Cancel recording", cancel: "Keep waiting", action: cancel))
     }
