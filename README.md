@@ -569,7 +569,8 @@ Settings in the app (stored in `~/Library/Application Support/Oatcake/config.jso
   (the recorder is inside it), remembered against Oatcake's code-signing requirement: until
   0.5.0, "this identifier, this certificate", which every earlier release meets. So from 0.5.0 the
   requirement also says "0.5.0 or later", and the first time that version opens it withdraws the
-  two permissions (`tccutil reset Microphone` and `AudioCapture`), to be given again to itself.
+  two permissions (`tccutil reset Microphone` and `AudioCapture`, for Oatcake and for the
+  recorder's own identifier), to be given again to itself.
   That's why the first recording after updating asks once more. An earlier copy of Oatcake
   started by something else then no longer records quietly: macOS asks first, in Oatcake's name.
   It can't tell you which copy is asking, so if that question appears when you haven't just

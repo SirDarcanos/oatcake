@@ -106,19 +106,25 @@ for file in "${LLAMA_FILES[@]}"; do
         codesign --force --options runtime --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$LLAMA/$file"
     fi
 done
-codesign --force --options runtime --entitlements Resources/OatcakeRecorder.entitlements --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$RECORDER"
-codesign --force --options runtime --entitlements Resources/Oatcake.entitlements --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$APP"
 # macOS remembers the permissions Oatcake is given (the microphone and system audio, which the
-# recorder inside it uses) against Oatcake's designated requirement. Left to itself that's "this
-# identifier, this certificate", which every earlier release meets too, and before 0.5.0 their
-# recorders record for whoever starts them. So the requirement also says 0.5.0 or later: an earlier
-# copy of Oatcake doesn't inherit what this one is allowed. The version is in Info.plist, which the
-# signature seals. Releases before this one still accept it as an update: it meets theirs.
-# Not for an ad-hoc build, whose requirement is its own hash.
-if [[ "$IDENTITY" != "-" ]]; then
-    REQUIREMENT="$(codesign -d -r - "$APP" 2>/dev/null | sed -n 's/^designated => //p')"
-    codesign --force --options runtime --entitlements Resources/Oatcake.entitlements --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} \
-        -r="designated => $REQUIREMENT and info [CFBundleShortVersionString] >= \"0.5.0\"" "$APP"
-fi
+# recorder inside it uses) against a designated requirement. Left to itself that's "this identifier,
+# this certificate", which every earlier release meets too, and before 0.5.0 their recorders record
+# for whoever starts them. So the requirement also says 0.5.0 or later: an earlier copy doesn't
+# inherit what this one is allowed. The version is in Info.plist, which the signature seals.
+# Releases before this one still accept it as an update: it meets theirs. Here macOS counts the
+# recorder's use as Oatcake's and remembers it against Oatcake's requirement; the recorder's says
+# the same in case a version of macOS goes by that. Not for an ad-hoc build, whose requirement is
+# its own hash.
+sign_for_this_version() { # <bundle> <entitlements>
+    codesign --force --options runtime --entitlements "$2" --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$1"
+    if [[ "$IDENTITY" != "-" ]]; then
+        local requirement
+        requirement="$(codesign -d -r - "$1" 2>/dev/null | sed -n 's/^designated => //p')"
+        codesign --force --options runtime --entitlements "$2" --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} \
+            -r="designated => $requirement and info [CFBundleShortVersionString] >= \"0.5.0\"" "$1"
+    fi
+}
+sign_for_this_version "$RECORDER" Resources/OatcakeRecorder.entitlements
+sign_for_this_version "$APP" Resources/Oatcake.entitlements
 codesign --verify --deep --strict "$APP"
 echo "Built $APP $VERSION, signed $([[ "$IDENTITY" == "-" ]] && echo ad-hoc || echo "with \"$IDENTITY\"")"

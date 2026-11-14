@@ -14,6 +14,9 @@ import Testing
         // A certificate from Apple names its team instead of a fingerprint: the same rule holds.
         #expect(RecorderGate.caller(forRecorder: #"identifier "local.oatcake.recorder" and anchor apple generic and certificate leaf[subject.OU] = ABCDE12345"#)
             == .mustMeet(#"identifier "local.oatcake" and info [CFBundleShortVersionString] >= "0.5.0" and anchor apple generic and certificate leaf[subject.OU] = ABCDE12345"#))
+        // The recorder's own requirement names the version too (Scripts/bundle.sh): Oatcake is held to all of it.
+        #expect(RecorderGate.caller(forRecorder: #"identifier "local.oatcake.recorder" and certificate leaf = H"00112233445566778899aabbccddeeff00112233" and info[CFBundleShortVersionString] >= "0.5.0""#)
+            == .mustMeet(#"identifier "local.oatcake" and info [CFBundleShortVersionString] >= "0.5.0" and certificate leaf = H"00112233445566778899aabbccddeeff00112233" and info[CFBundleShortVersionString] >= "0.5.0""#))
         // A development build is signed ad-hoc: there's no certificate to hold the caller to.
         #expect(RecorderGate.caller(forRecorder: #"cdhash H"00112233445566778899aabbccddeeff00112233""#) == .anyone)
         // Anything else is nobody: a signature that can't be read, or somebody else's program.

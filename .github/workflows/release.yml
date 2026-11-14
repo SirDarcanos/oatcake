@@ -111,10 +111,12 @@ jobs:
           done
           # The app's requirement names the versions it stands for, so the permissions macOS gives
           # it aren't also an earlier release's (Scripts/bundle.sh).
-          case "$(codesign -d -r - "$app" 2>/dev/null)" in
-            *CFBundleShortVersionString*) ;;
-            *) echo "::error::Oatcake's designated requirement doesn't name a version."; exit 1 ;;
-          esac
+          for bundle in "$app" "$app/Contents/Resources/OatcakeRecorder.app"; do
+            case "$(codesign -d -r - "$bundle" 2>/dev/null)" in
+              *CFBundleShortVersionString*) ;;
+              *) echo "::error::$bundle's designated requirement doesn't name a version."; exit 1 ;;
+            esac
+          done
           # Without this on Oatcake itself, macOS never asks for the microphone and nothing can be recorded.
           for bundle in "$app" "$app/Contents/Resources/OatcakeRecorder.app"; do
             case "$(codesign -d --entitlements - "$bundle" 2>/dev/null)" in

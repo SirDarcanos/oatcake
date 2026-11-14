@@ -72,10 +72,13 @@ public enum Recordings {
      * release meets, and their recorders record for whoever starts them. From 0.5.0 the requirement
      * also says "0.5.0 or later" (Scripts/bundle.sh). So the permissions are withdrawn once, and
      * macOS asks again at the next recording: given to this version, they no longer cover an
-     * earlier copy of Oatcake that something else has started. False when macOS wouldn't.
+     * earlier copy of Oatcake that something else has started. The recorder's own identifier is
+     * done too, in case a version of macOS remembers them against that. False when macOS wouldn't.
      */
     public static func withdrawEarlierPermissions(of bundleID: String) -> Bool {
-        ["Microphone", "AudioCapture"].allSatisfy { (try? runCapturing("/usr/bin/tccutil", ["reset", $0, bundleID])) != nil }
+        [bundleID, bundleID + ".recorder"].allSatisfy { id in
+            ["Microphone", "AudioCapture"].allSatisfy { (try? runCapturing("/usr/bin/tccutil", ["reset", $0, id])) != nil }
+        }
     }
 
     static var recorderBinary: URL { recorderApp.appendingPathComponent("Contents/MacOS/oatcake-recorder") }
