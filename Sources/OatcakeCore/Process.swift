@@ -27,8 +27,12 @@ public func runCapturing(_ executable: String, _ arguments: [String], timeout: T
     process.standardError = err
     process.standardInput = FileHandle.nullDevice
     try process.run()
+    // This blocks the thread it's called on until the tool has finished, and what it waits for mustn't
+    // need a thread from the pool that thread came from: called from as many tasks as the Mac has
+    // cores, there would be none left and nothing would ever finish. So the time limit has a queue of
+    // its own, and the error output a thread of its own.
     let stopped = Locked(false)
-    DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+    DispatchQueue(label: "oatcake.tool-time-limit").asyncAfter(deadline: .now() + timeout) {
         if process.isRunning {
             stopped.value = true
             process.terminate()
@@ -36,11 +40,10 @@ public func runCapturing(_ executable: String, _ arguments: [String], timeout: T
     }
     // Both pipes are read before waiting (one on another thread), so a full pipe can't stall the process.
     let errData = Locked(Data())
-    let errRead = DispatchGroup()
-    errRead.enter()
-    DispatchQueue.global().async {
+    let errRead = DispatchSemaphore(value: 0)
+    Thread.detachNewThread {
         errData.value = err.fileHandleForReading.readDataToEndOfFile()
-        errRead.leave()
+        errRead.signal()
     }
     let outData = out.fileHandleForReading.readDataToEndOfFile()
     errRead.wait()

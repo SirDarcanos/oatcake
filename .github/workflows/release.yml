@@ -22,6 +22,8 @@ permissions:
 jobs:
   release:
     runs-on: macos-26
+    # A release takes about seven minutes. Anything much longer is stuck.
+    timeout-minutes: 30
     environment: release
     permissions:
       contents: write # to create the release

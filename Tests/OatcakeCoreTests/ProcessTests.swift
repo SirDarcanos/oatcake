@@ -27,6 +27,18 @@ import Testing
         #expect(Date().timeIntervalSince(started) < 10)
     }
 
+    /// Twice as many at once as there are processor cores, each from a task. Every thread Swift's tasks
+    /// run on is then inside runCapturing, so nothing it waits for may need another of them: on a
+    /// machine with few cores (a build machine has three) that used to stop the tests for good.
+    @Test func manyAtOnce() async throws {
+        let count = ProcessInfo.processInfo.activeProcessorCount * 2
+        let outputs = try await withThrowingTaskGroup(of: String.self) { group in
+            for i in 0..<count { group.addTask { try runCapturing("/bin/echo", ["\(i)"]) } }
+            return try await group.reduce(into: Set<String>()) { $0.insert($1) }
+        }
+        #expect(outputs.count == count)
+    }
+
     /// A pid file is only believed when the process is running and is the program it should be.
     @Test func whoseProcess() throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-pid-\(UUID().uuidString)")
