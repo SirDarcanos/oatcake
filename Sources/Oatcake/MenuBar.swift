@@ -1,5 +1,5 @@
 // The menu bar item. While a call is being recorded it shows the running time, with Stop in its
-// menu. Otherwise, with a calendar connected (and Settings › Calendar's switch on), it shows the time
+// menu (which asks first, in Oatcake's window, as the window's own Stop does). Otherwise, with a calendar connected (and Settings › Calendar's switch on), it shows the time
 // until your next call and lists what's coming up.
 //
 // It's drawn by a helper: Oatcake's own program run a second time (with --menu-bar) as a
@@ -196,7 +196,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
         switch content {
         case .recording(let name, let elapsed):
             add("Recording “\(name)”\(elapsed.map { " · \(clock($0))" } ?? "")", nil)
-            add("Stop Recording", #selector(stopRecording))
+            add("Stop Recording…", #selector(stopRecording))
         case .upcoming(let events):
             let now = Date()
             let endOfTomorrow = Calendar.current.date(byAdding: .day, value: 2, to: Calendar.current.startOfDay(for: now)) ?? now
@@ -217,7 +217,8 @@ final class StatusItem: NSObject, NSMenuDelegate {
         add("Quit Oatcake", #selector(quit))
     }
 
-    @objc private func stopRecording() { send(.stop) }
+    // Oatcake asks before it stops, in its window, so the window comes forward.
+    @objc private func stopRecording() { bringOatcakeForward(); send(.stop) }
     @objc private func openApp() { bringOatcakeForward(); send(.open) }
     @objc private func newRecording() { bringOatcakeForward(); send(.record) }
     @objc private func openListed(_ sender: NSMenuItem) {
@@ -225,7 +226,8 @@ final class StatusItem: NSObject, NSMenuDelegate {
         bringOatcakeForward()
         send(.openEvent(listed[sender.tag]))
     }
-    @objc private func quit() { send(.quit) }
+    // Oatcake may have something to ask before it quits (a call being recorded, say): its question needs to be in front.
+    @objc private func quit() { bringOatcakeForward(); send(.quit) }
 
     /// The click was on the helper's menu, so it's the helper macOS will let bring an app forward:
     /// it passes that on to Oatcake, which then shows its window.

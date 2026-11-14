@@ -6,13 +6,11 @@ struct LiveView: View {
     @Environment(AppModel.self) private var model
     let rec: Recording
     @FocusState private var focused: UUID?
-    @ViewState private var micQuietSince: Date?
-    @ViewState private var callQuietSince: Date?
     @ViewState private var devices: [InputDevice] = []
     @ViewState private var showTranscript = UserDefaults.standard.object(forKey: "liveTranscriptShown") as? Bool ?? true
 
     private var status: RecorderStatus { model.status }
-    private var started: Bool { status.state == .recording }
+    private var started: Bool { status.state == .recording && model.recorderFailure == nil }
     private var elapsed: Double { status.elapsed ?? 0 }
     private var lines: [LiveLine] { model.liveNotes[rec.id] ?? [] }
 
@@ -53,7 +51,6 @@ struct LiveView: View {
         .toolbar { toolbar }
         .onAppear(perform: loadNotes)
         .onDisappear { model.saveLiveNotes(rec.id) }
-        .onChange(of: status) { trackSilence() }
         .task { devices = (try? await Recordings.listInputs()) ?? [] }
     }
 
@@ -68,7 +65,7 @@ struct LiveView: View {
                     Text(clock(elapsed)).foregroundStyle(.red).monospacedDigit()
                 } else {
                     Circle().fill(.secondary).frame(width: 7, height: 7)
-                    Text(status.state == .error ? "Recording stopped" : "Starting…").foregroundStyle(.secondary)
+                    Text(model.recorderFailure != nil ? "Couldn’t record" : status.state == .starting ? "Starting…" : "Recording stopped").foregroundStyle(.secondary)
                 }
             }
         }
@@ -82,8 +79,12 @@ struct LiveView: View {
             }
         }
         ToolbarItem(placement: .automatic) {
-            // Nothing has been recorded until audio arrives, so until then it's Cancel, not Stop.
-            if status.state == .starting {
+            // Nothing has been recorded until audio arrives, so until then it's Cancel, not Stop. A
+            // recorder that never started has nothing to stop either: Close throws the recording away.
+            if model.recorderFailure != nil {
+                Button("Close") { model.cancelRecording(hasNotes: lines.contains { !$0.text.trimmed.isEmpty }) }
+                    .help("Close this recording: nothing was recorded")
+            } else if status.state == .starting {
                 Button("Cancel") { model.cancelRecording(hasNotes: lines.contains { !$0.text.trimmed.isEmpty }) }
                     .help("Cancel this recording")
             } else {
@@ -103,33 +104,51 @@ struct LiveView: View {
             }
             .padding(.top, 16)
         }
-        if status.state == .error {
+        if let failure = model.recorderFailure {
+            Notice(tone: .red) {
+                Text("This call isn’t being recorded").fontWeight(.semibold)
+                Text(failure)
+            }
+            .padding(.top, 16)
+        } else if status.state == .error {
             Notice(tone: .red) { Text(status.error ?? "The recorder stopped.") }.padding(.top, 16)
         }
+        if let error = model.liveNotesError {
+            Notice(tone: .red) { Text(error) }.padding(.top, 16)
+        }
+        // The recording is about to stop by itself (Settings › General): say so, with the way to stop it stopping.
+        if let stoppingAt = model.stoppingAt {
+            Notice(tone: .amber) {
+                Text("The call seems to have ended").fontWeight(.semibold)
+                Text("Recording stops in \(max(0, Int(stoppingAt.timeIntervalSinceNow.rounded(.up)))) seconds.")
+                Button("Keep recording") { model.keepRecording() }.padding(.top, 4)
+            }
+            .padding(.top, 16)
+        }
+        // The language model starts downloading with the first call, to be there when it ends.
+        if let downloading = model.modelDownloadStatus {
+            HStack(spacing: 6) {
+                Text("\(downloading). It writes the summary once the call is over.")
+                SettingsLink { Text("Settings") }.buttonStyle(.link)
+                    .simultaneousGesture(TapGesture().onEnded { UserDefaults.standard.set("summaries", forKey: "settingsPane") })
+            }
+            .font(.callout).foregroundStyle(.secondary).padding(.top, 14)
+        }
         let now = Date()
-        if let since = micQuietSince, now.timeIntervalSince(since) >= 30 {
+        if let since = model.micQuietSince, now.timeIntervalSince(since) >= 30 {
             Notice(tone: .amber) {
                 Text("Your microphone has been silent for \(Int(now.timeIntervalSince(since))) seconds").fontWeight(.semibold)
                 Text("Check it isn’t muted, or switch to another microphone using the button below.")
             }
             .padding(.top, 16)
         }
-        if let since = callQuietSince, now.timeIntervalSince(since) >= 30 {
+        if let since = model.callQuietSince, now.timeIntervalSince(since) >= 30 {
             Notice(tone: .amber) {
                 Text("No call audio for \(Int(now.timeIntervalSince(since))) seconds").fontWeight(.semibold)
                 Text("If people are talking, allow OatcakeRecorder in System Settings › Privacy & Security › Screen & System Audio Recording.")
             }
             .padding(.top, 16)
         }
-    }
-
-    /// Silence: a working mic always picks up some room noise; true silence means nothing arrives.
-    private func trackSilence() {
-        guard started else { return }
-        let micQuiet = status.micDevice != nil && (status.micLevel ?? 0) < 0.001
-        let callQuiet = (status.systemLevel ?? 0) < 0.001
-        micQuietSince = micQuiet ? (micQuietSince ?? Date()) : nil
-        callQuietSince = callQuiet ? (callQuietSince ?? Date()) : nil
     }
 
     // MARK: Live transcript
@@ -250,7 +269,7 @@ struct LiveView: View {
     // MARK: Bottom bar
 
     private var micStatus: (text: String, color: Color, warn: Bool) {
-        guard started else { return (status.state == .error ? "Recording stopped." : "Starting…", .secondary, false) }
+        guard started else { return (model.recorderFailure != nil ? "Not recording." : status.state == .starting ? "Starting…" : "Recording stopped.", .secondary, false) }
         guard let device = status.micDevice else { return ("No microphone found. Connect one to record your side of the call.", .red, true) }
         if let mic = model.config.mic, device.uid != mic.uid {
             return ("\(mic.name) isn’t connected, so this is recording from \(device.name).", .amber, true)
