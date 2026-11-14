@@ -10,11 +10,17 @@ let package = Package(
         .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.18.3", traits: ["Diarizer"]),
     ],
     targets: [
+        // What Oatcake and its recorder agree on: the files they pass between them and what's in
+        // each. Shared, so the two programs can't drift apart.
+        .target(
+            name: "RecorderContract",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         // Everything that isn't a window: files, recordings, the speech pipeline, the calendar,
         // summaries, Ask and updates.
         .target(
             name: "OatcakeCore",
-            dependencies: [.product(name: "FluidAudio", package: "FluidAudio")],
+            dependencies: ["RecorderContract", .product(name: "FluidAudio", package: "FluidAudio")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         // The app, and (with --analyse) the analysis helper it runs for each recording.
@@ -27,6 +33,7 @@ let package = Package(
         // system-audio permission for it alone.
         .executableTarget(
             name: "OatcakeRecorder",
+            dependencies: ["RecorderContract"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(

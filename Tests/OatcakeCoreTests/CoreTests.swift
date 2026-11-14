@@ -1,3 +1,4 @@
+import AVFoundation
 import CryptoKit
 import Foundation
 import Network
@@ -56,6 +57,107 @@ private func fixture(_ name: String) throws -> URL {
         #expect(callApp("http://meet.google.com/abc") == nil)
         #expect(findCallLink("see (https://meet.google.com/abc-defg-hij).") == "https://meet.google.com/abc-defg-hij")
     }
+
+    /// A feed can say anything: a rule no calendar would write is read without stopping the app.
+    /// (Both feeds are written here, to RFC 5545's shape, with numbers at the edge of what an Int holds.)
+    @Test func rulesNoCalendarWouldWrite() {
+        func feed(_ rule: String) -> String {
+            "BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:x\nSUMMARY:Odd\nDTSTART:20261101T100000Z\nDTEND:20261101T103000Z\nRRULE:\(rule)\nEND:VEVENT\nEND:VCALENDAR\n"
+        }
+        let from = parseISO("2026-10-31T00:00:00Z")!, to = parseISO("2026-11-14T00:00:00Z")!
+        #expect(parseCalendar(feed("FREQ=YEARLY;INTERVAL=9223372036854775807"), from: from, to: to).map(\.start) == ["2026-11-01T10:00:00.000Z"])
+        #expect(parseCalendar(feed("FREQ=MONTHLY;BYDAY=-9223372036854775808MO"), from: from, to: to).count == 1)
+        #expect(parseCalendar(feed("FREQ=MONTHLY;INTERVAL=9223372036854775807;BYMONTHDAY=-9223372036854775808"), from: from, to: to).isEmpty)
+    }
+
+    /// One occurrence of a weekly meeting, four weeks out, moved to this week: it's in this week's events.
+    /// (Written here, to RFC 5545's shape: 2026-11-02 is a Monday.)
+    @Test func anOccurrenceMovedIntoTheWindow() {
+        let ics = """
+        BEGIN:VCALENDAR
+        BEGIN:VEVENT
+        UID:w
+        SUMMARY:Weekly
+        DTSTART:20261102T100000Z
+        DTEND:20261102T103000Z
+        RRULE:FREQ=WEEKLY
+        END:VEVENT
+        BEGIN:VEVENT
+        UID:w
+        RECURRENCE-ID:20261130T100000Z
+        SUMMARY:Weekly, moved
+        DTSTART:20261106T150000Z
+        DTEND:20261106T153000Z
+        END:VEVENT
+        END:VCALENDAR
+        """
+        let events = parseCalendar(ics, from: parseISO("2026-11-03T00:00:00Z")!, to: parseISO("2026-11-17T00:00:00Z")!)
+        #expect(events.map(\.start) == ["2026-11-06T15:00:00.000Z", "2026-11-09T10:00:00.000Z", "2026-11-16T10:00:00.000Z"])
+        #expect(events.first?.title == "Weekly, moved" && events.first?.seriesId == "w")
+    }
+
+    /// Outlook names zones its own way ("GMT Standard Time"), which macOS doesn't know: the zone's own
+    /// offsets are used, not this Mac's zone. (Written here, in the shape RFC 5545 gives a VTIMEZONE.)
+    @Test func zonesKnownOnlyByTheirOffsets() {
+        let ics = """
+        BEGIN:VCALENDAR
+        BEGIN:VTIMEZONE
+        TZID:GMT Standard Time
+        BEGIN:STANDARD
+        DTSTART:16011028T020000
+        TZOFFSETFROM:+0100
+        TZOFFSETTO:+0000
+        RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=10
+        END:STANDARD
+        BEGIN:DAYLIGHT
+        DTSTART:16010325T010000
+        TZOFFSETFROM:+0000
+        TZOFFSETTO:+0100
+        RRULE:FREQ=YEARLY;BYDAY=-1SU;BYMONTH=3
+        END:DAYLIGHT
+        END:VTIMEZONE
+        BEGIN:VTIMEZONE
+        TZID:India Standard Time
+        BEGIN:STANDARD
+        DTSTART:16010101T000000
+        TZOFFSETFROM:+0530
+        TZOFFSETTO:+0530
+        END:STANDARD
+        END:VTIMEZONE
+        BEGIN:VEVENT
+        UID:summer
+        SUMMARY:Summer
+        DTSTART;TZID=GMT Standard Time:20260710T140000
+        DTEND;TZID=GMT Standard Time:20260710T143000
+        END:VEVENT
+        BEGIN:VEVENT
+        UID:winter
+        SUMMARY:Winter
+        DTSTART;TZID=GMT Standard Time:20261110T140000
+        DTEND;TZID=GMT Standard Time:20261110T143000
+        END:VEVENT
+        BEGIN:VEVENT
+        UID:india
+        SUMMARY:India
+        DTSTART;TZID=India Standard Time:20261111T140000
+        DTEND;TZID=India Standard Time:20261111T143000
+        END:VEVENT
+        END:VCALENDAR
+        """
+        let events = parseCalendar(ics, from: parseISO("2026-07-01T00:00:00Z")!, to: parseISO("2026-12-01T00:00:00Z")!)
+        #expect(events.map(\.start) == ["2026-07-10T13:00:00.000Z", "2026-11-10T14:00:00.000Z", "2026-11-11T08:30:00.000Z"])
+    }
+
+    /// The calendar's address is a secret, so it's only ever asked for over https.
+    @Test func addresses() throws {
+        #expect(try calendarURL("https://calendar.example.com/private.ics").host() == "calendar.example.com")
+        // This Mac's own address, for a calendar that's stood in for.
+        #expect(try calendarURL("http://127.0.0.1:8000/x.ics").port == 8000)
+        #expect(try calendarURL("http://[::1]:8000/x.ics").port == 8000)
+        for address in ["http://calendar.example.com/private.ics", "file:///etc/hosts", "ftp://localhost/x.ics"] {
+            #expect(throws: OatcakeError("the calendar address has to start with https://")) { try calendarURL(address) }
+        }
+    }
 }
 
 @Suite struct MenuBarLinkTests {
@@ -97,6 +199,10 @@ private func fixture(_ name: String) throws -> URL {
         #expect(todos[2].line == 3 && todos[2].owner == "Sam")
         #expect(toggleTodo(md, line: 0).hasPrefix("- [x] Send the deck"))
         #expect(toggleTodo(md, line: 1).contains("- [ ] Book room"))
+        // By what it says, when the file has changed since the list on screen was read: the line it was on is someone else's now.
+        let shifted = "- [ ] New first\n" + md
+        #expect(toggleTodo(shifted, line: 0, text: "Send the deck") == "- [ ] New first\n- [x] Send the deck — Alex — due Fri, Nov 6 — [12:34]\n- [x] Book room\nnot a todo\n* [X] Done — Sam")
+        #expect(toggleTodo(shifted, line: 1, text: "Gone since") == nil)
     }
 
     @Test func typedTodos() {
@@ -129,12 +235,21 @@ private func fixture(_ name: String) throws -> URL {
         #expect(Calendar.current.component(.year, from: jan) == 2027)
         #expect(Calendar.current.component(.month, from: dueDate("Oct 30", meetingDate: parseISO("2026-10-01T10:00:00Z"))!) == 10)
         #expect(dueDate("whenever") == nil)
+        // A day as it's said in a call, counted from the day of the meeting: Monday the 14th of December 2026, at noon here.
+        let monday = gregorian.date(from: DateComponents(year: 2026, month: 12, day: 14, hour: 12))!
+        let day = { (said: String) in dueDate(said, meetingDate: monday).map { gregorian.dateComponents([.month, .day], from: $0) }.map { [$0.month!, $0.day!] } }
+        #expect(day("today") == [12, 14] && day("Tomorrow") == [12, 15])
+        #expect(day("Friday") == [12, 18] && day("next Friday") == [12, 18] && day("by Wed") == [12, 16] && day("Monday") == [12, 14])
+        #expect(day("next week") == [12, 21] && day("end of the week") == [12, 18] && day("end of month") == [12, 31])
+        #expect(day("soon") == nil && day("Fri, Jan 8") == [1, 8])
     }
 
     @Test func clocks() {
         #expect(clock(189) == "03:09")
         #expect(clock(3729) == "1:02:09")
         #expect(seconds("1:02:03") == 3723)
+        // A time that isn't one (a damaged import) is still something to show.
+        #expect(clock(-5) == "00:00" && clock(.infinity) == "00:00" && clock(.nan) == "00:00" && clock(1e300) == "99:59:59")
     }
 }
 
@@ -147,6 +262,43 @@ private func fixture(_ name: String) throws -> URL {
         #expect(meetingFolderName(title: "  ", startedAt: date) == "2026-11-05 1400 Call")
         #expect(loose("Sam & Alex 1:1") == loose("Sam & Alex 1-1"))
         #expect(safeName("A/B:  C") == "A-B- C")
+        #expect(safeName(" ..Hidden") == "Hidden" && seriesFolder("...") == "Untitled")
+    }
+
+    /// An event whose title starts with a dot doesn't get a folder nobody can see.
+    @Test func noHiddenFolders() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-hidden-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let meetings = Meetings(root: root)
+        let folder = try meetings.folderForEvent(title: ".Standup", recurring: true)
+        #expect(folder == "Standup" && meetings.tree().find(folder) != nil)
+        #expect(throws: OatcakeError("Names can't start with a dot")) { try meetings.createFolder(in: "", named: ".hidden") }
+        #expect(throws: OatcakeError("Names can't start with a dot")) { try meetings.rename(folder, to: "..") }
+    }
+
+    /// Ticking and adding to-dos works on the file as it is now, not as it was when the screen read it.
+    @Test func todosFromTheFileAsItIs() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-todos-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let rel = "Team/2026-11-09 1000 Weekly sync"
+        let file = root.appendingPathComponent(rel + "/todo.md")
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let meetings = Meetings(root: root)
+        // The screen read "One" and "Two"; the summary's to-do has been put above them since.
+        try "- [ ] From the summary\n- [ ] One\n- [ ] Two\n".write(to: file, atomically: true, encoding: .utf8)
+        try meetings.toggleTodo(rel, line: 1, text: "Two")
+        #expect(readText(file) == "- [ ] From the summary\n- [ ] One\n- [x] Two\n")
+        try meetings.toggleTodo(rel, line: 1, text: "One")
+        try meetings.toggleTodo(rel, line: 0, text: "No longer there")
+        try meetings.addTodo(rel, "Three — Sam")
+        #expect(readText(file) == "- [ ] From the summary\n- [x] One\n- [x] Two\n- [ ] Three — Sam\n")
+        // The Meetings folder's own list.
+        try meetings.addTodo("", "Of my own")
+        try meetings.toggleTodo("", line: 0, text: "Of my own")
+        #expect(readText(root.appendingPathComponent("todo.md")) == "- [x] Of my own\n")
+        // A file with a byte that isn't text (another editor's doing) still reads, so it isn't taken for empty and saved over.
+        try Data([0x2D, 0x20, 0x5B, 0x20, 0x5D, 0x20, 0xFF, 0x4F, 0x6E, 0x65, 0x0A]).write(to: file)
+        #expect(parseTodos(readText(file)).count == 1 && readText(file).contains("One"))
     }
 
     @Test func fileOperations() throws {
@@ -293,7 +445,9 @@ private func fixture(_ name: String) throws -> URL {
         var payload = String(decoding: Data(base64Encoded: json["payload"]!)!, as: UTF8.self)
         payload = payload.replacingOccurrences(of: "0.3.0", with: "9.9.9")
         json["payload"] = Data(payload.utf8).base64EncodedString()
-        #expect(throws: OatcakeError.self) { try Update.readManifest(JSONSerialization.data(withJSONObject: json)) }
+        #expect(throws: OatcakeError("The update information isn't signed with Oatcake's release key.")) {
+            try Update.readManifest(JSONSerialization.data(withJSONObject: json))
+        }
     }
 
     @Test func versions() {
@@ -339,10 +493,8 @@ private func fixture(_ name: String) throws -> URL {
         #expect(!FileManager.default.fileExists(atPath: out.appendingPathComponent("summary.md").path))
         #expect(readText(out.appendingPathComponent("transcript.md")).contains("**[00:04] Alex Kim:** Hi Sam."))
         #expect(FileManager.default.fileExists(atPath: recDir.appendingPathComponent("saved.json").path))
-        // Writing the summary fails while the model is unreachable, and leaves the meeting alone.
-        var failed = false
-        do { try await writeSummary(config, meeting: saved) } catch { failed = true }
-        #expect(failed)
+        // Writing the summary fails while no model is set up, and leaves the meeting alone.
+        await #expect(throws: OatcakeError("Set the endpoint and model in Settings first.")) { try await writeSummary(config, meeting: saved) }
         #expect(!FileManager.default.fileExists(atPath: out.appendingPathComponent("summary.md").path))
 
         // When the model has answered, its summary goes where the meeting is by then (it was renamed
@@ -354,6 +506,37 @@ private func fixture(_ name: String) throws -> URL {
         let files = try meetings.read(renamed)
         #expect(files.summary == "## Topic\nDone.\n")
         #expect(files.todo == "- [ ] Added while the model was writing\n- [ ] From the model — Alex Kim\n")
+
+        // Text typed into the summary while the model was writing is kept, with the model's below it.
+        try meetings.write(renamed, .summary, "My own line.\n")
+        try writeSummary(SummaryDraft(summary: "## Topic\nDone.\n", todo: ""), config: config, meeting: renamed)
+        #expect(try meetings.read(renamed).summary == "My own line.\n\n## Topic\nDone.\n")
+    }
+
+    /// Two voices merged into one person in review give one fingerprint for the call, from the one
+    /// that spoke most. With no name set in Settings, your own lines are saved as "Me".
+    @Test func mergedVoicesAndNoNameOfYourOwn() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-save-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let dir = tmp.appendingPathComponent("rec"), prints = tmp.appendingPathComponent("voiceprints.json")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var config = Config.defaults()
+        config.myName = " "
+        config.outputDir = tmp.appendingPathComponent("Meetings").path
+        config.keepAudio = true
+        // B is a stray forty seconds of A; it's listed first here so that the order they come in isn't what decides.
+        let analysis = Analysis(title: "Call", startedAt: "2026-11-10T14:00:00.000Z", endedAt: "2026-11-10T14:30:00.000Z",
+                                lines: [Line(speaker: me, start: 1, end: 3, text: "Morning."), Line(speaker: "A", start: 4, end: 6, text: "Hi."), Line(speaker: "B", start: 20, end: 22, text: "Yes.")],
+                                speakers: [SpeakerInfo(id: "B", seconds: 40, embedding: [0, 1], suggestion: nil, quotes: []),
+                                           SpeakerInfo(id: "A", seconds: 1200, embedding: [1, 0], suggestion: nil, quotes: [])],
+                                echoLinesRemoved: 0, me: nil, warnings: [], embeddingModel: voiceprintModel)
+        try encodeJSON(analysis).write(to: dir.appendingPathComponent("analysis.json"), atomically: true, encoding: .utf8)
+        let rec = Recording(id: "2026-11-10T14-00-00-000Z", dir: dir, title: "Call", folder: "", startedAt: Date(), state: .processed)
+
+        let path = try saveMeeting(config, rec, decisions: ["A": .name("Alex Kim"), "B": .merge(into: "A")], folder: "", voiceprints: prints)
+        #expect(Voiceprints.load(prints).people["Alex Kim"]?.samples.map(\.embedding) == [[1, 0]])
+        let files = try Meetings(root: config.meetingsRoot).read(path)
+        #expect(files.transcript.hasPrefix("**[00:01] Me:** Morning.") && files.meta.participants == ["Me", "Alex Kim"])
     }
 
     /// Two calls with the same title that started in the same minute are two meetings; saving one again reuses its own folder.
@@ -450,6 +633,13 @@ private func fixture(_ name: String) throws -> URL {
 
         try forgetVoice("Alex", file: file)
         #expect(knownVoices(file).map(\.name) == ["Nate Allen"])
+
+        // A file that can't be read loads as nobody; it's kept beside the new one rather than lost to it.
+        let kept = file.deletingPathExtension().appendingPathExtension("unreadable.json")
+        defer { try? FileManager.default.removeItem(at: kept) }
+        try "{ not what it should be".write(to: file, atomically: true, encoding: .utf8)
+        try addVoiceprints([(name: "Jo", embedding: [0, 1])], call: "e", file: file)
+        #expect(knownVoices(file).map(\.name) == ["Jo"] && readText(kept) == "{ not what it should be")
     }
 }
 
@@ -514,13 +704,15 @@ private func fixture(_ name: String) throws -> URL {
 
     @Test func localModelsOnly() async throws {
         // This Mac, a machine on your network, or a private address.
-        for address in ["http://localhost:11434/v1", "http://127.0.0.1:1234/v1", "http://[::1]:8080/v1", "http://mac-studio:11434/v1",
+        for address in ["http://localhost:11434/v1", "http://127.0.0.1:1234/v1", "http://[::1]:8080/v1", "http://mac-studio:11434/v1", "http://ollama/v1",
                         "http://studio.local:11434/v1", "http://192.168.1.20:11434/v1", "http://10.0.0.5/v1", "https://172.20.1.1/v1"] {
             #expect(isLocalEndpoint(address), "\(address)")
         }
         // Anyone else's service, or not an address at all.
         for address in ["https://api.openai.com/v1", "https://openrouter.ai/api/v1", "http://8.8.8.8/v1", "http://172.32.0.1/v1",
-                        "https://localhost.example.com/v1", "ftp://localhost/v1", "localhost:11434", ""] {
+                        "https://localhost.example.com/v1", "ftp://localhost/v1", "localhost:11434", "",
+                        // A public address written as one number isn't a machine's name.
+                        "http://134744072/v1", "http://0x08080808/v1"] {
             #expect(!isLocalEndpoint(address), "\(address)")
         }
         // A server of your own pointed somewhere else is refused before anything is sent.
@@ -565,6 +757,23 @@ private func fixture(_ name: String) throws -> URL {
         let again = try JSONDecoder().decode(Config.self, from: Data(encodeJSON(with(config) { $0.autoStop = false; $0.jargon = ["Jetpack"] }).utf8))
         #expect(!again.autoStop && again.jargon == ["Jetpack"])
     }
+
+    /// Settings that can't be read aren't quietly replaced by the first change made after them.
+    @Test func settingsThatCannotBeRead() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-config-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("config.json"), kept = dir.appendingPathComponent("config.unreadable.json")
+        // None yet: the ones Oatcake comes with are written, and there's nothing to say.
+        #expect(Config.loadWithProblem(file: file).problem == nil && FileManager.default.fileExists(atPath: file.path))
+        try with(Config.defaults()) { $0.myName = "Sam"; $0.outputDir = "/tmp/m" }.save(to: file)
+        let read = Config.loadWithProblem(file: file)
+        #expect(read.config.myName == "Sam" && read.problem == nil && !FileManager.default.fileExists(atPath: kept.path))
+        // A hand edit that went wrong.
+        try #"{"myName": "Sam", "outputDir": }"#.write(to: file, atomically: true, encoding: .utf8)
+        let broken = Config.loadWithProblem(file: file)
+        #expect(broken.config.outputDir == Config.defaults().outputDir && broken.problem?.contains("config.unreadable.json") == true)
+        #expect(readText(kept) == #"{"myName": "Sam", "outputDir": }"#)
+    }
 }
 
 @Suite struct CallTests {
@@ -575,6 +784,8 @@ private func fixture(_ name: String) throws -> URL {
         #expect(CallDetector.callingApp("com.apple.CoreSpeech") == nil)
         #expect(CallDetector.callingApp("local.oatcake.recorder") == nil)
         #expect(CallDetector.callingApp("com.google.Chromecast") == nil)
+        // A later edition of an app, and its helpers.
+        #expect(CallDetector.callingApp("com.microsoft.teams2") == "Microsoft Teams" && CallDetector.callingApp("com.microsoft.teams2.helper") == "Microsoft Teams")
     }
 
     /// The live transcript drops a microphone line that only repeats the call audio, and reads in time order.
@@ -783,7 +994,7 @@ private struct TestMeetings {
 
         let draft = try await draftSummary(config, meeting: rel)
         #expect(draft.summary == "## Deck\n- Alex Kim will send the deck on Friday.\n")
-        #expect(draft.todo == "- [ ] Send the deck — Alex Kim — due Friday — [00:04]\n- [ ] Book a room\n")
+        #expect(draft.todo == "- [ ] Send the deck — Alex Kim — due Friday — [00:04]\n- [ ] Book a room\n" && draft.todoProblem == nil)
         let sent = server.requests.map(\.messages)
         #expect(sent.count == 2 && sent[0].system == sent[1].system)
         #expect(sent[0].user.hasSuffix("Write three bullet points, in French.") && !sent[0].user.contains("Cover every topic"))
@@ -804,6 +1015,13 @@ private struct TestMeetings {
         #expect(server.requests[2].messages.user.hasSuffix(defaultSummaryInstructions))
         #expect(server.requests[3].messages.user.hasSuffix(defaultTodoInstructions + "\n" + todosFormat))
         #expect(server.requests[2...].map { $0.json["temperature"] as? Double } == [0.7, 0.6])
+
+        // A server that doesn't hold the model to the shape asked for: the summary is still written,
+        // and the draft says the to-dos couldn't be read rather than passing for a call with none.
+        let loose = try await StandIn.model { $0.json["response_format"] == nil ? "## Deck\n- Friday.\n" : "Sure! Alex will send the deck." }
+        config.llm = loose.config.llm
+        let unread = try await draftSummary(config, meeting: rel)
+        #expect(unread == SummaryDraft(summary: "## Deck\n- Friday.\n", todo: "", todoProblem: todosUnreadMessage))
     }
 
     @Test func prepNotes() throws {
@@ -842,7 +1060,8 @@ private struct TestMeetings {
         // To-dos: what the model didn't know is left out, however it said so.
         let lines = todoLines(#"Here: {"todos":[{"task":"email Priya the figures","owner":"Sam","due":"none","at":"1:02:03"},{"task":"","owner":"Alex","due":null,"at":null},{"task":"Review — the plan","owner":"N/A","due":"Fri, Oct 30","at":"soon"}]}"#)
         #expect(lines == ["- [ ] Email Priya the figures — Sam — [1:02:03]", "- [ ] Review, the plan — due Fri, Oct 30"])
-        #expect(todoLines("no JSON here").isEmpty && todoLines(#"{"todos":[]}"#).isEmpty)
+        // No to-dos is an answer; a reply that isn't the JSON asked for is no answer at all.
+        #expect(todoLines(#"{"todos":[]}"#) == [] && todoLines("no JSON here") == nil)
         // A long call is cut between turns, and nothing is lost or repeated.
         let turns = (0..<40).map { "**[\(clock(Double($0) * 30))] Alex:** " + String(repeating: "word ", count: 60).trimmed }
         let whole = turns.joined(separator: "\n\n")
@@ -886,6 +1105,13 @@ private struct TestMeetings {
         #expect(asked.messages.user.contains("Sam Taylor (recorder): Priya, where are we with pricing?\nSpeaker A: Nearly there.\nAlex Kim: Good."))
         #expect(asked.messages.user.contains("Unidentified speakers: Speaker A\n") && asked.json["response_format"] != nil)
         #expect(asked.json["temperature"] as? Double == 0.6)
+
+        // The model is shown "Alex Kim:" before the recognised voice's lines. That's a label, not something
+        // said: it doesn't make Alex Kim a name the other voice can be given.
+        try encodeJSON(analysis).write(to: dir.appendingPathComponent("analysis.json"), atomically: true, encoding: .utf8)
+        let echoes = try await StandIn.model { _ in #"{"speakers":[{"speaker":"A","name":"Alex Kim","quote":null}]}"# }
+        await suggestNames(dir, config: echoes.config)
+        #expect(try readJSON(Analysis.self, dir.appendingPathComponent("analysis.json")).speakers.map(\.suggestion?.name) == [nil, "Alex Kim"])
 
         // A model that can't be reached is noted for the review screen, and the analysis is left as it was.
         try encodeJSON(analysis).write(to: dir.appendingPathComponent("analysis.json"), atomically: true, encoding: .utf8)
@@ -990,6 +1216,13 @@ private struct TestMeetings {
 
         // The first third is here already: only the rest is asked for.
         try content[..<100_000].write(to: part)
+        // Without room for the rest and a gigabyte to spare, it says so and asks for nothing.
+        do {
+            try await ModelDownload.fetch(good, to: file, available: 150_000) { _ in }
+            Issue.record("downloaded without room")
+        } catch {
+            #expect(error.localizedDescription.contains("isn’t room") && server.requests.isEmpty)
+        }
         try await ModelDownload.fetch(good, to: file) { _ in }
         #expect(try Data(contentsOf: file) == content && !FileManager.default.fileExists(atPath: part.path))
         #expect(server.requests.count == 1 && server.requests[0].headers["range"] == "bytes=100000-")
@@ -1009,6 +1242,59 @@ private func with<T>(_ value: T, _ change: (inout T) -> Void) -> T {
     var copy = value
     change(&copy)
     return copy
+}
+
+@Suite struct RecordingsTests {
+    /// Once a call is saved as a meeting its working folder goes. Audio that was kept goes into the
+    /// meeting first, as one file to listen to, wherever the meeting has been moved to since.
+    @Test func savedRecordingsAreClearedAway() throws {
+        let fm = FileManager.default
+        let tmp = fm.temporaryDirectory.appendingPathComponent("oatcake-tidy-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: tmp) }
+        let recordings = tmp.appendingPathComponent("recordings"), root = tmp.appendingPathComponent("Meetings")
+        /// A tone, as the recorder writes a track: 16 kHz, 16-bit, one channel. Made here.
+        func tone(_ seconds: Double, hz: Double) -> Data {
+            let samples = (0..<Int(seconds * Double(sampleRate))).map { Int16(8000 * sin(2 * .pi * hz * Double($0) / Double(sampleRate))).littleEndian }
+            return samples.withUnsafeBufferPointer { Data(buffer: $0) }
+        }
+        func recording(_ id: String, saved: String?, audio: Bool) throws -> URL {
+            let dir = recordings.appendingPathComponent(id)
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            try #"{"title":"Call","startedAt":"2026-11-10T14:00:00.000Z"}"#.write(to: dir.appendingPathComponent("call.json"), atomically: true, encoding: .utf8)
+            if let saved { try encodeJSON(["meeting": saved]).write(to: dir.appendingPathComponent("saved.json"), atomically: true, encoding: .utf8) }
+            if audio {
+                // You for a second from the start; the call for a second and a half, from half a second in.
+                try tone(1, hz: 440).write(to: dir.appendingPathComponent("mic.pcm"))
+                try tone(1.5, hz: 660).write(to: dir.appendingPathComponent("system.pcm"))
+                try #"{"startedAt":"2026-11-10T14:00:00.000Z","endedAt":"2026-11-10T14:00:02.000Z","sampleRate":16000,"micOffset":0,"systemOffset":0.5}"#
+                    .write(to: dir.appendingPathComponent("meta.json"), atomically: true, encoding: .utf8)
+            }
+            return dir
+        }
+        func meeting(_ rel: String, recording id: String) throws -> URL {
+            let dir = root.appendingPathComponent(rel)
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            try #"{"title":"Call","recording":"\#(id)"}"#.write(to: dir.appendingPathComponent("meeting.json"), atomically: true, encoding: .utf8)
+            return dir
+        }
+        let plain = try recording("r1", saved: "2026-11-10 1400 One", audio: false)
+        let kept = try recording("r2", saved: "2026-11-10 1400 Two", audio: true)
+        let orphan = try recording("r3", saved: "2026-11-10 1400 Three", audio: true)
+        let waiting = try recording("r4", saved: nil, audio: true)
+        _ = try meeting("2026-11-10 1400 One", recording: "r1")
+        // Saved as "…Two" at the top level, and moved into a folder and renamed since.
+        let two = try meeting("Clients/2026-11-10 1400 Second", recording: "r2")
+        let rec = { (dir: URL) in Recording(id: dir.lastPathComponent, dir: dir, title: "Call", startedAt: Date(), state: .saved) }
+        #expect(Recordings.hasAudio(rec(kept)) && !Recordings.hasAudio(rec(plain)))
+
+        Recordings.tidySaved(meetingsRoot: root, recordings: recordings)
+        // Nothing kept: gone. Audio kept: in its meeting, then gone. No meeting to put it in, or not saved yet: left alone.
+        #expect(try fm.contentsOfDirectory(atPath: recordings.path).sorted() == ["r3", "r4"])
+        #expect(Recordings.hasAudio(rec(orphan)) && Recordings.hasAudio(rec(waiting)))
+        let audio = try AVAudioFile(forReading: two.appendingPathComponent("audio.m4a"))
+        #expect(abs(Double(audio.length) / audio.fileFormat.sampleRate - 2.0) < 0.1)
+        #expect(try fm.contentsOfDirectory(atPath: two.path).sorted() == ["audio.m4a", "meeting.json"])
+    }
 }
 
 @Suite struct QuillTests {
@@ -1134,6 +1420,9 @@ private func with<T>(_ value: T, _ change: (inout T) -> Void) -> T {
         // from before the meeting's start time keep their spacing rather than all landing on 00:00.
         let blocks = #"{"blocks":[{"from":70000,"to":71000,"text":"Third.","source":"system","speaker_id":"S2"},{"from":1000,"to":2000,"text":"First.","source":"system","speaker_id":"S1"},{"from":40000,"to":41000,"text":"Second.","source":"mic"}]}"#
         #expect(quillTranscript(blocks, start: 60000, me: "Alex", names: [:]).markdown == "**[00:00] Voice 1:** First.\n\n**[00:39] Alex:** Second.\n\n**[01:09] Voice 2:** Third.\n")
+        // A time no call could have (a damaged backup) is read without stopping the import.
+        let damaged = #"{"blocks":[{"from":1000,"to":2000,"text":"First.","source":"mic"},{"from":1e300,"to":1e300,"text":"Late.","source":"mic"}]}"#
+        #expect(quillTranscript(damaged, start: 0, me: "Alex", names: [:]).markdown == "**[00:01] Alex:** First.\n\n**[99:59:59] Alex:** Late.\n")
         // Quill's minute markers go and the paragraph break around them stays; a heading of your own is kept.
         #expect(quillSummary([(title: nil, body: "First point\n#### 2m\n\nSecond point\n#### 1h 2m\nThird\n\n### 5m\nFourth")]) == "First point\n\nSecond point\nThird\n\n### 5m\nFourth\n")
     }
@@ -1159,5 +1448,67 @@ private func with<T>(_ value: T, _ change: (inout T) -> Void) -> T {
         #expect(try fm.contentsOfDirectory(atPath: root.appendingPathComponent("Granola").path).count == 2)
         let again = try importGranola(export, into: root)
         #expect(again.imported == 0 && again.skipped == 2 && again.unreadable == 1)
+    }
+}
+
+@Suite struct RecorderGateTests {
+    // The requirement strings are in the form `codesign -d -r -` prints; the hash is made up.
+    @Test func whoMayAsk() {
+        let release = #"identifier "local.oatcake.recorder" and certificate leaf = H"00112233445566778899aabbccddeeff00112233""#
+        #expect(RecorderGate.caller(forRecorder: release) == .mustMeet(#"identifier "local.oatcake" and certificate leaf = H"00112233445566778899aabbccddeeff00112233""#))
+        // A development build is signed ad-hoc: there's no certificate to hold the caller to.
+        #expect(RecorderGate.caller(forRecorder: #"cdhash H"00112233445566778899aabbccddeeff00112233""#) == .anyone)
+        // Anything else is nobody: a signature that can't be read, or somebody else's program.
+        #expect(RecorderGate.caller(forRecorder: "") == .nobody)
+        #expect(RecorderGate.caller(forRecorder: #"identifier "com.example.other" and certificate leaf = H"00""#) == .nobody)
+        #expect(RecorderGate.caller(forRecorder: #"identifier "local.oatcake.recorder" and anchor apple"#) == .nobody)
+    }
+
+    /// What a recorder does: connects, asks about a folder, reads the answer.
+    private func ask(_ socketPath: String, about dir: String) -> String {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        defer { close(fd) }
+        var address = sockaddr_un()
+        address.sun_family = sa_family_t(AF_UNIX)
+        withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: Array(socketPath.utf8)) }
+        let connected = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        guard connected == 0 else { return "no connection" }
+        let question = Array((dir + "\n").utf8)
+        _ = question.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
+        var reply = [UInt8](repeating: 0, count: 16)
+        let got = read(fd, &reply, reply.count)
+        return got > 0 ? String(decoding: reply[..<got], as: UTF8.self).trimmed : "no reply"
+    }
+
+    @Test func onlyRecordingsOatcakeStarted() throws {
+        // /tmp rather than the test's own temporary folder: a socket's path has to be short.
+        let folder = URL(fileURLWithPath: "/tmp/oatcake-door-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let door = RecorderDoor(directory: folder)
+        let mine = folder.appendingPathComponent("2026-11-14T10-00-00-000Z")
+        let socket = try door.expect(mine)
+        #expect(ask(socket, about: "/tmp/somewhere-else") == RecorderGate.no)
+        #expect(ask(socket, about: mine.path) == RecorderGate.yes)
+        // Once: a second recorder asking about the same recording is turned away.
+        #expect(ask(socket, about: mine.path) == RecorderGate.no)
+        // A recorder that never started isn't waited for.
+        let other = folder.appendingPathComponent("2026-11-14T11-00-00-000Z")
+        #expect(try door.expect(other) == socket)
+        door.forget(other)
+        #expect(ask(socket, about: other.path) == RecorderGate.no)
+    }
+
+    @Test func filesBothProgramsRead() throws {
+        // mic.json says "the Mac's input" with a null, not by leaving the key out.
+        #expect(String(decoding: try JSONEncoder().encode(MicRequest(uid: nil)), as: UTF8.self) == #"{"uid":null}"#)
+        #expect(try JSONDecoder().decode(MicRequest.self, from: Data(#"{"uid":"BuiltInMic"}"#.utf8)).uid == "BuiltInMic")
+        // A status as the recorder writes it, and a meta.json from before the two shared these types (it had micDevices too).
+        let status = try JSONDecoder().decode(RecorderStatus.self, from: JSONEncoder().encode(RecorderStatus(state: .recording, elapsed: 12, micLevel: 0.2, systemLevel: 0, micDevice: MicChoice(uid: "a", name: "A"))))
+        #expect(status.state == .recording && status.micDevice?.name == "A")
+        let older = #"{"endedAt":"2026-11-05T15:00:00Z","micDevices":[{"at":0,"name":"A","uid":"a"}],"micOffset":0.4,"sampleRate":16000,"startedAt":"2026-11-05T14:00:00Z","systemOffset":0.1}"#
+        #expect(try JSONDecoder().decode(RecorderMeta.self, from: Data(older.utf8)).micOffset == 0.4)
     }
 }

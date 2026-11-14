@@ -95,10 +95,12 @@ public func fetchCalendar(_ address: String) async -> CalendarCache {
     let checkedAt = isoString(Date())
     let https = address.trimmed.replacingOccurrences(of: "^webcal:", with: "https:", options: [.regularExpression, .caseInsensitive])
     do {
-        guard let url = URL(string: https) else { throw OatcakeError("that isn't a web address") }
-        var request = URLRequest(url: url, timeoutInterval: 30)
+        var request = URLRequest(url: try calendarURL(https), timeoutInterval: 30)
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        let (data, response) = try await URLSession.shared.data(for: request)
+        // A session that keeps nothing on disk: the address is a secret, and the shared one's cache would hold it.
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.finishTasksAndInvalidate() }
+        let (data, response) = try await session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 else {
             throw OatcakeError("the calendar address returned \(status) \(HTTPURLResponse.localizedString(forStatusCode: status))".trimmed)
@@ -113,6 +115,17 @@ public func fetchCalendar(_ address: String) async -> CalendarCache {
         cache.error = "Couldn't update the calendar: \(message)"
         return cache
     }
+}
+
+/// The address to fetch: https only, so the secret in it isn't sent in the clear. (http is let
+/// through for this Mac's own address, which is how a calendar is stood in for when trying things out.)
+func calendarURL(_ address: String) throws -> URL {
+    guard let url = URL(string: address), let scheme = url.scheme?.lowercased() else { throw OatcakeError("that isn't a web address") }
+    let host = (url.host(percentEncoded: false) ?? "").lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+    guard scheme == "https" || (scheme == "http" && ["127.0.0.1", "localhost", "::1"].contains(host)) else {
+        throw OatcakeError("the calendar address has to start with https://")
+    }
+    return url
 }
 
 // MARK: - iCalendar
@@ -221,6 +234,47 @@ func timeZone(_ tzid: String?, aliases: [String: TimeZone]) -> TimeZone {
     return TimeZone(identifier: clean) ?? aliases[tzid] ?? .current
 }
 
+/// "+0100", "-0500" or "+053000" → seconds east of UTC.
+private func utcOffset(_ value: String) -> Int? {
+    let v = value.trimmed
+    guard let sign = v.first, sign == "+" || sign == "-", v.count >= 5,
+          let hours = Int(v.dropFirst().prefix(2)), let minutes = Int(v.dropFirst(3).prefix(2)) else { return nil }
+    return (sign == "-" ? -1 : 1) * (hours * 3600 + minutes * 60)
+}
+
+/**
+ * A zone for a VTIMEZONE whose name macOS doesn't know (Outlook's "GMT Standard Time"), from the
+ * offsets it gives. With no daylight time, that fixed offset. With it, a zone macOS knows that is at
+ * the same offset in the middle of every month the rules leave no doubt about (this Mac's own, when
+ * it is): which of the zones that keep those hours hardly matters, since they agree all year but
+ * for the weeks the clocks change in.
+ */
+func zoneFromRules(_ zone: ICalComponent, now: Date = Date()) -> TimeZone? {
+    func block(_ name: String) -> ICalComponent? { zone.components(name).first { $0.first("RRULE") != nil } ?? zone.components(name).first }
+    func offset(_ block: ICalComponent?) -> Int? { block?.first("TZOFFSETTO").flatMap { utcOffset($0.value) } }
+    /// The month a block's time starts in each year: its rule's BYMONTH, or its DTSTART's month.
+    func month(_ block: ICalComponent?) -> Int? {
+        if let rule = block?.first("RRULE")?.value, let found = firstMatch(try! NSRegularExpression(pattern: #"BYMONTH=(\d{1,2})"#), rule)?[1] ?? nil { return Int(found) }
+        return (block?.first("DTSTART")?.value).flatMap { $0.count >= 6 ? Int($0.dropFirst(4).prefix(2)) : nil }
+    }
+    let standard = block("STANDARD"), daylight = block("DAYLIGHT")
+    guard let winter = offset(standard) ?? offset(daylight) else { return nil }
+    guard let summer = offset(daylight), offset(standard) != nil, let starts = month(daylight), let ends = month(standard), starts != ends else {
+        return TimeZone(secondsFromGMT: winter)
+    }
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "UTC")!
+    let year = calendar.component(.year, from: now)
+    // The months the clocks change in are left out: which side of the change their middle falls on isn't said here.
+    let expected = (1...12).filter { $0 != starts && $0 != ends }.compactMap { m -> (Date, Int)? in
+        let inDaylight = starts < ends ? (m > starts && m < ends) : (m > starts || m < ends)
+        return calendar.date(from: DateComponents(year: year, month: m, day: 15, hour: 12)).map { ($0, inDaylight ? summer : winter) }
+    }
+    let keepsThoseHours = { (tz: TimeZone) in expected.allSatisfy { tz.secondsFromGMT(for: $0.0) == $0.1 } }
+    if keepsThoseHours(.current) { return .current }
+    return TimeZone.knownTimeZoneIdentifiers.sorted().lazy.compactMap(TimeZone.init(identifier:)).first(where: keepsThoseHours)
+}
+
 /// Parses one date or date-time value ("20261105", "20261105T140000", "20261105T140000Z").
 func parseICalTime(_ value: String, tzid: String?, valueType: String?, aliases: [String: TimeZone]) -> ICalTime? {
     let v = value.trimmed
@@ -284,7 +338,11 @@ public func parseCalendar(_ text: String, from: Date, to: Date) -> [CalendarEven
     var aliases: [String: TimeZone] = [:]
     for zone in calendar.components("VTIMEZONE") {
         guard let tzid = zone.first("TZID")?.value else { continue }
-        if let location = zone.first("X-LIC-LOCATION")?.value, let tz = TimeZone(identifier: location) { aliases[tzid] = tz }
+        if let location = zone.first("X-LIC-LOCATION")?.value, let tz = TimeZone(identifier: location) {
+            aliases[tzid] = tz
+        } else if TimeZone(identifier: tzid) == nil, let tz = zoneFromRules(zone) {
+            aliases[tzid] = tz
+        }
     }
     // A Google calendar named after its owner's address: used to drop events they declined.
     let owner = (calendar.first("X-WR-CALNAME")?.value ?? "").lowercased()
@@ -351,6 +409,12 @@ public func parseCalendar(_ text: String, from: Date, to: Date) -> [CalendarEven
         for instant in instants.sorted() where !excluded.contains(instant) {
             emit(instant)
         }
+        // An occurrence from beyond the window that was moved into it: its own time wasn't reached above.
+        for (instant, change) in replaced[uid] ?? [:] where instant >= to {
+            if let changed = ICalEvent(change, aliases: aliases) {
+                add(changed, start: changed.start.date, end: changed.start.date.addingTimeInterval(changed.duration), isDate: changed.start.isDate, seriesId: uid)
+            }
+        }
     }
     // Moved occurrences whose series isn't in the feed stand alone.
     for (uid, byInstant) in replaced where masters[uid] == nil {
@@ -393,13 +457,14 @@ struct RecurrenceRule {
         }
         guard let freq = parts["FREQ"].flatMap({ Frequency(rawValue: $0.uppercased()) }) else { return nil }
         frequency = freq
-        interval = max(1, Int(parts["INTERVAL"] ?? "") ?? 1)
+        // Kept to what a calendar would write: a feed can say anything, and the sums below mustn't overflow.
+        interval = min(1000, max(1, Int(parts["INTERVAL"] ?? "") ?? 1))
         count = parts["COUNT"].flatMap { Int($0) }
         until = parts["UNTIL"].flatMap { parseICalTime($0, tzid: nil, valueType: nil, aliases: aliases)?.date }
         byDay = (parts["BYDAY"] ?? "").split(separator: ",").compactMap { item in
             let s = String(item).uppercased()
-            guard let day = Self.weekdays[String(s.suffix(2))] else { return nil }
-            return (Int(s.dropLast(2)) ?? 0, day)
+            guard let day = Self.weekdays[String(s.suffix(2))], let ordinal = Optional(Int(s.dropLast(2)) ?? 0), (-53...53).contains(ordinal) else { return nil }
+            return (ordinal, day)
         }
         byMonthDay = (parts["BYMONTHDAY"] ?? "").split(separator: ",").compactMap { Int($0) }
         byMonth = (parts["BYMONTH"] ?? "").split(separator: ",").compactMap { Int($0) }
@@ -425,11 +490,12 @@ struct RecurrenceRule {
             return date
         }
         func daysIn(_ y: Int, _ m: Int) -> Int {
-            calendar.range(of: .day, in: .month, for: calendar.date(from: DateComponents(year: y, month: m, day: 1))!)!.count
+            calendar.date(from: DateComponents(year: y, month: m, day: 1)).flatMap { calendar.range(of: .day, in: .month, for: $0) }?.count ?? 0
         }
         /// Days of a month matching BYDAY (with ordinals counted within the month) or BYMONTHDAY.
         func daysOfMonth(_ y: Int, _ m: Int) -> [Int] {
             let count = daysIn(y, m)
+            guard count > 0 else { return [] }
             if !byMonthDay.isEmpty {
                 return byMonthDay.map { $0 > 0 ? $0 : count + 1 + $0 }.filter { (1...count).contains($0) }
             }
@@ -437,7 +503,7 @@ struct RecurrenceRule {
                 var days: [Int] = []
                 for (ordinal, weekday) in byDay {
                     let matching = (1...count).filter { d in
-                        calendar.component(.weekday, from: calendar.date(from: DateComponents(year: y, month: m, day: d, hour: 12))!) == weekday
+                        calendar.date(from: DateComponents(year: y, month: m, day: d, hour: 12)).map { calendar.component(.weekday, from: $0) } == weekday
                     }
                     if ordinal == 0 { days += matching }
                     else if ordinal > 0, ordinal <= matching.count { days.append(matching[ordinal - 1]) }

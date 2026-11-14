@@ -179,11 +179,27 @@ public final class Meetings: @unchecked Sendable {
         try writeAtomic(target, content)
     }
 
+    /// Ticks or unticks a to-do in a meeting's todo.md ("" is the Meetings folder's own), read afresh:
+    /// what's on screen may be older than the file, which the summary's to-dos are also added to.
+    public func toggleTodo(_ rel: String, line: Int, text: String) throws {
+        let file = try resolveInside(root, rel).appendingPathComponent(MeetingFile.todo.rawValue)
+        guard let changed = OatcakeCore.toggleTodo(readText(file), line: line, text: text) else { return }
+        try writeAtomic(file, changed)
+    }
+
+    /// Adds a to-do to the end of a meeting's todo.md ("" is the Meetings folder's own), read afresh.
+    public func addTodo(_ rel: String, _ text: String) throws {
+        let file = try resolveInside(root, rel).appendingPathComponent(MeetingFile.todo.rawValue)
+        try writeAtomic(file, OatcakeCore.addTodo(readText(file), text))
+    }
+
     private func checkName(_ name: String) throws -> String {
         let clean = name.trimmed
-        if clean.isEmpty || clean == "." || clean == ".." || clean.contains("/") || clean.contains(":") {
+        if clean.isEmpty || clean.contains("/") || clean.contains(":") {
             throw OatcakeError("Names can't be empty or contain / or :")
         }
+        // A name that starts with a dot is hidden, here as in Finder: the folder would be made and never shown.
+        if clean.hasPrefix(".") { throw OatcakeError("Names can't start with a dot") }
         return clean
     }
 
@@ -331,10 +347,12 @@ func folderSafe(_ title: String) -> String {
     title.replacingOccurrences(of: #"[/:\\]"#, with: "-", options: .regularExpression).trimmed
 }
 
-/// A folder name made from free text such as an event title: no "/" or ":".
+/// A folder name made from free text such as an event title: no "/" or ":", and no dots to start
+/// with, which would make a hidden folder (or "." and "..") that the app never shows.
 public func safeName(_ name: String) -> String {
     name.replacingOccurrences(of: "[/:]", with: "-", options: .regularExpression)
-        .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmed
+        .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        .replacingOccurrences(of: #"^[.\s]+"#, with: "", options: .regularExpression).trimmed
 }
 
 /// A meeting's title: the one in meeting.json, or its folder's name without the date it starts with.

@@ -92,6 +92,11 @@ public enum LocalModels {
         ((try? FileManager.default.attributesOfItem(atPath: file(model).path))?[.size] as? Int64) == model.bytes
     }
 
+    /// Whether a download of the model was left part-way: its file so far is still on the disk.
+    public static func hasPartialDownload(_ model: LocalModel) -> Bool {
+        FileManager.default.exists(file(model).appendingPathExtension("part"))
+    }
+
     /// Removes a model's file (and a download of it that was left part-way).
     public static func remove(_ model: LocalModel) {
         try? FileManager.default.removeItem(at: file(model))
@@ -122,11 +127,20 @@ public final class ModelDownload: NSObject, URLSessionDataDelegate, @unchecked S
     /// Downloads the model's file to where Oatcake keeps it (`file` is somewhere else only in tests).
     /// While it's on its way it's "<name>.part" beside that; it's only given its name once it's whole
     /// and its SHA-256 is the one expected.
-    public static func fetch(_ model: LocalModel, to file: URL? = nil, progress: @escaping @Sendable (Double) -> Void) async throws {
+    /// `available` is the room on the disk, in bytes, when a test wants to say.
+    public static func fetch(_ model: LocalModel, to file: URL? = nil, available: Int64? = nil, progress: @escaping @Sendable (Double) -> Void) async throws {
         let file = file ?? LocalModels.file(model)
         if ((try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int64) == model.bytes { return }
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let download = ModelDownload(model, part: file.appendingPathExtension("part"), progress: progress)
+        let part = file.appendingPathExtension("part")
+        // Said before it starts, rather than found out when the disk fills: what's still to come, and a gigabyte to spare.
+        let have = ((try? FileManager.default.attributesOfItem(atPath: part.path))?[.size] as? Int64) ?? 0
+        let free = available ?? (try? file.deletingLastPathComponent().resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?.volumeAvailableCapacityForImportantUsage
+        if have < model.bytes, let free, free < model.bytes - have + 1_000_000_000 {
+            let gb = { (bytes: Int64) in String(format: "%.1f GB", Double(bytes) / 1e9) }
+            throw OatcakeError("There isn’t room on this Mac to download \(model.title): it needs \(gb(model.bytes - have + 1_000_000_000)) free, and there’s \(gb(max(0, free))). Free some space, then try again.")
+        }
+        let download = ModelDownload(model, part: part, progress: progress)
         try await download.run()
         guard try sha256(of: download.part) == model.sha256 else {
             try? FileManager.default.removeItem(at: download.part)
@@ -238,10 +252,11 @@ public actor ModelServer {
     private var changing = false
     private var lastUsed = Date()
 
-    /// llama.cpp's server: inside Oatcake.app, or in the folder OATCAKE_LLAMA_DIR names (for development).
+    /// llama.cpp's server: inside Oatcake.app, or (for a development copy that has none) in the folder OATCAKE_LLAMA_DIR names.
     public static var binary: URL? {
-        let folders = [ProcessInfo.processInfo.environment["OATCAKE_LLAMA_DIR"].map { URL(fileURLWithPath: $0, isDirectory: true) },
-                       Bundle.main.resourceURL?.appendingPathComponent("llama", isDirectory: true)]
+        // The one inside Oatcake.app whenever there is one: the folder named from outside is only for a copy built without.
+        let folders = [Bundle.main.resourceURL?.appendingPathComponent("llama", isDirectory: true),
+                       ProcessInfo.processInfo.environment["OATCAKE_LLAMA_DIR"].map { URL(fileURLWithPath: $0, isDirectory: true) }]
         return folders.compactMap { $0?.appendingPathComponent("llama-server") }.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 

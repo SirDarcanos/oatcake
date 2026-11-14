@@ -27,10 +27,13 @@ public func loadAnalysis(_ rec: Recording) throws -> Analysis {
  * `title` replaces the one the recording was started with.
  */
 @discardableResult
-public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: Decision], folder: String, title: String? = nil) throws -> String {
+public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: Decision], folder: String, title: String? = nil,
+                        voiceprints: URL = Paths.voiceprints) throws -> String {
     let analysis = try loadAnalysis(rec)
     let notes = Recordings.loadNotes(rec.id)
     let title = title.map(\.trimmed).flatMap { $0.isEmpty ? nil : $0 } ?? analysis.title
+    // With no name set in Settings, your lines still need one to be read back as yours.
+    let myName = config.myName.trimmed.isEmpty ? "Me" : config.myName.trimmed
 
     /// The decision a voice ends up with once merges are followed (nil for your microphone).
     func settled(_ id: String, _ seen: Set<String> = []) -> (id: String, decision: Decision?)? {
@@ -40,7 +43,7 @@ public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: 
         return (id, d)
     }
     func nameOf(_ id: String) -> String? {
-        guard let s = settled(id) else { return config.myName }
+        guard let s = settled(id) else { return myName }
         switch s.decision {
         case .ignore: return nil
         case .mixed: return "Several people"
@@ -61,7 +64,7 @@ public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: 
     }
     let paragraphs = mergeRuns(named)
     var participants: [String] = []
-    for name in [config.myName] + paragraphs.map(\.speaker) where name != "Several people" && !participants.contains(name) {
+    for name in [myName] + paragraphs.map(\.speaker) where name != "Several people" && !participants.contains(name) {
         participants.append(name)
     }
     let transcript = paragraphs.map { "**[\(clock($0.start))] \($0.speaker):** \($0.text)" }.joined(separator: "\n\n") + "\n"
@@ -79,8 +82,8 @@ public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: 
         number += 1
     }
     try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
-    try transcript.write(to: out.appendingPathComponent("transcript.md"), atomically: true, encoding: .utf8)
-    if !notes.isEmpty { try notesMarkdown(notes).write(to: out.appendingPathComponent("notes.md"), atomically: true, encoding: .utf8) }
+    try writeAtomic(out.appendingPathComponent("transcript.md"), transcript)
+    if !notes.isEmpty { try writeAtomic(out.appendingPathComponent("notes.md"), notesMarkdown(notes)) }
     struct Meta: Encodable {
         var title: String
         var startedAt: String
@@ -88,17 +91,20 @@ public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: 
         var participants: [String]
         var recording: String
     }
-    try (try encodeJSON(Meta(title: title, startedAt: analysis.startedAt, endedAt: analysis.endedAt,
-                             participants: participants, recording: rec.id)) + "\n")
-        .write(to: out.appendingPathComponent("meeting.json"), atomically: true, encoding: .utf8)
+    try writeAtomic(out.appendingPathComponent("meeting.json"),
+                    try encodeJSON(Meta(title: title, startedAt: analysis.startedAt, endedAt: analysis.endedAt,
+                                        participants: participants, recording: rec.id)) + "\n")
 
     // Only now the meeting is written, so a save that's retried doesn't add the same voices twice.
     // Fingerprints from another model (an analysis made by the Electron version) aren't kept.
     if analysis.embeddingModel == voiceprintModel {
-        try addVoiceprints(analysis.speakers.compactMap { s in
-            guard let name = rememberedName(s.id), let embedding = s.embedding, s.seconds >= minVoiceprintSeconds else { return nil }
+        // Voices merged into one person in review give one fingerprint for the call: the one with the
+        // most speech, not a stray half-minute of them.
+        var kept = Set<String>()
+        try addVoiceprints(analysis.speakers.sorted { $0.seconds > $1.seconds }.compactMap { s in
+            guard let name = rememberedName(s.id), let embedding = s.embedding, s.seconds >= minVoiceprintSeconds, kept.insert(name).inserted else { return nil }
             return (name, embedding)
-        }, call: rec.id)
+        }, call: rec.id, file: voiceprints)
     }
 
     try writeAtomic(rec.dir.appendingPathComponent("saved.json"), try encodeJSON(["meeting": outRel]) + "\n")
@@ -117,11 +123,18 @@ private func savedRecording(_ meeting: URL) -> String? {
 public struct SummaryDraft: Sendable, Equatable {
     public var summary: String
     public var todo: String
-    public init(summary: String, todo: String) {
+    /// Why there are no to-dos, when it's because the model's reply couldn't be read rather than
+    /// because nothing was agreed. nil otherwise.
+    public var todoProblem: String?
+    public init(summary: String, todo: String, todoProblem: String? = nil) {
         self.summary = summary
         self.todo = todo
+        self.todoProblem = todoProblem
     }
 }
+
+/// What a draft says when the model's reply for the to-dos wasn't the JSON it was asked for.
+public let todosUnreadMessage = "The model’s reply for the to-dos wasn’t in the form Oatcake asks for, so none were collected from this call."
 
 /**
  * Writes a saved meeting's summary and to-dos from its transcript, your notes and meeting.json. It
@@ -135,7 +148,9 @@ public func writeSummary(_ config: Config, meeting rel: String) async throws {
 /// named here rather than when the model was asked, because it can be renamed or moved meanwhile.
 public func writeSummary(_ draft: SummaryDraft, config: Config, meeting rel: String) throws {
     let meetings = Meetings(root: config.meetingsRoot)
-    try meetings.write(rel, .summary, draft.summary)
+    // Anything typed into the summary while the model was writing stays, with the model's below it.
+    let typed = try meetings.read(rel).summary.replacingOccurrences(of: #"\s*$"#, with: "", options: .regularExpression)
+    try meetings.write(rel, .summary, typed.trimmed.isEmpty ? draft.summary : typed + "\n\n" + draft.summary)
     if !draft.todo.isEmpty {
         // Read now: to-dos may have been added or ticked while the model was writing.
         let existing = try meetings.read(rel).todo.replacingOccurrences(of: #"\s*$"#, with: "", options: .regularExpression)
@@ -149,9 +164,8 @@ public func draftSummary(_ config: Config, meeting rel: String) async throws -> 
     let files = try meetings.read(rel)
     guard !files.transcript.trimmed.isEmpty else { throw OatcakeError("This meeting has no transcript to summarise.") }
     let notes = parseNotes(files.notes).map { Note(at: $0.stamp.map(seconds), text: $0.text) }
-    let (summary, todo) = try await summarise(config, title: titleOfMeeting(rel, files.meta), participants: files.meta.participants ?? [config.myName],
-                                              notes: notes, transcript: files.transcript)
-    return SummaryDraft(summary: summary, todo: todo)
+    return try await summarise(config, title: titleOfMeeting(rel, files.meta), participants: files.meta.participants ?? [config.myName],
+                               notes: notes, transcript: files.transcript)
 }
 
 /// A paragraph of the transcript runs for about this long at most before the next pause starts a new one.
@@ -225,7 +239,7 @@ let todosSchema = #"{"type":"object","properties":{"todos":{"type":"array","item
  * has just read the same transcript. A call too long for the model to take in at once on this Mac
  * is done in parts, and the parts' notes are joined.
  */
-private func summarise(_ config: Config, title: String, participants: [String], notes: [Note], transcript: String) async throws -> (String, String) {
+private func summarise(_ config: Config, title: String, participants: [String], notes: [Note], transcript: String) async throws -> SummaryDraft {
     // The notes stay the note-taker's own (notes.md). Here they only tell the model what mattered.
     let notesBlock = notes.isEmpty ? "" : ([
         "\(config.myName) took these notes ([mm:ss] = time into the call; \"before the call\" = prep written",
@@ -244,6 +258,7 @@ private func summarise(_ config: Config, title: String, participants: [String], 
 
     var summaries: [String] = []
     var todos: [String] = []
+    var todosUnread = false
     for (i, part) in parts.enumerated() {
         let which = parts.count > 1 ? ", part \(i + 1) of \(parts.count)" : ""
         let prompt = "\(head)\n\nTranscript ([mm:ss] is the time into the call)\(which):\n\(part)\n\n"
@@ -252,7 +267,8 @@ private func summarise(_ config: Config, title: String, participants: [String], 
              todoLines(try await model.complete([system, ChatMessage("user", prompt + todosTask)], schema: todosSchema, think: reasoning.todos, maxTokens: replyTokens)))
         }
         summaries.append(summary)
-        todos += items
+        todos += items ?? []
+        if items == nil { todosUnread = true }
     }
     var summary = summaries.first ?? ""
     if summaries.count > 1 {
@@ -264,7 +280,8 @@ private func summarise(_ config: Config, title: String, participants: [String], 
     }
     var seen = Set<String>()
     let unique = todos.filter { seen.insert($0.lowercased()).inserted }
-    return (summary.trimmed + "\n", unique.isEmpty ? "" : unique.joined(separator: "\n") + "\n")
+    return SummaryDraft(summary: summary.trimmed + "\n", todo: unique.isEmpty ? "" : unique.joined(separator: "\n") + "\n",
+                        todoProblem: todosUnread ? todosUnreadMessage : nil)
 }
 
 /// A transcript in pieces of at most `tokens` tokens each, cut between speakers' turns. One piece
@@ -296,8 +313,9 @@ func summaryBody(_ reply: String) -> String {
 }
 
 /// todo.md lines from the model's JSON: "- [ ] Task — Owner — due Fri, Oct 30 — [12:34]", with the
-/// parts it didn't know left out.
-func todoLines(_ reply: String) -> [String] {
+/// parts it didn't know left out. nil when the reply isn't that JSON at all (a server of your own
+/// that doesn't hold the model to a shape, or a reply cut short), which isn't the same as no to-dos.
+func todoLines(_ reply: String) -> [String]? {
     struct Reply: Decodable {
         struct Item: Decodable {
             var task: String?
@@ -307,7 +325,7 @@ func todoLines(_ reply: String) -> [String] {
         }
         var todos: [Item]
     }
-    guard let parsed = try? parseJsonObject(Reply.self, reply) else { return [] }
+    guard let parsed = try? parseJsonObject(Reply.self, reply) else { return nil }
     /// A small model sometimes writes the word instead of leaving the value empty.
     func known(_ value: String?) -> String? {
         guard let v = value?.trimmed, !v.isEmpty, !["null", "none", "n/a", "unknown", "not stated", "not specified", "tbd"].contains(v.lowercased()) else { return nil }

@@ -98,17 +98,10 @@ public func isLocalEndpoint(_ address: String) -> Bool {
     if parts.count == 4, let n = Optional(parts.compactMap { UInt8($0) }), n.count == 4 {
         return n[0] == 127 || n[0] == 10 || (n[0] == 172 && (16...31).contains(n[1])) || (n[0] == 192 && n[1] == 168) || (n[0] == 169 && n[1] == 254)
     }
+    // A bare number is an address written another way (134744072 is 8.8.8.8), not a machine's name.
+    if UInt64(host) != nil || host.hasPrefix("0x") { return false }
     // A name: this Mac, a machine named on your network, or a Bonjour name.
     return host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local") || !host.contains(".")
-}
-
-public struct MicChoice: Codable, Equatable, Hashable, Sendable {
-    public var uid: String
-    public var name: String
-    public init(uid: String, name: String) {
-        self.uid = uid
-        self.name = name
-    }
 }
 
 public struct Config: Codable, Equatable, Sendable {
@@ -119,7 +112,7 @@ public struct Config: Codable, Equatable, Sendable {
     /// Speech-to-text model, a key of SpeechModels.asr.
     public var asrModel: String
     public var llm: LlmConfig
-    /// Keep the raw audio after a call is saved (needed to re-run with another model).
+    /// Keep the call's audio after it's saved: it goes into the meeting's folder as audio.m4a.
     public var keepAudio: Bool
     /// The microphone to record. nil follows the Mac's input (System Settings › Sound).
     public var mic: MicChoice?
@@ -239,19 +232,28 @@ public struct Config: Codable, Equatable, Sendable {
     /// then the shape to give them in, which stays Oatcake's.
     public var todosTask: String { (todoInstructions.trimmed.isEmpty ? defaultTodoInstructions : todoInstructions.trimmed) + "\n" + todosFormat }
 
-    public static func load() -> Config {
-        try? FileManager.default.createDirectory(at: Paths.data, withIntermediateDirectories: true)
-        guard let data = try? Data(contentsOf: Paths.config), let config = try? JSONDecoder().decode(Config.self, from: data) else {
-            let base = defaults()
-            if !FileManager.default.exists(Paths.config) { try? base.save() }
-            return base
+    public static func load() -> Config { loadWithProblem().config }
+
+    /**
+     * The settings, and what went wrong when the file is there and can't be read (a hand edit, a sync
+     * conflict). Oatcake then starts on its defaults, and the first change to a setting would save
+     * over the file: so it's kept beside itself as config.unreadable.json, and the problem is said.
+     */
+    public static func loadWithProblem(file: URL = Paths.config) -> (config: Config, problem: String?) {
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if let data = try? Data(contentsOf: file), let config = try? JSONDecoder().decode(Config.self, from: data) { return (config, nil) }
+        let base = defaults()
+        guard FileManager.default.exists(file) else {
+            try? base.save(to: file)
+            return (base, nil)
         }
-        return config
+        let kept = keepUnreadable(file)
+        return (base, "Oatcake couldn’t read its settings (\(file.lastPathComponent)), so it has started with the ones it comes with. The file is kept beside it as \(kept.lastPathComponent), and your Meetings folder may need choosing again in Settings › Storage.")
     }
 
-    public func save() throws {
-        try FileManager.default.createDirectory(at: Paths.data, withIntermediateDirectories: true)
-        try writeAtomic(Paths.config, try encodeJSON(self) + "\n")
+    public func save(to file: URL = Paths.config) throws {
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try writeAtomic(file, try encodeJSON(self) + "\n")
     }
 }
 

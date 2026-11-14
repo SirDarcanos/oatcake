@@ -250,8 +250,8 @@ public func suggestNames(_ dir: URL, config: Config) async {
         analysis.warnings.append("Name suggestions skipped: \(error.localizedDescription)")
     }
     // The recording may have been discarded meanwhile.
-    guard FileManager.default.exists(file) else { return }
-    try? writeAtomic(file, (try? encodeJSON(analysis)) ?? "")
+    guard FileManager.default.exists(file), let text = try? encodeJSON(analysis) else { return }
+    try? writeAtomic(file, text)
 }
 
 private let namesSystem = "You work out who is speaking in a meeting transcript."
@@ -273,19 +273,22 @@ private func namesFromTranscript(_ config: Config, title: String, lines: [Line],
     // People say who they are early on: a call too long for the model keeps its start.
     let room = largestContext(config.llm) - LocalModels.tokens(in: head + task) - replyTokens - 200
     var said: [String] = []
+    var spoken: [String] = []
     var used = 0
     for line in lines {
         let text = "\(label(line.speaker)): \(line.text)"
         used += LocalModels.tokens(in: text) + 1
         if used > room, !said.isEmpty { break }
         said.append(text)
+        spoken.append(line.text)
     }
     let transcript = said.joined(separator: "\n")
     let prompt = "\(head)\n\nTranscript:\n\(transcript)\n\n\(task)"
     let reply = try await withModel(config.llm, tokens: LocalModels.tokens(in: prompt) + replyTokens + 200) { model, _ in
         try await model.complete([ChatMessage("system", namesSystem), ChatMessage("user", prompt)], schema: namesSchema, think: config.llm.reasoning.names, maxTokens: replyTokens)
     }
-    return namesIn(reply, unknown: unknown, transcript: transcript, myName: config.myName)
+    // Checked against the words alone: a name that's only there as someone else's label wasn't said.
+    return namesIn(reply, unknown: unknown, transcript: spoken.joined(separator: "\n"), myName: config.myName)
 }
 
 /**

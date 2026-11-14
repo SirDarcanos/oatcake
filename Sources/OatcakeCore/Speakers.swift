@@ -100,10 +100,10 @@ public func knownPeople() -> [String] {
     Voiceprints.load().people.keys.sorted()
 }
 
-func addVoiceprints(_ entries: [(name: String, embedding: [Float])], call: String) throws {
+func addVoiceprints(_ entries: [(name: String, embedding: [Float])], call: String, file: URL = Paths.voiceprints) throws {
     // Nothing new: leave the file as it is (an Electron-era file keeps its old fingerprints on disk).
     guard !entries.isEmpty else { return }
-    var prints = Voiceprints.load()
+    var prints = Voiceprints.load(file)
     for entry in entries {
         var person = prints.people[entry.name] ?? Voiceprints.Person(samples: [])
         // One fingerprint per call: saving the same recording again replaces its own.
@@ -112,11 +112,13 @@ func addVoiceprints(_ entries: [(name: String, embedding: [Float])], call: Strin
         person.samples = Array(person.samples.suffix(maxSamplesPerPerson))
         prints.people[entry.name] = person
     }
-    try prints.save()
+    try prints.save(file)
 }
 
 extension Voiceprints {
     func save(_ file: URL = Paths.voiceprints) throws {
+        // A file that's there and can't be read loaded as nobody: it's kept beside this one, not lost to it.
+        if FileManager.default.exists(file), tryJSON(Voiceprints.self, file) == nil { keepUnreadable(file) }
         try writeAtomic(file, String(decoding: try JSONEncoder().encode(self), as: UTF8.self) + "\n")
     }
 }

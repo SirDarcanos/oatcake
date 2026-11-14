@@ -16,7 +16,8 @@ public func seconds(_ stamp: String) -> Double {
 
 /// "03:09", or "1:02:09" past an hour.
 public func clock(_ seconds: Double) -> String {
-    let s = max(0, Int(seconds.rounded(.down)))
+    // A time that isn't one (from a damaged import) reads as the start, and none runs past 99 hours.
+    let s = seconds.isFinite ? Int(min(max(0, seconds), 359_999).rounded(.down)) : 0
     let mmss = String(format: "%02d:%02d", (s % 3600) / 60, s % 60)
     return s >= 3600 ? "\(s / 3600):\(mmss)" : mmss
 }
@@ -116,6 +117,17 @@ public func toggleTodo(_ markdown: String, line: Int) -> String {
 }
 
 /**
+ * todo.md with the to-do `text` ticked or unticked: the one at `line` when that's still it, otherwise
+ * the first with that text, since the file may have changed since the list on screen was read. nil
+ * when it's no longer there.
+ */
+public func toggleTodo(_ markdown: String, line: Int, text: String) -> String? {
+    let todos = parseTodos(markdown)
+    guard let found = todos.first(where: { $0.line == line && $0.text == text }) ?? todos.first(where: { $0.text == text }) else { return nil }
+    return toggleTodo(markdown, line: found.line)
+}
+
+/**
  * A typed to-do in todo.md's form. " - " and " -- " count as the separator (an em dash is awkward
  * to type), and `owner` fills in when none is given: "Send the deck - due Fri, Nov 6" with owner
  * "Sam" becomes "Send the deck — Sam — due Fri, Nov 6".
@@ -135,6 +147,30 @@ public func typedTodo(_ text: String, owner: String? = nil) -> String {
 public func addTodo(_ markdown: String, _ text: String) -> String {
     let base = markdown.replacingOccurrences(of: #"\s*$"#, with: "", options: .regularExpression)
     return "\(base.isEmpty ? "" : base + "\n")- [ ] \(text.trimmed)\n"
+}
+
+/// A day said the way it is in a call ("tomorrow", "Friday", "next week", "end of the month"), worked
+/// out from the day of the meeting. A weekday is the next one, the meeting's own day included.
+private func relativeDue(_ due: String, from met: Date) -> Date? {
+    let calendar = gregorian
+    let day = calendar.startOfDay(for: met)
+    let text = due.trimmed.lowercased().replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+    func adding(_ days: Int) -> Date? { calendar.date(byAdding: .day, value: days, to: day) }
+    /// Days from the meeting to the next `weekday` (1 = Sunday), none when it's that day.
+    func until(_ weekday: Int) -> Int { (weekday - calendar.component(.weekday, from: day) + 7) % 7 }
+    switch text {
+    case "today": return day
+    case "tomorrow": return adding(1)
+    case "next week": return adding(until(2) == 0 ? 7 : until(2))
+    case "end of week", "end of the week": return adding(until(6))
+    case "end of month", "end of the month":
+        return calendar.dateInterval(of: .month, for: day).flatMap { calendar.date(byAdding: .day, value: -1, to: $0.end) }
+    default: break
+    }
+    let weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+    let name = text.replacingOccurrences(of: #"^(this|next|on|by) "#, with: "", options: .regularExpression)
+    guard let index = weekdays.firstIndex(where: { $0 == name || $0.prefix(3) == name }) else { return nil }
+    return adding(until(index + 1))
 }
 
 /// An item on the combined To-dos page.
@@ -161,6 +197,7 @@ public func dueDate(_ due: String, meetingDate: Date? = nil) -> Date? {
     guard !due.trimmed.isEmpty else { return nil }
     let met = meetingDate ?? Date()
     let calendar = gregorian
+    if let day = relativeDue(due, from: met) { return day }
     let text = due.replacingOccurrences(of: #"^[A-Za-z]+,\s*"#, with: "", options: .regularExpression).trimmed
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")

@@ -94,7 +94,19 @@ public func encodeJSON<T: Encodable>(_ value: T) throws -> String {
 }
 
 public func readText(_ url: URL) -> String {
-    (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+    guard let data = try? Data(contentsOf: url) else { return "" }
+    // A stray byte from another editor doesn't make the whole file read as empty (and then get saved over).
+    return String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
+}
+
+/// Keeps a file that can't be read beside itself ("config.unreadable.json") before a new one takes
+/// its place. Returns where it went.
+@discardableResult
+func keepUnreadable(_ file: URL) -> URL {
+    let kept = file.deletingPathExtension().appendingPathExtension("unreadable").appendingPathExtension(file.pathExtension)
+    try? FileManager.default.removeItem(at: kept)
+    try? FileManager.default.copyItem(at: file, to: kept)
+    return kept
 }
 
 extension String {

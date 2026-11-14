@@ -52,7 +52,8 @@ private struct QuillTranscript: Decodable {
 private func query<T: Decodable>(_ db: URL, _ sql: String) throws -> [T] {
     // "-init /dev/null": without it sqlite3 reads your own ~/.sqliterc, and a setting there (".timer on",
     // ".echo on") adds lines to what it prints, which then isn't JSON.
-    let out = try runCapturing("/usr/bin/sqlite3", ["-init", "/dev/null", "-readonly", "-json", db.path, sql])
+    // "-safe": the database is somebody else's file, so nothing in it gets to reach outside itself.
+    let out = try runCapturing("/usr/bin/sqlite3", ["-init", "/dev/null", "-safe", "-readonly", "-json", db.path, sql])
     // No rows prints nothing at all.
     return out.trimmed.isEmpty ? [] : try JSONDecoder().decode([T].self, from: Data(out.utf8))
 }
@@ -64,6 +65,8 @@ private func query<T: Decodable>(_ db: URL, _ sql: String) throws -> [T] {
 func quillTranscript(_ json: String, start: Double, me: String, names: [String: String]) -> (markdown: String, participants: [String]) {
     // In the order things were said, whatever order the backup lists them in (kept as it is between equals).
     let blocks = ((try? JSONDecoder().decode(QuillTranscript.self, from: Data(json.utf8)))?.blocks ?? []).compactMap(\.block)
+        // A time that isn't a number of milliseconds anyone could mean is no use for placing a line.
+        .filter { ($0.from ?? 0).isFinite && ($0.to ?? 0).isFinite }
         .enumerated().sorted { ($0.element.from ?? 0, $0.offset) < ($1.element.from ?? 0, $1.offset) }.map(\.element)
     // A recording that began before the meeting's start time counts from its first line, so the lines
     // before the start keep their order and spacing rather than all landing on 00:00.
@@ -165,7 +168,8 @@ public func importQuill(_ file: URL, into root: URL, me: String, progress: Impor
     for (i, m) in meetings.enumerated() {
         defer { progress(i + 1, meetings.count) }
         let id = m.id.lowercased()
-        guard id.range(of: "^[0-9a-f-]{36}$", options: .regularExpression) != nil, let start = m.start else {
+        // A start that isn't a date (between 1970 and 2100) counts as no date at all.
+        guard id.range(of: "^[0-9a-f-]{36}$", options: .regularExpression) != nil, let start = m.start, (0...4_102_444_800_000).contains(start) else {
             result.unreadable += 1
             continue
         }
@@ -186,7 +190,7 @@ public func importQuill(_ file: URL, into root: URL, me: String, progress: Impor
         // A meeting that can't be written (a title too long for a folder name, say) is counted and passed
         // over: the ones after it still come in, on this run and the next.
         guard let meta = try? encodeJSON(Meta(title: title, startedAt: isoString(Date(timeIntervalSince1970: start / 1000)),
-                                              endedAt: m.end.map { isoString(Date(timeIntervalSince1970: $0 / 1000)) },
+                                              endedAt: m.end.flatMap { (0...4_102_444_800_000).contains($0) ? isoString(Date(timeIntervalSince1970: $0 / 1000)) : nil },
                                               participants: participants, quillMeeting: id)) else {
             result.unreadable += 1
             continue

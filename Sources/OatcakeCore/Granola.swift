@@ -115,9 +115,9 @@ func knownIds(_ root: URL, key: String) -> Set<String> {
     return ids
 }
 
-/// A series folder's name. No leading dots: those make hidden folders (or "." and "..").
+/// A series folder's name.
 func seriesFolder(_ title: String) -> String {
-    let name = safeName(title).replacingOccurrences(of: #"^\.+"#, with: "", options: .regularExpression).trimmed
+    let name = safeName(title)
     return name.isEmpty ? "Untitled" : name
 }
 
