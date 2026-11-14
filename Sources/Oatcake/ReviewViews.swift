@@ -258,7 +258,7 @@ struct ReviewView: View {
             if analysis.speakers.isEmpty {
                 Notice(tone: .amber) {
                     Text("No other voices were heard").fontWeight(.semibold)
-                    Text("Only your microphone picked anything up. If people were talking on the call, check that OatcakeRecorder is allowed in System Settings › Privacy & Security › Screen & System Audio Recording.")
+                    Text("Only your microphone picked anything up. If people were talking on the call, check that Oatcake is allowed in System Settings › Privacy & Security › Screen & System Audio Recording.")
                 }
             }
             // Why the model's name suggestions were skipped, in plain words.

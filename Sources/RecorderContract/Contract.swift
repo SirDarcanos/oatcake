@@ -94,8 +94,8 @@ public struct RecorderMeta: Codable, Equatable, Sendable {
 }
 
 /**
- * The recorder holds the microphone and system-audio permissions, so it only records when Oatcake
- * itself asked it to. As it starts it connects to the socket it was given, checks that the program
+ * The recorder is what uses the microphone and system-audio permissions (macOS gives them to
+ * Oatcake, which it is inside), so it only records when Oatcake itself asked it to. As it starts it connects to the socket it was given, checks that the program
  * at the other end really is Oatcake (by its code signature, not by anything it says), and asks
  * whether Oatcake wants a recording in this folder. Anything else that launches the recorder gets
  * nothing: it can't pass that check, and Oatcake only says yes to recordings it started.

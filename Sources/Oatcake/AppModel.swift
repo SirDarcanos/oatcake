@@ -140,6 +140,17 @@ final class AppModel {
             }
         }
         Secrets.forgetRetired()
+        // The recording permissions given to earlier versions are withdrawn, to be asked for again by
+        // this one (Recordings.withdrawEarlierPermissions). Once, and only by a copy whose signature
+        // says which versions it stands for: a development build's doesn't. Tried again at the next
+        // launch if it couldn't be done.
+        if !UserDefaults.standard.bool(forKey: "earlierPermissionsWithdrawn"), let id = Bundle.main.bundleIdentifier {
+            let bundle = Bundle.main.bundleURL
+            Task.detached {
+                guard let requirement = try? Update.designatedRequirement(bundle), requirement.contains("CFBundleShortVersionString") else { return }
+                if Recordings.withdrawEarlierPermissions(of: id) { UserDefaults.standard.set(true, forKey: "earlierPermissionsWithdrawn") }
+            }
+        }
         // A language model left running by a copy of Oatcake that didn't get to stop it.
         ModelServer.stopLeftover()
         jobs.tidySavedRecordings()

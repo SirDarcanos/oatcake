@@ -35,7 +35,8 @@ any time to reinstall.
    line instead).
 
 Either way, the first recording asks for microphone and system-audio permission for
-"OatcakeRecorder". There's nothing to sign in to and no key to paste: the models run on your Mac,
+Oatcake. The first recording after updating from a version before 0.5.0 asks once more (see Security for why).
+There's nothing to sign in to and no key to paste: the models run on your Mac,
 and Oatcake fetches them itself, into `~/Library/Application Support/Oatcake/models`. Both start
 downloading when you start your first recording: the language model that writes summaries (Qwen3
 8B, 5.0 GB, on a Mac with 16 GB of memory or more; Qwen3 4B, 2.5 GB, on one with 8 GB) and the
@@ -124,8 +125,8 @@ them all to the Trash.
    everything the Mac plays (Zoom, Meet, Slack, anything) is recorded as the other people.
    During the call, write one point per line: each is stamped with the time you started
    typing it, and every line stays editable. The recorder is a small helper app
-   (`Sources/OatcakeRecorder`), so macOS asks for microphone and system-audio permission for
-   "OatcakeRecorder" once; if it hasn't started after a few seconds, the live screen says
+   (`Sources/OatcakeRecorder`) inside Oatcake; macOS asks for microphone and system-audio
+   permission in Oatcake's name, once; if it hasn't started after a few seconds, the live screen says
    to look for that prompt. Pick the microphone on the record screen, from the mic button
    during the call, or in Settings: "Same as Mac" follows System Settings › Sound; a chosen
    mic is used until it's unplugged, then the Mac's input until it's back. Changing mic
@@ -556,14 +557,28 @@ Settings in the app (stored in `~/Library/Application Support/Oatcake/config.jso
   identity (see Updates).
 - Files Oatcake rewrites (meeting Markdown, config, voiceprints, calendar) are written to a
   new temporary file and renamed into place, never through an existing file or link.
-- `OatcakeRecorder.app` holds the microphone and system-audio permissions, so it records only for
-  Oatcake. As it starts it connects to a socket Oatcake gave it, checks from the system's own
+- `OatcakeRecorder.app` is what uses the microphone and system-audio permissions (macOS gives
+  them to Oatcake, which it is inside), so it records only for Oatcake. As it starts it connects to a socket Oatcake gave it, checks from the system's own
   record of the process at the other end that it is Oatcake, signed with the recorder's own
   certificate, and asks whether Oatcake wants this recording; Oatcake says yes once, for a
   recording it has just started. Anything else that launches the recorder gets an error and no
   audio (`RecorderGate` in `Sources/RecorderContract`, `RecorderDoor` in the core). A development
   build signed ad-hoc skips the check: it has no certificate to check against, and no saved
   permissions to guard.
+- Recorders before 0.5.0 had no such check, and macOS gives the permissions to Oatcake itself
+  (the recorder is inside it), remembered against Oatcake's code-signing requirement: until
+  0.5.0, "this identifier, this certificate", which every earlier release meets. So from 0.5.0 the
+  requirement also says "0.5.0 or later", and the first time that version opens it withdraws the
+  two permissions (`tccutil reset Microphone` and `AudioCapture`), to be given again to itself.
+  That's why the first recording after updating asks once more. An earlier copy of Oatcake
+  started by something else then no longer records quietly: macOS asks first, in Oatcake's name.
+  It can't tell you which copy is asking, so if that question appears when you haven't just
+  started a recording, choose Don't Allow. Either answer replaces what macOS remembers for
+  Oatcake, so afterwards run `tccutil reset Microphone local.oatcake` in Terminal and allow it
+  again at your next recording.
+- Oatcake itself is signed as using the microphone (`Resources/Oatcake.entitlements`) although
+  only the recorder opens it: macOS counts the recorder's use as Oatcake's, and under the hardened
+  runtime it won't ask for the permission at all without that.
 - The app, the recorder and llama.cpp's server are signed for the hardened runtime, so another
   program on your Mac can't load its own code into them to borrow the recorder's permissions or
   read Oatcake's Keychain item.

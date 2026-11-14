@@ -534,7 +534,7 @@ do {
 }
 
 guard requestMicAccess() else {
-    fail("Microphone access is off. Turn on OatcakeRecorder in System Settings › Privacy & Security › Microphone.")
+    fail("Microphone access is off. Turn on Oatcake in System Settings › Privacy & Security › Microphone.")
 }
 
 /// The app writes {"uid": "<device UID>"} to mic.json to choose an input (null = the Mac's).

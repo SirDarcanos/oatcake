@@ -352,7 +352,7 @@ final class RecordingController {
         if let call, now.timeIntervalSince(call) >= 30, !callQuietSaid, callOnMic {
             callQuietSaid = true
             Reminders.say("No call audio for 30 seconds",
-                          "If people are talking, allow OatcakeRecorder in System Settings › Privacy & Security › Screen & System Audio Recording.", id: "call-quiet")
+                          "If people are talking, allow Oatcake in System Settings › Privacy & Security › Screen & System Audio Recording.", id: "call-quiet")
         }
     }
 

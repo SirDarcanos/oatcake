@@ -101,7 +101,7 @@ struct LiveView: View {
         if status.state == .starting && model.recording.recorderFailure == nil && Date().timeIntervalSince(rec.startedAt) > 6 {
             Notice(tone: .amber) {
                 Text("The recorder hasn’t started yet").fontWeight(.semibold)
-                Text("If macOS is asking whether OatcakeRecorder can use the microphone or record system audio, click Allow.")
+                Text("If macOS is asking whether Oatcake can use the microphone or record system audio, click Allow.")
             }
             .padding(.top, 16)
         }
@@ -146,7 +146,7 @@ struct LiveView: View {
         if let since = model.recording.callQuietSince, now.timeIntervalSince(since) >= 30 {
             Notice(tone: .amber) {
                 Text("No call audio for \(Int(now.timeIntervalSince(since))) seconds").fontWeight(.semibold)
-                Text("If people are talking, allow OatcakeRecorder in System Settings › Privacy & Security › Screen & System Audio Recording.")
+                Text("If people are talking, allow Oatcake in System Settings › Privacy & Security › Screen & System Audio Recording.")
             }
             .padding(.top, 16)
         }

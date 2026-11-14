@@ -1,6 +1,7 @@
 #!/bin/bash
-# Builds build/Oatcake.app: the app, with the recorder as its own app bundle inside it so macOS asks
-# for microphone and system-audio permission for "OatcakeRecorder" alone, and with llama.cpp's
+# Builds build/Oatcake.app: the app, with the recorder as its own app bundle inside it (macOS counts
+# what the recorder uses as Oatcake's, and asks for the microphone and system audio in Oatcake's
+# name), and with llama.cpp's
 # server, which runs the language model on this Mac (see Sources/OatcakeCore/LocalModel.swift).
 #
 #   Scripts/bundle.sh            release build
@@ -96,7 +97,8 @@ if [[ -n "${OATCAKE_SIGN_KEYCHAIN:-}" ]]; then KEYCHAIN=(--keychain "$OATCAKE_SI
 # Everything is signed for the hardened runtime, so macOS won't let another program on this Mac
 # load its own code into Oatcake or the recorder (and so borrow the recorder's microphone
 # permission, or Oatcake's Keychain items). The recorder says it uses the microphone, which the
-# hardened runtime asks it to; llama.cpp's server may load the libraries that came with it.
+# hardened runtime asks it to, and so does Oatcake, because macOS counts the recorder's use as
+# Oatcake's (Resources/Oatcake.entitlements); llama.cpp's server may load the libraries that came with it.
 for file in "${LLAMA_FILES[@]}"; do
     if [[ "$file" == llama-server ]]; then
         codesign --force --options runtime --entitlements Resources/Llama.entitlements --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$LLAMA/$file"
@@ -105,6 +107,18 @@ for file in "${LLAMA_FILES[@]}"; do
     fi
 done
 codesign --force --options runtime --entitlements Resources/OatcakeRecorder.entitlements --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$RECORDER"
-codesign --force --options runtime --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$APP"
+codesign --force --options runtime --entitlements Resources/Oatcake.entitlements --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$APP"
+# macOS remembers the permissions Oatcake is given (the microphone and system audio, which the
+# recorder inside it uses) against Oatcake's designated requirement. Left to itself that's "this
+# identifier, this certificate", which every earlier release meets too, and before 0.5.0 their
+# recorders record for whoever starts them. So the requirement also says 0.5.0 or later: an earlier
+# copy of Oatcake doesn't inherit what this one is allowed. The version is in Info.plist, which the
+# signature seals. Releases before this one still accept it as an update: it meets theirs.
+# Not for an ad-hoc build, whose requirement is its own hash.
+if [[ "$IDENTITY" != "-" ]]; then
+    REQUIREMENT="$(codesign -d -r - "$APP" 2>/dev/null | sed -n 's/^designated => //p')"
+    codesign --force --options runtime --entitlements Resources/Oatcake.entitlements --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} \
+        -r="designated => $REQUIREMENT and info [CFBundleShortVersionString] >= \"0.5.0\"" "$APP"
+fi
 codesign --verify --deep --strict "$APP"
 echo "Built $APP $VERSION, signed $([[ "$IDENTITY" == "-" ]] && echo ad-hoc || echo "with \"$IDENTITY\"")"

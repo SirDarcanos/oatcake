@@ -109,6 +109,19 @@ jobs:
               *) echo "::error::$bundle isn't signed for the hardened runtime."; exit 1 ;;
             esac
           done
+          # The app's requirement names the versions it stands for, so the permissions macOS gives
+          # it aren't also an earlier release's (Scripts/bundle.sh).
+          case "$(codesign -d -r - "$app" 2>/dev/null)" in
+            *CFBundleShortVersionString*) ;;
+            *) echo "::error::Oatcake's designated requirement doesn't name a version."; exit 1 ;;
+          esac
+          # Without this on Oatcake itself, macOS never asks for the microphone and nothing can be recorded.
+          for bundle in "$app" "$app/Contents/Resources/OatcakeRecorder.app"; do
+            case "$(codesign -d --entitlements - "$bundle" 2>/dev/null)" in
+              *com.apple.security.device.audio-input*) ;;
+              *) echo "::error::$bundle isn't signed as using the microphone."; exit 1 ;;
+            esac
+          done
 
       # install.sh names the certificate it accepts. It has to be the one this was signed with, or
       # the installer published with this release would turn the release away.

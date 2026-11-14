@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Oatcake itself never opens the microphone: the recorder inside it does. But macOS counts the
+	     recorder's use of it as Oatcake's, and with the hardened runtime on it won't even ask for
+	     permission unless Oatcake says here that it uses the microphone. -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+</dict>
+</plist>
