@@ -16,7 +16,9 @@ import Testing
         for address in ["https://api.openai.com/v1", "https://openrouter.ai/api/v1", "http://8.8.8.8/v1", "http://172.32.0.1/v1",
                         "https://localhost.example.com/v1", "ftp://localhost/v1", "localhost:11434", "",
                         // A public address written as one number isn't a machine's name.
-                        "http://134744072/v1", "http://0x08080808/v1"] {
+                        "http://134744072/v1", "http://0x08080808/v1",
+                        // Nor one with a leading zero, which is read two ways.
+                        "http://010.8.8.8/v1", "http://0177.0.0.1/v1"] {
             #expect(!isLocalEndpoint(address), "\(address)")
         }
         // A server of your own pointed somewhere else is refused before anything is sent.

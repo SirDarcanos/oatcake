@@ -20,6 +20,9 @@ public func isLocalEndpoint(_ address: String) -> Bool {
             || host.hasPrefix("fc") || host.hasPrefix("fd")
     }
     let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+    // A part with a leading zero (010.8.8.8) is read as ten by some of the system and as eight by the
+    // rest: whichever a request would use, it isn't how anyone writes an address they mean.
+    if parts.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) }), parts.contains(where: { $0.count > 1 && $0.first == "0" }) { return false }
     if parts.count == 4, let n = Optional(parts.compactMap { UInt8($0) }), n.count == 4 {
         return n[0] == 127 || n[0] == 10 || (n[0] == 172 && (16...31).contains(n[1])) || (n[0] == 192 && n[1] == 168) || (n[0] == 169 && n[1] == 254)
     }

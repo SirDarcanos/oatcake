@@ -18,9 +18,16 @@ VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 APP="$ROOT/build/Oatcake.app"
 cd "$ROOT"
 
-swift build -c "$CONFIG" --product Oatcake
-swift build -c "$CONFIG" --product OatcakeRecorder
-BIN="$(swift build -c "$CONFIG" --show-bin-path)"
+# OATCAKE_BIN names the folder of binaries when they're already built. The release workflow builds
+# before the signing identity is on the runner and passes it, so nothing of the package's or its
+# dependency's runs once there is something to sign with.
+if [[ -n "${OATCAKE_BIN:-}" ]]; then
+    BIN="$OATCAKE_BIN"
+else
+    swift build -c "$CONFIG" --product Oatcake
+    swift build -c "$CONFIG" --product OatcakeRecorder
+    BIN="$(swift build -c "$CONFIG" --show-bin-path)"
+fi
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

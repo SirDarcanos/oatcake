@@ -43,13 +43,15 @@ jobs:
           fi
 
       # Tested and built before the signing identity is on the runner: nothing that runs while the
-      # package and its dependency are built or tested can sign with it.
+      # package and its dependency are built or tested can sign with it. Packaging then only copies
+      # what was built (OATCAKE_BIN), without running swift again.
       - run: swift test
 
       - name: Build
         run: |
           swift build -c release --product Oatcake
           swift build -c release --product OatcakeRecorder
+          echo "OATCAKE_BIN=$(swift build -c release --show-bin-path)" >> "$GITHUB_ENV"
 
       # A throwaway keychain holding only the release identity. It's self-signed and so not trusted,
       # which codesign accepts; what matters is that every release carries the same one.
