@@ -617,7 +617,9 @@ var signalSources: [DispatchSourceSignal] = []
 for sig in [SIGINT, SIGTERM] {
     signal(sig, SIG_IGN)
     let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
-    source.setEventHandler { MainActor.assumeIsolated { finish() } }
+    // The closure's type is spelled out: finish() never returns, and the compiler in Xcode 26 can't
+    // work out what a closure made only of that call should return.
+    source.setEventHandler { MainActor.assumeIsolated { () -> Void in finish() } }
     source.resume()
     signalSources.append(source)
 }
