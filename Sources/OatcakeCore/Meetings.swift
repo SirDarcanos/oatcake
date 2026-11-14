@@ -182,10 +182,12 @@ public final class Meetings: @unchecked Sendable {
 
     /// Ticks or unticks a to-do in a meeting's todo.md ("" is the Meetings folder's own), read afresh:
     /// what's on screen may be older than the file, which the summary's to-dos are also added to.
-    public func toggleTodo(_ rel: String, line: Int, text: String) throws {
+    @discardableResult
+    public func toggleTodo(_ rel: String, line: Int, text: String) throws -> Bool {
         let file = try resolveInside(root, rel).appendingPathComponent(MeetingFile.todo.rawValue)
-        guard let changed = OatcakeCore.toggleTodo(readText(file), line: line, text: text) else { return }
+        guard let changed = OatcakeCore.toggleTodo(readText(file), line: line, text: text) else { return false }
         try writeAtomic(file, changed)
+        return true
     }
 
     /// Adds a to-do to the end of a meeting's todo.md ("" is the Meetings folder's own), read afresh.

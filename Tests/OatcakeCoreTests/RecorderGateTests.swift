@@ -9,13 +9,17 @@ import Testing
     // The requirement strings are in the form `codesign -d -r -` prints; the hash is made up.
     @Test func whoMayAsk() {
         let release = #"identifier "local.oatcake.recorder" and certificate leaf = H"00112233445566778899aabbccddeeff00112233""#
-        #expect(RecorderGate.caller(forRecorder: release) == .mustMeet(#"identifier "local.oatcake" and certificate leaf = H"00112233445566778899aabbccddeeff00112233""#))
+        // Oatcake signed the same way, and new enough to be signed for the hardened runtime.
+        #expect(RecorderGate.caller(forRecorder: release) == .mustMeet(#"identifier "local.oatcake" and info [CFBundleShortVersionString] >= "0.5.0" and certificate leaf = H"00112233445566778899aabbccddeeff00112233""#))
+        // A certificate from Apple names its team instead of a fingerprint: the same rule holds.
+        #expect(RecorderGate.caller(forRecorder: #"identifier "local.oatcake.recorder" and anchor apple generic and certificate leaf[subject.OU] = ABCDE12345"#)
+            == .mustMeet(#"identifier "local.oatcake" and info [CFBundleShortVersionString] >= "0.5.0" and anchor apple generic and certificate leaf[subject.OU] = ABCDE12345"#))
         // A development build is signed ad-hoc: there's no certificate to hold the caller to.
         #expect(RecorderGate.caller(forRecorder: #"cdhash H"00112233445566778899aabbccddeeff00112233""#) == .anyone)
         // Anything else is nobody: a signature that can't be read, or somebody else's program.
         #expect(RecorderGate.caller(forRecorder: "") == .nobody)
         #expect(RecorderGate.caller(forRecorder: #"identifier "com.example.other" and certificate leaf = H"00""#) == .nobody)
-        #expect(RecorderGate.caller(forRecorder: #"identifier "local.oatcake.recorder" and anchor apple"#) == .nobody)
+        #expect(RecorderGate.caller(forRecorder: #"anchor apple and identifier "local.oatcake.recorder""#) == .nobody)
     }
 
     /// What a recorder does: connects, asks about a folder, reads the answer.

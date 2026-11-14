@@ -107,22 +107,29 @@ public enum RecorderGate {
     public static let no = "no"
     static let recorderIdentifier = "identifier \"local.oatcake.recorder\""
     static let appIdentifier = "identifier \"local.oatcake\""
+    /// The first Oatcake signed for the hardened runtime. Earlier releases carry the same certificate
+    /// but let another program load its code into them, so one of those answering for Oatcake
+    /// proves nothing: the recorder doesn't take its word. (The recorder also checks the hardened
+    /// runtime itself; the version is the part a code-signing requirement can state.)
+    public static let firstTrustedVersion = "0.5.0"
 
     public enum Caller: Equatable, Sendable {
         /// A development build, signed ad-hoc: it has no permissions worth guarding and nothing to check against.
         case anyone
-        /// The code-signing requirement the program that asks must meet: Oatcake, signed with the recorder's own certificate.
+        /// The code-signing requirement the program that asks must meet: Oatcake, of a version that can
+        /// be trusted to be only itself, signed the way the recorder is.
         case mustMeet(String)
         /// A signature this version doesn't know how to read. Nothing is recorded.
         case nobody
     }
 
     /// Who may ask this recorder to record, from the recorder's own designated requirement
-    /// (`identifier "local.oatcake.recorder" and certificate leaf = H"…"` for a release).
+    /// (`identifier "local.oatcake.recorder" and certificate leaf = H"…"` for a release). Whatever
+    /// follows the recorder's identifier says who signed it, and Oatcake has to be signed the same.
     public static func caller(forRecorder designated: String) -> Caller {
         let requirement = designated.trimmingCharacters(in: .whitespacesAndNewlines)
         if requirement.hasPrefix("cdhash") { return .anyone }
-        guard requirement.hasPrefix(recorderIdentifier + " and "), requirement.contains("certificate leaf = H\"") else { return .nobody }
-        return .mustMeet(appIdentifier + requirement.dropFirst(recorderIdentifier.count))
+        guard requirement.hasPrefix(recorderIdentifier + " and ") else { return .nobody }
+        return .mustMeet("\(appIdentifier) and info [CFBundleShortVersionString] >= \"\(firstTrustedVersion)\"" + requirement.dropFirst(recorderIdentifier.count))
     }
 }

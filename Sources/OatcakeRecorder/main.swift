@@ -437,6 +437,14 @@ func oatcakeWants(_ dir: String, askingAt socketPath: String, requirement: Strin
     guard SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributeAudit: tokenData] as CFDictionary, [], &peer) == errSecSuccess, let peer,
           SecRequirementCreateWithString(requirement as CFString, [], &wanted) == errSecSuccess, let wanted,
           SecCodeCheckValidity(peer, [], wanted) == errSecSuccess else { return false }
+    // And it has to be signed for the hardened runtime: a copy that isn't can have another program's
+    // code loaded into it, and then it isn't only Oatcake that's answering.
+    var peerOnDisk: SecStaticCode?
+    var signing: CFDictionary?
+    guard SecCodeCopyStaticCode(peer, [], &peerOnDisk) == errSecSuccess, let peerOnDisk,
+          SecCodeCopySigningInformation(peerOnDisk, SecCSFlags(rawValue: kSecCSSigningInformation), &signing) == errSecSuccess,
+          let flags = (signing as? [String: Any])?[kSecCodeInfoFlags as String] as? UInt32,
+          flags & SecCodeSignatureFlags.runtime.rawValue != 0 else { return false }
 
     let question = Array((dir + "\n").utf8)
     guard question.withUnsafeBytes({ write(fd, $0.baseAddress, $0.count) }) == question.count else { return false }
@@ -483,6 +491,17 @@ func folderExists() -> Bool {
     return FileManager.default.fileExists(atPath: outDir, isDirectory: &isDirectory) && isDirectory.boolValue
 }
 guard folderExists() else { exit(2) }
+
+/// Whether another recorder is already at work in this folder. Then the folder is that recording's,
+/// and this one leaves without touching anything in it.
+func anotherRecorderIsHere() -> Bool {
+    guard let text = try? String(contentsOfFile: "\(outDir)/\(RecorderFile.pid)", encoding: .utf8),
+          let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)), pid > 1, pid != getpid() else { return false }
+    return kill(pid, 0) == 0 || errno == EPERM
+}
+guard !anotherRecorderIsHere() else { exit(1) }
+// A recording that's already over (stopped before this recorder got going) isn't started again.
+guard !FileManager.default.fileExists(atPath: "\(outDir)/\(RecorderFile.meta)") else { exit(0) }
 
 func fail(_ message: String) -> Never {
     if folderExists() { writeJSON(RecorderStatus(state: .error, error: message), to: statusPath) }
@@ -603,4 +622,6 @@ for sig in [SIGINT, SIGTERM] {
     signalSources.append(source)
 }
 
-dispatchMain()
+// A run loop on the main thread, rather than dispatchMain(): everything above that's handled on the
+// main queue then really is on the main thread, which is what it says it is.
+while true { RunLoop.main.run(mode: .default, before: .distantFuture) }

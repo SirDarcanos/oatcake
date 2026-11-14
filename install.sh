@@ -83,6 +83,8 @@ main() {
     [ "${#ZIP_SHA}" = 64 ] || die "the release information has an unexpected checksum."
     if [ -n "${OATCAKE_FEED:-}" ]; then
         ZIP_URL="${FEED%/*}/$ZIP_NAME"
+    else
+        case "$ZIP_URL" in "https://github.com/$REPO/releases/download/"*) ;; *) die "the release information points somewhere unexpected." ;; esac
     fi
     at_least "$MACOS" "$MIN_OS" || die "Oatcake $VERSION needs macOS $MIN_OS or later; this Mac has $MACOS."
 
@@ -147,6 +149,8 @@ main() {
         /usr/bin/pgrep -xq Oatcake && die "Oatcake is still open. Quit it, then run the installer again."
     fi
 
+    # From here to the end of the swap, Ctrl-C waits: stopping half-way would leave no Oatcake.
+    trap '' INT TERM
     OLD=""
     if [ -d "$DEST" ]; then
         OLD="$DEST_DIR/.Oatcake-old-$$.app"
@@ -159,6 +163,7 @@ main() {
         [ -z "$OLD" ] || mv "$OLD" "$DEST"
         die "installing into $DEST_DIR failed; the previous copy was put back."
     fi
+    trap 'exit 130' INT TERM
     touch "$DEST"
     /usr/bin/open "$DEST"
 

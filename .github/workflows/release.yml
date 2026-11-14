@@ -106,6 +106,15 @@ jobs:
             esac
           done
 
+      # install.sh names the certificate it accepts. It has to be the one this was signed with, or
+      # the installer published with this release would turn the release away.
+      - name: Check install.sh accepts this build
+        run: |
+          certificate="$(sed -n "s/^ *CERTIFICATE='\(.*\)'$/\1/p" install.sh)"
+          test -n "$certificate"
+          codesign --verify --deep --strict -R "=identifier \"local.oatcake\" and $certificate" build/Oatcake.app
+          codesign --verify --deep --strict -R "=identifier \"local.oatcake.recorder\" and $certificate" build/Oatcake.app/Contents/Resources/OatcakeRecorder.app
+
       # ditto keeps the code signatures intact.
       - name: Zip
         run: |

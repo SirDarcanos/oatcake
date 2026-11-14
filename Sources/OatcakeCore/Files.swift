@@ -104,8 +104,14 @@ public func readText(_ url: URL) -> String {
 @discardableResult
 func keepUnreadable(_ file: URL) -> URL {
     let kept = file.deletingPathExtension().appendingPathExtension("unreadable").appendingPathExtension(file.pathExtension)
-    try? FileManager.default.removeItem(at: kept)
-    try? FileManager.default.copyItem(at: file, to: kept)
+    // The same unreadable file is met again every time it's read, until something replaces it: it's kept once.
+    if let before = try? Data(contentsOf: kept), let now = try? Data(contentsOf: file), before == now { return kept }
+    // Copied beside it and then renamed over the earlier kept copy, so a copy that fails loses neither.
+    let arriving = kept.appendingPathExtension("arriving")
+    try? FileManager.default.removeItem(at: arriving)
+    if (try? FileManager.default.copyItem(at: file, to: arriving)) != nil, rename(arriving.path, kept.path) != 0 {
+        try? FileManager.default.removeItem(at: arriving)
+    }
     return kept
 }
 

@@ -128,6 +128,12 @@ public enum Recordings {
         tryJSON(RecorderStatus.self, rec.dir.appendingPathComponent(RecorderFile.status)) ?? RecorderStatus(state: .starting)
     }
 
+    /// The recording is being stopped or thrown away before its recorder got going: a recorder that
+    /// asks about it from now on is told no, and goes away.
+    public static func cancelStart(_ rec: Recording) {
+        door.forget(rec.dir)
+    }
+
     /// Says that this copy of Oatcake is looking after a recording (a new one, or one picked up again
     /// at launch). The recorder stops by itself once the process named here has been gone ten minutes.
     public static func adopt(_ rec: Recording) {

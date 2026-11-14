@@ -9,7 +9,11 @@ import RecorderContract
 // Sendable by its lock: recorders are answered on a thread of the door's own.
 public final class RecorderDoor: @unchecked Sendable {
     private let lock = NSLock()
-    private var wanted = Set<String>()
+    /// Folders a recorder is expected to ask about, and since when.
+    private var wanted: [String: Date] = [:]
+    /// A recorder asks within moments of being launched. A yes that nobody has collected by then
+    /// (the recorder never started) isn't left standing.
+    static let patience: TimeInterval = 60
     private var listening: (fd: Int32, path: String)?
     private let directory: URL
 
@@ -28,7 +32,7 @@ public final class RecorderDoor: @unchecked Sendable {
     /// The next recorder to ask about this folder is told yes. Returns the socket to ask at.
     public func expect(_ dir: URL) throws -> String {
         try lock.withLock {
-            wanted.insert(dir.standardizedFileURL.path)
+            wanted[dir.standardizedFileURL.path] = Date()
             if let listening { return listening.path }
             let path = directory.appendingPathComponent("oatcake-\(getpid())-\(UUID().uuidString.prefix(8)).sock").path
             let fd = try Self.listen(at: path)
@@ -38,6 +42,8 @@ public final class RecorderDoor: @unchecked Sendable {
                     let connection = accept(fd, nil, nil)
                     if connection < 0 {
                         if errno == EINTR { continue }
+                        // The socket is no use any more: the next recording gets a new one.
+                        self?.stopListening(on: fd)
                         return
                     }
                     guard let self else {
@@ -53,7 +59,16 @@ public final class RecorderDoor: @unchecked Sendable {
 
     /// The recorder never started: one asking about this folder is told no again.
     public func forget(_ dir: URL) {
-        lock.withLock { _ = wanted.remove(dir.standardizedFileURL.path) }
+        lock.withLock { _ = wanted.removeValue(forKey: dir.standardizedFileURL.path) }
+    }
+
+    private func stopListening(on fd: Int32) {
+        lock.withLock {
+            guard listening?.fd == fd, let path = listening?.path else { return }
+            close(fd)
+            unlink(path)
+            listening = nil
+        }
     }
 
     private func answer(_ connection: Int32) {
@@ -71,7 +86,10 @@ public final class RecorderDoor: @unchecked Sendable {
         }
         let asked = String(decoding: question, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         // One yes for each recording: a second recorder asking about the same folder is told no.
-        let yes = !asked.isEmpty && lock.withLock { wanted.remove(URL(fileURLWithPath: asked).standardizedFileURL.path) != nil }
+        let yes = !asked.isEmpty && lock.withLock {
+            let since = wanted.removeValue(forKey: URL(fileURLWithPath: asked).standardizedFileURL.path)
+            return since.map { Date().timeIntervalSince($0) <= Self.patience } ?? false
+        }
         let reply = Array(((yes ? RecorderGate.yes : RecorderGate.no) + "\n").utf8)
         _ = reply.withUnsafeBytes { write(connection, $0.baseAddress, $0.count) }
     }
