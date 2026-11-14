@@ -54,7 +54,7 @@ struct SettingsView: View {
             }
             Toggle(isOn: bind(\.autoStop)) {
                 Text("Stop recording when the call ends")
-                Text("Once the calling app has let go of your microphone and the call audio has been quiet for 15 seconds.")
+                Text("Once the calling app has let go of your microphone and the call audio has been quiet for 15 seconds, Oatcake says the call seems to have ended. It stops recording 30 seconds later, unless you choose Keep recording or the call comes back.")
             }
         } header: {
             Text("Calls")

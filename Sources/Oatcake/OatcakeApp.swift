@@ -76,14 +76,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             MainActor.assumeIsolated {
                 if !NSApp.windows.contains(where: { $0.identifier?.rawValue == "main" && $0.isVisible }) { self.model.showWindow() }
+                // Settings that couldn't be read: Oatcake is on its defaults, and says so once the window is up.
+                if let problem = self.model.takeConfigProblem() {
+                    let alert = NSAlert()
+                    alert.messageText = "Oatcake’s settings couldn’t be read"
+                    alert.informativeText = problem
+                    alert.runModal()
+                }
             }
         }
     }
 
     /// Closing the window quits, unless a call is being recorded or the menu bar is showing your
-    /// next call: then Oatcake stays in the menu bar (its menu reopens the window, or quits).
+    /// next call: then Oatcake stays in the menu bar (its menu reopens the window, or quits). Nor
+    /// does it quit under work that's still going: a call being analysed, a summary being written,
+    /// an import, or a model on its way down. The Dock icon brings the window back.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        MainActor.assumeIsolated { !model.isRecording && !model.showsNextCallInMenuBar }
+        MainActor.assumeIsolated { !model.isRecording && !model.showsNextCallInMenuBar && !model.hasWorkInFlight }
+    }
+
+    /// Quitting asks first when it would end a recording or interrupt work that's under way.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        MainActor.assumeIsolated {
+            guard let question = model.quitQuestion else { return .terminateNow }
+            let alert = NSAlert()
+            alert.messageText = question.title
+            alert.informativeText = question.text
+            alert.addButton(withTitle: question.ok)
+            alert.addButton(withTitle: "Cancel")
+            NSApp.activate()
+            return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+        }
     }
 
     /// Clicking the Dock icon while Oatcake is only in the menu bar brings its window back.
@@ -113,7 +136,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
             return
         }
-        guard let event = Reminders.event(from: response) else { return }
+        // "The call seems to have ended": its button keeps the recording going; clicking it shows the call's notes.
+        if response.notification.request.content.categoryIdentifier == Reminders.stopCategory {
+            await MainActor.run {
+                if response.actionIdentifier == Reminders.keepAction {
+                    model.keepRecording()
+                } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+                    model.showWindow()
+                    if model.live != nil { model.selection = .live }
+                }
+            }
+            return
+        }
+        guard let event = Reminders.event(from: response) else {
+            // Anything else Oatcake says about a recording: clicking it opens Oatcake.
+            if response.actionIdentifier == UNNotificationDefaultActionIdentifier { await MainActor.run { model.showWindow() } }
+            return
+        }
         await MainActor.run {
             if response.actionIdentifier == Reminders.startAction {
                 model.startFromEvent(event)

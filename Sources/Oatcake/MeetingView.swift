@@ -68,7 +68,11 @@ struct MeetingView: View {
             finding = true
             findFocused = true
         }
-        .onDisappear { flush() }
+        .onDisappear {
+            flush()
+            // Said while you're here; it isn't kept.
+            model.todoProblems.removeValue(forKey: path)
+        }
         .background {
             // ⌘1–⌘3 switch tabs.
             ForEach(Array(MeetingTab.allCases.enumerated()), id: \.offset) { i, t in
@@ -326,19 +330,29 @@ struct MeetingView: View {
             ForEach(tab == .summary ? [FileKey.todos, .summary] : [tab == .transcript ? .transcript : .notes], id: \.self) { key in
                 VStack(alignment: .leading, spacing: 6) {
                     Label("\(folderPath(path)) › \(key.file.rawValue)", systemImage: "doc.text").font(.caption).foregroundStyle(.secondary)
-                    TextEditor(text: Binding(get: { files[key] ?? "" }, set: { write(key, $0) }))
-                        .font(.system(size: 12.5, design: .monospaced))
-                        .scrollDisabled(true)
-                        .frame(minHeight: key == .todos ? 70 : 300)
-                        .padding(8)
-                        .background(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.line))
-                        .overlay(alignment: .topLeading) {
-                            if key == .todos && (files[key] ?? "").isEmpty {
-                                Text("- [ ] What to do — Owner — due Fri, Oct 30 — [12:34]")
-                                    .font(.system(size: 12.5, design: .monospaced)).foregroundStyle(.tertiary)
-                                    .padding(.horizontal, 13).padding(.vertical, 8).allowsHitTesting(false)
+                    // While the model is writing these two files they aren't for typing in: what's typed
+                    // and what's written would overwrite each other.
+                    if model.summarising.contains(path), key == .summary || key == .todos {
+                        Text("The summary is being written. This can be edited once it’s here.")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: key == .todos ? 70 : 120, alignment: .topLeading)
+                            .padding(8)
+                            .background(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.line))
+                    } else {
+                        TextEditor(text: Binding(get: { files[key] ?? "" }, set: { write(key, $0) }))
+                            .font(.system(size: 12.5, design: .monospaced))
+                            .scrollDisabled(true)
+                            .frame(minHeight: key == .todos ? 70 : 300)
+                            .padding(8)
+                            .background(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.line))
+                            .overlay(alignment: .topLeading) {
+                                if key == .todos && (files[key] ?? "").isEmpty {
+                                    Text("- [ ] What to do — Owner — due Fri, Oct 30 — [12:34]")
+                                        .font(.system(size: 12.5, design: .monospaced)).foregroundStyle(.tertiary)
+                                        .padding(.horizontal, 13).padding(.vertical, 8).allowsHitTesting(false)
+                                }
                             }
-                        }
+                    }
                 }
             }
         }
@@ -350,6 +364,10 @@ struct MeetingView: View {
         let open = todos.filter { !$0.done }.count
         let summary = forReading(files[.summary] ?? "")
         return VStack(alignment: .leading, spacing: 0) {
+            // The summary was written but the to-dos couldn't be read from the model's reply.
+            if let problem = model.todoProblems[path] {
+                Notice(tone: .amber) { Text(problem) }.padding(.bottom, 16)
+            }
             VStack(alignment: .leading, spacing: 8) {
                 // No to-dos yet: just the field to add one.
                 if !todos.isEmpty { SectionLabel(text: "To-dos\(open > 0 ? " · \(open) open" : "")") }

@@ -156,13 +156,23 @@ struct SidebarView: View {
     // MARK: Rows
 
     private func liveRow(_ rec: Recording) -> some View {
-        let starting = model.status.state != .recording
+        // What's true of it: on its way up, recording, or not recording at all.
+        let state = model.status.state
+        let failed = model.recorderFailure != nil
+        let recording = state == .recording && !failed
+        let label = failed ? "Couldn’t record" : state == .starting ? "Starting…" : recording ? "Recording · \(clock(model.status.elapsed ?? 0))" : "Recording stopped"
         return HStack(spacing: 9) {
-            if starting { Circle().fill(.secondary).frame(width: 7, height: 7) } else { RecDot() }
+            if recording {
+                RecDot()
+            } else if failed {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).font(.caption)
+            } else {
+                Circle().fill(.secondary).frame(width: 7, height: 7)
+            }
             VStack(alignment: .leading, spacing: 1) {
                 Text(rec.title).lineLimit(1)
-                Text(starting ? "Starting…" : "Recording · \(clock(model.status.elapsed ?? 0))")
-                    .font(.caption).foregroundStyle(starting ? AnyShapeStyle(.secondary) : AnyShapeStyle(.red)).monospacedDigit()
+                Text(label)
+                    .font(.caption).foregroundStyle(recording || failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary)).monospacedDigit()
             }
         }
     }

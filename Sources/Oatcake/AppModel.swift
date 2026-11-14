@@ -99,6 +99,18 @@ final class AppModel {
     /// sidebar takes it, which is after the window has opened if it was closed.
     var wantsNewFolder = false
     var status = RecorderStatus(state: .starting)
+    /// Why the call that's "live" isn't being recorded at all: the recorder never started. The live
+    /// screen stays, saying so, until it's closed.
+    var recorderFailure: String?
+    /// Since when the microphone, and the call audio, have had nothing in them; nil while there's sound.
+    var micQuietSince: Date?
+    var callQuietSince: Date?
+    /// When the recording will stop by itself because the call seems to have ended, once it has said so.
+    var stoppingAt: Date?
+    /// Why the notes typed during the call couldn't be saved, until a save works.
+    var liveNotesError: String?
+    /// Meetings whose to-dos couldn't be read from the model's reply, and why, by path.
+    var todoProblems: [String: String] = [:]
     var selection: Selection?
     /// The folder the middle column lists.
     var folder = ""
@@ -136,6 +148,18 @@ final class AppModel {
     private var callOffered = false
     private var callSeen = false
     private var callOverSince: Date?
+    /// Whether a calling app has the microphone right now, as of the last look.
+    private var callOnMic = false
+    /// Keep recording was chosen: this recording doesn't stop by itself any more.
+    private var keepsRecording = false
+    /// The recording is being stopped or cancelled, so the recorder going is expected.
+    private var endingLive = false
+    private var micQuietSaid = false
+    private var callQuietSaid = false
+    /// Why the settings couldn't be read at launch, until it has been shown.
+    private var configProblem: String?
+    /// One at a time: two clear-ups at once could both be writing the same meeting's audio.
+    private let tidying = DispatchQueue(label: "oatcake.tidy-saved", qos: .utility)
     private let menuBar = MenuBarItem()
     private var watcher: FolderWatcher?
     private var timers: [Timer] = []
@@ -148,20 +172,34 @@ final class AppModel {
     var openMainWindow: (() -> Void)?
 
     init() {
-        let config = Config.load()
+        let (config, problem) = Config.loadWithProblem()
         self.config = config
+        configProblem = problem
         meetings = Meetings(root: config.meetingsRoot)
+    }
+
+    /// Why the settings couldn't be read at launch, once: Oatcake is on its defaults, and should say so.
+    func takeConfigProblem() -> String? {
+        defer { configProblem = nil }
+        return configProblem
     }
 
     func start() {
         // Left by the Electron version: its secrets move into the Keychain, its speech models and
-        // Chromium caches go.
-        Secrets.migrateFromElectron()
+        // Chromium caches go. Once: after that there's nothing of its to find. (A secret that couldn't
+        // be moved stays in its file, and this is tried again at the next launch.)
+        if !UserDefaults.standard.bool(forKey: "electronCleanUpDone") {
+            Secrets.migrateFromElectron()
+            SpeechModels.removeOldModels()
+            try? FileManager.default.removeItem(at: Paths.data.appendingPathComponent("Chromium"))
+            if !FileManager.default.fileExists(atPath: Paths.data.appendingPathComponent("secrets.json").path) {
+                UserDefaults.standard.set(true, forKey: "electronCleanUpDone")
+            }
+        }
         Secrets.forgetRetired()
-        SpeechModels.removeOldModels()
         // A language model left running by a copy of Oatcake that didn't get to stop it.
         ModelServer.stopLeftover()
-        try? FileManager.default.removeItem(at: Paths.data.appendingPathComponent("Chromium"))
+        tidySavedRecordings()
 
         resumeRecordings()
         watchMeetings()
@@ -186,8 +224,17 @@ final class AppModel {
                 await ModelServer.shared.stopIfIdle(for: 600)
             }
         })
-        timers.append(Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in Task { @MainActor in self.checkCall() } })
-        menuBar.stop = { [weak self] in Task { @MainActor in await self?.stopLive() } }
+        timers.append(Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
+            Task { @MainActor in
+                self.checkRecorder()
+                self.checkCall()
+            }
+        })
+        // Stop asks first, as the window's Stop does: the window comes forward with the question.
+        menuBar.stop = { [weak self] in
+            self?.showWindow()
+            self?.confirmStop()
+        }
         menuBar.open = { [weak self] in self?.showWindow() }
         menuBar.record = { [weak self] in self?.newRecording() }
         menuBar.openEvent = { [weak self] event in self?.openEvent(event) }
@@ -283,6 +330,7 @@ final class AppModel {
         summarising = Set(summarising.map(remap))
         summaryJobs = summaryJobs.mapValues(remap)
         summaryErrors = Dictionary(summaryErrors.map { (remap($0.key), $0.value) }, uniquingKeysWith: { a, _ in a })
+        todoProblems = Dictionary(todoProblems.map { (remap($0.key), $0.value) }, uniquingKeysWith: { a, _ in a })
         switch selection {
         case .meeting(let p, let jump): selection = .meeting(remap(p), jump: jump)
         case .folder(let p): selection = .folder(remap(p))
@@ -528,10 +576,11 @@ final class AppModel {
                 let folder = try meetings.folderForEvent(title: event.title, recurring: event.seriesId != nil)
                 try startRecording(title: event.title, folder: folder, options: startOptions(event))
             } catch {
-                let alert = NSAlert()
-                alert.messageText = "Couldn't start recording"
-                alert.informativeText = error.localizedDescription
-                alert.runModal()
+                // Said in Oatcake's window and as a notification: the call's own window is in front by now,
+                // and an alert would sit behind it while the call went unrecorded.
+                showWindow()
+                toast(error.localizedDescription)
+                Reminders.say("Oatcake couldn’t start recording", error.localizedDescription, id: "start-failed")
                 return
             }
         }
@@ -589,11 +638,13 @@ final class AppModel {
         selection = .live
         callSeen = false
         callOverSince = nil
+        resetLiveState()
         statusTimer?.invalidate()
         statusTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
             Task { @MainActor in
                 guard let live = self.live else { return }
                 self.status = Recordings.status(live)
+                self.trackSilence()
                 self.updateMenuBar()
             }
         }
@@ -607,6 +658,8 @@ final class AppModel {
     private func resumeRecordings() {
         for rec in Recordings.list() where rec.state == .recording {
             if Recordings.isRunning(rec) {
+                // This copy of Oatcake is the one looking after it now.
+                Recordings.adopt(rec)
                 active[rec.id] = rec
                 goLive(rec)
             } else {
@@ -615,11 +668,20 @@ final class AppModel {
         }
     }
 
-    /// Asks the recorder to finish and waits for its meta.json; keeps whatever audio it captured if it had already stopped.
+    /// Asks the recorder to finish and waits for its meta.json; keeps whatever audio it captured if it
+    /// had already stopped. A recorder that hasn't finished within five seconds (stuck on an audio
+    /// device, say) is stopped outright, so the recording always goes on to be processed.
     private func stopRecorder(_ rec: Recording) async {
         Recordings.stop(rec)
-        for _ in 0..<50 where !FileManager.default.fileExists(atPath: rec.dir.appendingPathComponent("meta.json").path) {
+        let finished = { FileManager.default.fileExists(atPath: rec.dir.appendingPathComponent(RecorderFile.meta).path) }
+        for _ in 0..<50 where !finished() && Recordings.isRunning(rec) {
             try? await Task.sleep(for: .milliseconds(100))
+        }
+        if !finished(), Recordings.isRunning(rec) {
+            Recordings.kill(rec)
+            for _ in 0..<10 where Recordings.isRunning(rec) {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
         }
         Recordings.finishInterrupted(rec)
         active.removeValue(forKey: rec.id)
@@ -631,7 +693,93 @@ final class AppModel {
         statusTimer?.invalidate()
         statusTimer = nil
         status = RecorderStatus(state: .starting)
+        resetLiveState()
         updateMenuBar()
+    }
+
+    /// What's only true of one recording: a new one starts without it, and it goes when one ends.
+    private func resetLiveState() {
+        recorderFailure = nil
+        liveNotesError = nil
+        micQuietSince = nil
+        callQuietSince = nil
+        micQuietSaid = false
+        callQuietSaid = false
+        keepsRecording = false
+        withdrawStopWarning()
+    }
+
+    /// The call is over: on to processing it. If you were on its notes you go to its progress;
+    /// anywhere else, you stay there.
+    private func liveEnded(_ rec: Recording, watching: Bool) {
+        endLive()
+        progress[rec.id] = JobProgress(step: "Starting")
+        if watching || selection == .live { selection = .job(rec.id) }
+        refresh()
+    }
+
+    /**
+     * Every couple of seconds while a call is live: is the recorder still there? It stops by itself
+     * when the disk fills or Oatcake has been gone a while, it can crash, and it can fail to start
+     * (no microphone permission). Each of those is said, in Oatcake and as a notification, because
+     * you're probably looking at the call and not at Oatcake.
+     */
+    private func checkRecorder() {
+        guard let rec = live, !endingLive, recorderFailure == nil, !Recordings.isRunning(rec) else { return }
+        let status = Recordings.status(rec)
+        let finished = FileManager.default.fileExists(atPath: rec.dir.appendingPathComponent(RecorderFile.meta).path)
+        if finished || Recordings.hasAudio(rec) {
+            let watching = selection == .live
+            saveLiveNotes(rec.id)
+            // Without a meta.json it went mid-recording: one is written from the audio that's there.
+            Recordings.finishInterrupted(rec)
+            active.removeValue(forKey: rec.id)
+            liveEnded(rec, watching: watching)
+            if finished {
+                Reminders.say("Recording stopped", status.error ?? "The recorder stopped by itself. Oatcake is transcribing “\(rec.title)”.", id: "recorder-stopped")
+                toast("The recording stopped")
+            } else {
+                Reminders.say("Recording stopped unexpectedly",
+                              "The recorder quit part-way through “\(rec.title)”. What it captured is being transcribed. Start a new recording to carry on with the call.",
+                              id: "recorder-stopped")
+                toast("The recording stopped unexpectedly")
+            }
+            return
+        }
+        // Nothing was recorded. A recorder still on its way up isn't running yet either, so only a
+        // status that has moved on, or a quarter of a minute of nothing, counts as not having started.
+        guard status.state != .starting || Date().timeIntervalSince(rec.startedAt) > 15 else { return }
+        let why = status.state == .error ? status.error ?? "The recorder stopped." : "The recorder didn’t start."
+        recorderFailure = why
+        stopLiveTranscript()
+        updateMenuBar()
+        Reminders.say("Oatcake couldn’t start recording", why, id: "recorder-failed")
+    }
+
+    /// Silence: a working mic always picks up some room noise, and true silence means nothing arrives.
+    /// After half a minute of it there's a notification, once for each quiet spell; the live screen
+    /// says so too.
+    private func trackSilence() {
+        guard status.state == .recording, recorderFailure == nil else { return }
+        let now = Date()
+        let micQuiet = status.micDevice != nil && (status.micLevel ?? 0) < 0.001
+        let callQuiet = (status.systemLevel ?? 0) < 0.001
+        let mic = micQuiet ? (micQuietSince ?? now) : nil
+        let call = callQuiet ? (callQuietSince ?? now) : nil
+        if mic != micQuietSince { micQuietSince = mic }
+        if call != callQuietSince { callQuietSince = call }
+        if !micQuiet { micQuietSaid = false }
+        if !callQuiet { callQuietSaid = false }
+        if let mic, now.timeIntervalSince(mic) >= 30, !micQuietSaid {
+            micQuietSaid = true
+            Reminders.say("Your microphone has been silent for 30 seconds", "Check it isn’t muted, or pick another microphone in Oatcake.", id: "mic-quiet")
+        }
+        // Only while a calling app has the microphone: dictating notes on your own, there is no call audio to miss.
+        if let call, now.timeIntervalSince(call) >= 30, !callQuietSaid, callOnMic {
+            callQuietSaid = true
+            Reminders.say("No call audio for 30 seconds",
+                          "If people are talking, allow OatcakeRecorder in System Settings › Privacy & Security › Screen & System Audio Recording.", id: "call-quiet")
+        }
     }
 
     func confirmStop() {
@@ -644,20 +792,22 @@ final class AppModel {
     /// Stops the call being recorded and starts processing it. If you're on its notes you go to its
     /// progress; anywhere else, you stay there.
     func stopLive() async {
-        guard let rec = live else { return }
+        guard let rec = live, !endingLive else { return }
+        endingLive = true
+        defer { endingLive = false }
         let watching = selection == .live
         saveLiveNotes(rec.id)
         await stopRecorder(rec)
-        endLive()
-        progress[rec.id] = JobProgress(step: "Starting")
-        if watching || selection == .live { selection = .job(rec.id) }
-        refresh()
+        liveEnded(rec, watching: watching)
     }
 
-    /// Cancel before any audio arrived: stop the recorder and throw the recording away.
+    /// Cancel before any audio arrived (or Close, when the recorder never started): stop the recorder
+    /// and throw the recording away.
     func cancelRecording(hasNotes: Bool) {
         let cancel = { [self] in
-            guard let rec = live else { return }
+            guard let rec = live, !endingLive else { return }
+            endingLive = true
+            defer { endingLive = false }
             await stopRecorder(rec)
             try Recordings.discard(rec.id)
             liveNotes.removeValue(forKey: rec.id)
@@ -687,7 +837,13 @@ final class AppModel {
 
     func saveLiveNotes(_ id: String) {
         guard let lines = liveNotes[id] else { return }
-        try? Recordings.saveNotes(id, lines.filter { !$0.text.trimmed.isEmpty }.map { Note(at: $0.prep ? nil : $0.at ?? 0, text: $0.text.trimmed) })
+        do {
+            try Recordings.saveNotes(id, lines.filter { !$0.text.trimmed.isEmpty }.map { Note(at: $0.prep ? nil : $0.at ?? 0, text: $0.text.trimmed) })
+            if live?.id == id, liveNotesError != nil { liveNotesError = nil }
+        } catch {
+            // Said on the live screen until a save works: notes that aren't on disk are lost if Oatcake goes.
+            if live?.id == id { liveNotesError = "Your notes couldn’t be saved: \(error.localizedDescription)" }
+        }
     }
 
     /// Saved 600 ms after the last keystroke.
@@ -703,23 +859,34 @@ final class AppModel {
 
     /// Every couple of seconds: is a calling app using the microphone? A call that starts while
     /// nothing is being recorded gets an offer to record it. A recording that has had a calling
-    /// app on the microphone stops once that app has let go and the call audio has been quiet for a
-    /// quarter of a minute; music still playing, or a call you're only muted on, keeps it going.
+    /// app on the microphone, once that app has let go and the call audio has been quiet for a
+    /// quarter of a minute, says the call seems to have ended and stops half a minute after that,
+    /// unless you choose Keep recording or the call comes back. Music still playing, or a call
+    /// you're only muted on, keeps it going.
     private func checkCall() {
-        guard config.callNotice || (config.autoStop && live != nil) else { return }
+        guard config.callNotice || live != nil else { return }
         let apps = CallDetector.appsOnCall()
+        callOnMic = !apps.isEmpty
         let now = Date()
         guard !apps.isEmpty else {
             callSince = nil
-            guard live != nil, callSeen, config.autoStop, status.state == .recording, (status.systemLevel ?? 0) < 0.001 else {
+            guard live != nil, callSeen, config.autoStop, !keepsRecording, recorderFailure == nil,
+                  status.state == .recording, (status.systemLevel ?? 0) < 0.001 else {
                 callOverSince = nil
+                withdrawStopWarning()
                 return
             }
             callOverSince = callOverSince ?? now
-            if now.timeIntervalSince(callOverSince!) >= 15 { callEnded() }
+            if let stoppingAt {
+                if now >= stoppingAt { callEnded() }
+            } else if now.timeIntervalSince(callOverSince!) >= 15 {
+                stoppingAt = now.addingTimeInterval(30)
+                Reminders.warnOfStop()
+            }
             return
         }
         callOverSince = nil
+        withdrawStopWarning()
         if callSince == nil {
             callSince = now
             callOffered = false
@@ -732,9 +899,24 @@ final class AppModel {
         }
     }
 
+    /// The call came back, or the warning has done its job: nothing is about to stop.
+    private func withdrawStopWarning() {
+        guard stoppingAt != nil else { return }
+        stoppingAt = nil
+        Reminders.withdrawStopWarning()
+    }
+
+    /// Keep recording, from the warning: this recording carries on until you stop it yourself.
+    func keepRecording() {
+        keepsRecording = true
+        callOverSince = nil
+        withdrawStopWarning()
+    }
+
     private func callEnded() {
         guard let rec = live else { return }
         callOverSince = nil
+        withdrawStopWarning()
         Task {
             await stopLive()
             Reminders.stopped(rec.title)
@@ -806,7 +988,8 @@ final class AppModel {
     var showsNextCallInMenuBar: Bool { config.menuBarNextCall && calendar != nil }
 
     func updateMenuBar() {
-        if let live {
+        // A call that couldn't be recorded isn't shown as one that is.
+        if let live, recorderFailure == nil {
             menuBar.show(.recording(title: live.title, elapsed: status.state == .recording ? status.elapsed ?? 0 : nil))
         } else if showsNextCallInMenuBar {
             let now = Date()
@@ -901,7 +1084,16 @@ final class AppModel {
         let path = try saveMeeting(config, rec, decisions: decisions, folder: folder, title: title)
         reviewDrafts.removeValue(forKey: rec.id)
         writeSummary(path)
+        tidySavedRecordings()
         return path
+    }
+
+    /// A saved recording's working folder has done its job: it goes, in the background, with any
+    /// audio that was kept moved into the meeting first. Also run at launch, for folders left by
+    /// earlier versions (which kept them) or by a copy of Oatcake that quit before it got to this.
+    private func tidySavedRecordings() {
+        let root = config.meetingsRoot
+        tidying.async { Recordings.tidySaved(meetingsRoot: root) }
     }
 
     /// Writes a saved meeting's summary and to-dos in the background: after every save, and from
@@ -910,14 +1102,18 @@ final class AppModel {
         guard !summarising.contains(path) else { return }
         summarising.insert(path)
         summaryErrors.removeValue(forKey: path)
+        todoProblems.removeValue(forKey: path)
         let job = UUID()
         summaryJobs[job] = path
         let config = config
         Task {
             do {
                 try await ensureModel()
-                let draft = try await OatcakeCore.draftSummary(config, meeting: path)
+                // Where the meeting is now: it may have been renamed or moved while the model downloaded.
+                let draft = try await OatcakeCore.draftSummary(config, meeting: summaryJobs[job] ?? path)
                 try OatcakeCore.writeSummary(draft, config: config, meeting: summaryJobs[job] ?? path)
+                // The summary is there, but its to-dos couldn't be read from what the model sent.
+                if let problem = draft.todoProblem { todoProblems[summaryJobs[job] ?? path] = problem }
             } catch {
                 summaryErrors[summaryJobs[job] ?? path] = error.localizedDescription
             }
@@ -1027,6 +1223,37 @@ final class AppModel {
         return (items.filter { !$0.todo.done }.count, items.filter { $0.isOverdue() }.count)
     }
 
+    /// Work that closing the window shouldn't end: anything an update waits for, and a model on its way down.
+    var hasWorkInFlight: Bool { busyReason != nil || !modelDownloadTasks.isEmpty }
+
+    /// What quitting now would interrupt, as a question to ask first; nil when it would interrupt
+    /// nothing. (The updater's own quit never gets here with one: it checks `busyReason`, which
+    /// covers the same things, just before it quits.)
+    var quitQuestion: (title: String, text: String, ok: String)? {
+        if let live, recorderFailure == nil {
+            return ("Stop recording and quit?",
+                    "Oatcake is recording “\(live.title)”. Quitting stops the recording. What’s been recorded so far is transcribed the next time you open Oatcake.",
+                    "Stop Recording and Quit")
+        }
+        var doing: [String] = []
+        var after: [String] = []
+        if !analysing.isEmpty {
+            doing.append("analysing a call")
+            after.append("The analysis starts again the next time you open Oatcake.")
+        }
+        if !summarising.isEmpty {
+            doing.append("writing a summary")
+            after.append("A summary that isn’t finished can be written later, with Write summary in its meeting.")
+        }
+        if let importing {
+            doing.append("importing from \(importing)")
+            after.append("Importing again carries on with the meetings that didn’t come in.")
+        }
+        guard !doing.isEmpty else { return nil }
+        let what = doing.count > 1 ? doing.dropLast().joined(separator: ", ") + " and " + doing.last! : doing[0]
+        return ("Quit Oatcake?", "Oatcake is \(what). \(after.joined(separator: " "))", "Quit")
+    }
+
     /// Why an update has to wait, if it does.
     var busyReason: String? {
         if !active.isEmpty { return "Oatcake is recording a call. Install the update after you stop." }
@@ -1077,12 +1304,44 @@ enum Reminders {
     static let callCategory = "call-noticed"
     static let recordAction = "record"
 
+    static let stopCategory = "call-ending"
+    static let keepAction = "keep"
+
     static func register() {
         let center = UNUserNotificationCenter.current()
         let start = UNNotificationAction(identifier: startAction, title: "Open call and start note taking", options: [.foreground])
         let record = UNNotificationAction(identifier: recordAction, title: "Start recording", options: [.foreground])
+        // Not in the foreground: keeping a recording going shouldn't take you away from the call.
+        let keep = UNNotificationAction(identifier: keepAction, title: "Keep recording", options: [])
         center.setNotificationCategories([UNNotificationCategory(identifier: category, actions: [start], intentIdentifiers: []),
-                                          UNNotificationCategory(identifier: callCategory, actions: [record], intentIdentifiers: [])])
+                                          UNNotificationCategory(identifier: callCategory, actions: [record], intentIdentifiers: []),
+                                          UNNotificationCategory(identifier: stopCategory, actions: [keep], intentIdentifiers: [])])
+    }
+
+    /// Something about the recording you'd want to know while looking at the call, not at Oatcake.
+    /// One with the same `id` replaces the one before it.
+    static func say(_ title: String, _ body: String, id: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        post(content, id: id)
+    }
+
+    /// The call seems to be over: recording stops in half a minute unless Keep recording is chosen.
+    static func warnOfStop() {
+        let content = UNMutableNotificationContent()
+        content.title = "The call seems to have ended"
+        content.body = "Recording stops in 30 seconds."
+        content.categoryIdentifier = stopCategory
+        content.sound = .default
+        post(content, id: stopCategory)
+    }
+
+    static func withdrawStopWarning() {
+        let center = UNUserNotificationCenter.current()
+        center.removeDeliveredNotifications(withIdentifiers: [stopCategory])
+        center.removePendingNotificationRequests(withIdentifiers: [stopCategory])
     }
 
     private static func post(_ content: UNMutableNotificationContent, id: String) {
