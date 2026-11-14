@@ -214,10 +214,10 @@ public enum Update {
     """#
 
     /// Starts the swap; the caller quits straight after. Its output goes to update.log in Oatcake's data folder.
-    public static func swapAfterExit(installed: URL, staged: URL) throws {
-        try FileManager.default.createDirectory(at: Paths.data, withIntermediateDirectories: true)
-        if !FileManager.default.exists(Paths.updateLog) { FileManager.default.createFile(atPath: Paths.updateLog.path, contents: nil) }
-        let log = try FileHandle(forWritingTo: Paths.updateLog)
+    public static func swapAfterExit(installed: URL, staged: URL, log file: URL = Paths.updateLog) throws {
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if !FileManager.default.exists(file) { FileManager.default.createFile(atPath: file.path, contents: nil) }
+        let log = try FileHandle(forWritingTo: file)
         log.seekToEndOfFile()
         let process = Process()
         // A child process outlives Oatcake: it's handed to launchd when Oatcake exits.

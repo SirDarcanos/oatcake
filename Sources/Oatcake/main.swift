@@ -6,7 +6,7 @@
 import Foundation
 import OatcakeCore
 
-if let flag = CommandLine.arguments.firstIndex(of: "--analyse"), flag + 1 < CommandLine.arguments.count {
+if let flag = CommandLine.arguments.firstIndex(of: HelperMode.analyse), flag + 1 < CommandLine.arguments.count {
     let dir = URL(fileURLWithPath: CommandLine.arguments[flag + 1], isDirectory: true)
     let output = FileHandle.standardOutput
     let post = { (progress: AnalysisProgress) in
@@ -23,7 +23,7 @@ if let flag = CommandLine.arguments.firstIndex(of: "--analyse"), flag + 1 < Comm
         }
     }
     dispatchMain()
-} else if let flag = CommandLine.arguments.firstIndex(of: "--live"), flag + 1 < CommandLine.arguments.count {
+} else if let flag = CommandLine.arguments.firstIndex(of: HelperMode.live), flag + 1 < CommandLine.arguments.count {
     // The live transcript of a recording still being made: one JSON line per finished stretch of speech.
     let dir = URL(fileURLWithPath: CommandLine.arguments[flag + 1], isDirectory: true)
     let output = FileHandle.standardOutput

@@ -84,8 +84,8 @@ public let analysisSteps = [
     "Suggesting names from the conversation",
 ]
 
-public func analyse(_ dir: URL, report: @escaping (AnalysisProgress) -> Void) async throws {
-    let config = Config.load()
+public func analyse(_ dir: URL, config: Config = Config.load(), voiceprints file: URL = Paths.voiceprints,
+                    report: @escaping (AnalysisProgress) -> Void) async throws {
     let call = try readJSON(CallInfo.self, dir.appendingPathComponent("call.json"))
     let meta = try readJSON(RecorderMeta.self, dir.appendingPathComponent("meta.json"))
 
@@ -116,7 +116,7 @@ public func analyse(_ dir: URL, report: @escaping (AnalysisProgress) -> Void) as
     report(.init(step: analysisSteps[3]))
     let clips = dir.appendingPathComponent("clips", isDirectory: true)
     try FileManager.default.createDirectory(at: clips, withIntermediateDirectories: true)
-    let voiceprints = Voiceprints.load()
+    let voiceprints = Voiceprints.load(file)
     let byLetter = Dictionary(letters.map { ($0.value, $0.key) }, uniquingKeysWith: { a, _ in a })
     // From the lines rather than the turns: when diarisation finds nothing, the call audio is all
     // speaker "A", and it still needs a card in review (or its lines would be dropped on save).
@@ -156,11 +156,17 @@ private func clipsFor(_ lines: [Line], prefix: String, audio: [Float], offset: D
     }
 }
 
+/// A, B … Z, then AA, AB …: a call with more than 26 voices doesn't give two of them the same letter.
+func speakerLetter(_ index: Int) -> String {
+    let letter = String(UnicodeScalar(UInt8(65 + index % 26)))
+    return index < 26 ? letter : speakerLetter(index / 26 - 1) + letter
+}
+
 /// Letters by order of first appearance: A speaks first.
 func speakerLetters(_ turns: [Turn]) -> [String: String] {
     var letters: [String: String] = [:]
     for turn in turns.sorted(by: { $0.start < $1.start }) where letters[turn.speaker] == nil {
-        letters[turn.speaker] = String(UnicodeScalar(UInt8(65 + letters.count % 26)))
+        letters[turn.speaker] = speakerLetter(letters.count)
     }
     return letters
 }
@@ -315,11 +321,11 @@ func namesIn(_ reply: String, unknown: [String], transcript: String, myName: Str
         let id = (guess.speaker ?? "").replacingOccurrences(of: #"(?i)^speaker\s+"#, with: "", options: .regularExpression).trimmed.uppercased()
         guard unknown.contains(id), names[id] == nil, let name = guess.name?.trimmed, !name.isEmpty else { continue }
         let folded = foldedForSearch(name)
-        guard !["null", "none", "unknown", "n/a", "full name", "the name"].contains(folded), !folded.hasPrefix("speaker"),
+        guard !wordsForNothing.contains(folded), !["full name", "the name"].contains(folded), !folded.hasPrefix("speaker"),
               !Set(folded.split(separator: " ")).isSubset(of: mine),
               !words(name).isEmpty, words(name).allSatisfy(heard.contains) else { continue }
         let quote = guess.quote?.trimmed ?? ""
-        names[id] = Suggestion(name: name, how: .transcript, detail: ["null", "none"].contains(quote.lowercased()) ? "" : quote)
+        names[id] = Suggestion(name: name, how: .transcript, detail: wordsForNothing.contains(quote.lowercased()) ? "" : quote)
     }
     return names
 }

@@ -1,4 +1,4 @@
-// One call's working folder in Paths.recordings: call.json, the recorder's audio and status,
+// One call's working folder in the recordings folder (Paths.recordings, or wherever a test says): call.json, the recorder's audio and status,
 // meta.json, notes.json, analysis.json, clips/, saved.json. It's there until the call has been saved
 // as a meeting; then it goes (tidySaved), since everything the meeting needs is in its own folder.
 
@@ -94,19 +94,20 @@ public enum Recordings {
         }
     }
 
-    public static func start(title: String, folder: String, micUid: String?, options: StartOptions = StartOptions()) throws -> Recording {
+    public static func start(title: String, folder: String, micUid: String?, options: StartOptions = StartOptions(),
+                             recordings: URL = Paths.recordings) throws -> Recording {
         guard FileManager.default.exists(recorderApp) else {
             throw OatcakeError("The recorder isn't built. Run Scripts/bundle.sh.")
         }
         let startedAt = Date()
         let id = isoString(startedAt).replacingOccurrences(of: ":", with: "-").replacingOccurrences(of: ".", with: "-")
-        let dir = Paths.recordings.appendingPathComponent(id, isDirectory: true)
+        let dir = recordings.appendingPathComponent(id, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try writeAtomic(dir.appendingPathComponent("call.json"),
                         try encodeJSON(CallInfo(title: title, folder: folder, startedAt: isoString(startedAt), eventId: options.eventId,
                                                 attendees: options.attendees.isEmpty ? nil : options.attendees)))
         let prep = options.prep.map(\.trimmed).filter { !$0.isEmpty }
-        if !prep.isEmpty { try saveNotes(id, prep.map { Note(at: nil, text: $0) }) }
+        if !prep.isEmpty { try saveNotes(id, prep.map { Note(at: nil, text: $0) }, recordings: recordings) }
         try setMic(dir, uid: micUid)
         try writeAtomic(dir.appendingPathComponent(RecorderFile.owner), String(getpid()))
         // The recorder only records for Oatcake: it asks at this socket whether this folder's recording is wanted.
@@ -135,12 +136,7 @@ public enum Recordings {
 
     /// The recorder's process ID, while that process is still running and is our recorder.
     static func recorderPid(_ rec: Recording) -> pid_t? {
-        guard let text = try? String(contentsOf: rec.dir.appendingPathComponent(RecorderFile.pid), encoding: .utf8),
-              let pid = pid_t(text.trimmed), pid > 1 else { return nil }
-        // A crashed recorder leaves its pid file behind, and macOS reuses process IDs.
-        var path = [CChar](repeating: 0, count: 4096)
-        guard proc_pidpath(pid, &path, UInt32(path.count)) > 0, String(cString: path).hasSuffix("/oatcake-recorder") else { return nil }
-        return pid
+        runningPid(in: rec.dir.appendingPathComponent(RecorderFile.pid), program: "oatcake-recorder")
     }
 
     public static func isRunning(_ rec: Recording) -> Bool { recorderPid(rec) != nil }
@@ -158,7 +154,7 @@ public enum Recordings {
     /// Whether the recorder captured anything at all.
     public static func hasAudio(_ rec: Recording) -> Bool { audioTracks.contains { size(rec.dir.appendingPathComponent($0)) > 0 } }
 
-    private static let audioTracks = ["mic.pcm", "system.pcm"]
+    private static let audioTracks = [RecorderFile.micTrack, RecorderFile.systemTrack]
 
     private static func size(_ file: URL) -> Int64 {
         ((try? FileManager.default.attributesOfItem(atPath: file.path))?[.size] as? Int64) ?? 0
@@ -171,50 +167,53 @@ public enum Recordings {
      */
     public static func finishInterrupted(_ rec: Recording) {
         let fm = FileManager.default
-        guard !fm.exists(rec.dir.appendingPathComponent("meta.json")), !isRunning(rec) else { return }
-        let modified = ["mic.pcm", "system.pcm", "status.json"]
+        guard !fm.exists(rec.dir.appendingPathComponent(RecorderFile.meta)), !isRunning(rec) else { return }
+        let modified = (audioTracks + [RecorderFile.status])
             .compactMap { (try? fm.attributesOfItem(atPath: rec.dir.appendingPathComponent($0).path))?[.modificationDate] as? Date }
             .max() ?? rec.startedAt
         // The tracks are taken as starting together: their offsets are unknown.
         let meta = RecorderMeta(startedAt: isoString(rec.startedAt), endedAt: isoString(modified),
                                 micOffset: 0, systemOffset: 0, interrupted: true)
-        if let text = try? encodeJSON(meta) { try? writeAtomic(rec.dir.appendingPathComponent("meta.json"), text) }
-        try? fm.removeItem(at: rec.dir.appendingPathComponent("recorder.pid"))
+        if let text = try? encodeJSON(meta) { try? writeAtomic(rec.dir.appendingPathComponent(RecorderFile.meta), text) }
+        try? fm.removeItem(at: rec.dir.appendingPathComponent(RecorderFile.pid))
     }
 
-    public static func list() -> [Recording] {
+    public static func list(recordings: URL = Paths.recordings) -> [Recording] {
         let fm = FileManager.default
-        guard let ids = try? fm.contentsOfDirectory(atPath: Paths.recordings.path) else { return [] }
+        guard let ids = try? fm.contentsOfDirectory(atPath: recordings.path) else { return [] }
         return ids.sorted().reversed().compactMap { id -> Recording? in
-            let dir = Paths.recordings.appendingPathComponent(id, isDirectory: true)
+            let dir = recordings.appendingPathComponent(id, isDirectory: true)
             // One damaged file shouldn't hide every other recording.
             guard let call = tryJSON(CallInfo.self, dir.appendingPathComponent("call.json")) else { return nil }
             let has = { fm.exists(dir.appendingPathComponent($0)) }
-            let state: Recording.State = has("saved.json") ? .saved : has("analysis.json") ? .processed : has("meta.json") ? .recorded : .recording
-            let endedAt = tryJSON(RecorderMeta.self, dir.appendingPathComponent("meta.json")).flatMap { parseISO($0.endedAt) }
+            let state: Recording.State = has("saved.json") ? .saved : has("analysis.json") ? .processed : has(RecorderFile.meta) ? .recorded : .recording
+            let endedAt = tryJSON(RecorderMeta.self, dir.appendingPathComponent(RecorderFile.meta)).flatMap { parseISO($0.endedAt) }
             return Recording(id: id, dir: dir, title: call.title, folder: call.folder, eventId: call.eventId, attendees: call.attendees,
                              startedAt: parseISO(call.startedAt) ?? Date(), endedAt: endedAt, state: state)
         }
     }
 
-    public static func get(_ id: String) -> Recording? { list().first { $0.id == id } }
+    public static func get(_ id: String, recordings: URL = Paths.recordings) -> Recording? { list(recordings: recordings).first { $0.id == id } }
 
     /// Recording IDs are their start time, e.g. 2026-11-05T22-35-10-123Z. Anything else is refused.
-    static func dir(_ id: String) throws -> URL {
+    static func dir(_ id: String, recordings: URL = Paths.recordings) throws -> URL {
         guard id.range(of: #"^\d{4}-\d\d-\d\dT[\dZ-]+$"#, options: .regularExpression) != nil else { throw OatcakeError("Recording not found") }
-        return Paths.recordings.appendingPathComponent(id, isDirectory: true)
+        return recordings.appendingPathComponent(id, isDirectory: true)
     }
 
-    public static func saveNotes(_ id: String, _ notes: [Note]) throws {
-        try writeAtomic(try dir(id).appendingPathComponent("notes.json"), try encodeJSON(notes))
+    public static func saveNotes(_ id: String, _ notes: [Note], recordings: URL = Paths.recordings) throws {
+        try writeAtomic(try dir(id, recordings: recordings).appendingPathComponent("notes.json"), try encodeJSON(notes))
     }
 
-    public static func loadNotes(_ id: String) -> [Note] {
-        (try? dir(id)).flatMap { tryJSON([Note].self, $0.appendingPathComponent("notes.json")) } ?? []
+    public static func loadNotes(_ id: String, recordings: URL = Paths.recordings) -> [Note] {
+        (try? dir(id, recordings: recordings)).map(notes(in:)) ?? []
     }
 
-    public static func discard(_ id: String) throws {
-        try FileManager.default.removeItem(at: try dir(id))
+    /// The notes typed for the recording whose folder this is.
+    static func notes(in dir: URL) -> [Note] { tryJSON([Note].self, dir.appendingPathComponent("notes.json")) ?? [] }
+
+    public static func discard(_ id: String, recordings: URL = Paths.recordings) throws {
+        try FileManager.default.removeItem(at: try dir(id, recordings: recordings))
     }
 
     static func deleteAudio(_ rec: Recording) {

@@ -6,6 +6,29 @@ import Foundation
 /// What a local model's address gets when it isn't local (settings from a version that allowed any address).
 public let notLocalMessage = "A model server of your own has to be on this Mac or your own network, and this address isn’t. Change it in Settings › Summaries, or choose one of Oatcake’s own models there."
 
+/**
+ * Whether a model server's address is on this Mac or your own network: localhost, a name with no
+ * dots or ending in .local, or a private or link-local IP address. Oatcake sends transcripts to a
+ * local model only at an address like that, so one can't be pointed at somebody else's service.
+ */
+public func isLocalEndpoint(_ address: String) -> Bool {
+    guard let url = URL(string: address.trimmed), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+          let host = url.host(percentEncoded: false)?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]")), !host.isEmpty else { return false }
+    if host.contains(":") {
+        // IPv6: this Mac, link-local, or a unique local address.
+        return host == "::1" || host.hasPrefix("fe8") || host.hasPrefix("fe9") || host.hasPrefix("fea") || host.hasPrefix("feb")
+            || host.hasPrefix("fc") || host.hasPrefix("fd")
+    }
+    let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+    if parts.count == 4, let n = Optional(parts.compactMap { UInt8($0) }), n.count == 4 {
+        return n[0] == 127 || n[0] == 10 || (n[0] == 172 && (16...31).contains(n[1])) || (n[0] == 192 && n[1] == 168) || (n[0] == 169 && n[1] == 254)
+    }
+    // A bare number is an address written another way (134744072 is 8.8.8.8), not a machine's name.
+    if UInt64(host) != nil || host.hasPrefix("0x") { return false }
+    // A name: this Mac, a machine named on your network, or a Bonjour name.
+    return host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local") || !host.contains(".")
+}
+
 /// One turn of a conversation with the model.
 public struct ChatMessage: Sendable, Equatable {
     public var role: String
@@ -41,8 +64,6 @@ public struct LocalChat: Sendable {
         self.key = key
         self.qwen = qwen
     }
-
-    public var label: String { "\(model) at \(baseUrl)" }
 
     private func request(_ path: String, timeout: TimeInterval) throws -> URLRequest {
         guard !baseUrl.trimmed.isEmpty, !model.trimmed.isEmpty else { throw OatcakeError("Set the endpoint and model in Settings first.") }
@@ -117,6 +138,9 @@ public struct LocalChat: Sendable {
     }
 }
 
+/// What a small model writes where it was asked to leave a value empty.
+let wordsForNothing: Set<String> = ["null", "none", "n/a", "unknown", "not stated", "not specified", "tbd"]
+
 let outOfRoomMessage = "The model ran out of room before it finished its reply. Trying again usually works."
 
 /// A reply without the model's reasoning, for servers that leave it in the text between <think> tags.
@@ -128,21 +152,23 @@ func withoutReasoning(_ reply: String) -> String {
  * Runs `work` with the model that's set in Settings, with room for a prompt of `tokens` tokens and
  * its reply. For one of Oatcake's own models this starts its server if it isn't running, with the
  * smallest window that fits (never more than this Mac has memory for), and keeps it as it is until
- * `work` is done. `work` is also told how many tokens the window holds.
+ * `work` is done. `work` is also told how many tokens the window holds. `server` is Oatcake's one
+ * server, except in tests.
  */
-public func withModel<T: Sendable>(_ config: LlmConfig, tokens: Int, _ work: (LocalChat, Int) async throws -> T) async throws -> T {
+public func withModel<T: Sendable>(_ config: LlmConfig, tokens: Int, server: ModelServer = .shared,
+                                    _ work: (LocalChat, Int) async throws -> T) async throws -> T {
     guard let model = LocalModels.find(config.model) else {
         // A server of your own decides its window; Qwen's native one is assumed.
         return try await work(LocalChat(baseUrl: config.own.baseUrl, model: config.own.model), LocalModels.nativeContext)
     }
     let context = min(LocalModels.context(forTokens: tokens), LocalModels.maxContext(model))
-    let chat = try await ModelServer.shared.lease(model, context: context)
+    let chat = try await server.lease(model, context: context)
     do {
         let result = try await work(chat, context)
-        await ModelServer.shared.release()
+        await server.release()
         return result
     } catch {
-        await ModelServer.shared.release()
+        await server.release()
         throw error
     }
 }
@@ -178,99 +204,4 @@ public func parseJsonObject<T: Decodable>(_ type: T.Type, _ text: String) throws
         throw OatcakeError("No JSON in model reply: \(text.prefix(200))")
     }
     return try JSONDecoder().decode(T.self, from: Data(text[start...end].utf8))
-}
-
-/// A child process with its input written and its output collected, without blocking a thread.
-public enum ChildProcess {
-    public struct Result: Sendable {
-        public var status: Int32
-        public var stdout: String
-        public var stderr: String
-    }
-
-    public static func run(_ executable: URL, _ arguments: [String], input: String? = nil, directory: URL? = nil,
-                           onStart: ((Process) -> Void)? = nil, onLine: (@Sendable (String) -> Void)? = nil) async throws -> Result {
-        let process = Process()
-        process.executableURL = executable
-        process.arguments = arguments
-        var environment = ShellEnvironment.childEnvironment()
-        if let directory {
-            process.currentDirectoryURL = directory
-            environment["PWD"] = directory.path
-        }
-        process.environment = environment
-        let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
-        process.standardInput = stdin
-        process.standardOutput = stdout
-        process.standardError = stderr
-
-        let collected = Collected()
-        stdout.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            if data.isEmpty { return }
-            collected.appendOut(data, onLine: onLine)
-        }
-        stderr.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            if !data.isEmpty { collected.appendErr(data) }
-        }
-        return try await withCheckedThrowingContinuation { continuation in
-            process.terminationHandler = { p in
-                stdout.fileHandleForReading.readabilityHandler = nil
-                stderr.fileHandleForReading.readabilityHandler = nil
-                // Whatever arrived after the last readability callback.
-                collected.appendOut(stdout.fileHandleForReading.readDataToEndOfFile(), onLine: onLine)
-                collected.appendErr(stderr.fileHandleForReading.readDataToEndOfFile())
-                collected.flush(onLine: onLine)
-                continuation.resume(returning: Result(status: p.terminationReason == .uncaughtSignal ? -p.terminationStatus : p.terminationStatus,
-                                                      stdout: collected.out, stderr: collected.err))
-            }
-            do {
-                try process.run()
-            } catch {
-                continuation.resume(throwing: error)
-                return
-            }
-            onStart?(process)
-            // On another thread: a long prompt can fill the pipe before the child starts reading.
-            DispatchQueue.global().async {
-                if let input { try? stdin.fileHandleForWriting.write(contentsOf: Data(input.utf8)) }
-                try? stdin.fileHandleForWriting.close()
-            }
-        }
-    }
-
-    private final class Collected: @unchecked Sendable {
-        private let lock = NSLock()
-        private var outData = Data()
-        private var errData = Data()
-        private var pending = Data()
-        var out: String { lock.withLock { String(decoding: outData, as: UTF8.self) } }
-        var err: String { lock.withLock { String(decoding: errData, as: UTF8.self) } }
-
-        func appendOut(_ data: Data, onLine: (@Sendable (String) -> Void)?) {
-            guard !data.isEmpty else { return }
-            var lines: [String] = []
-            lock.withLock {
-                outData.append(data)
-                guard onLine != nil else { return }
-                pending.append(data)
-                while let newline = pending.firstIndex(of: 0x0A) {
-                    lines.append(String(decoding: pending[pending.startIndex..<newline], as: UTF8.self))
-                    pending = Data(pending[pending.index(after: newline)...])
-                }
-            }
-            lines.forEach { onLine?($0) }
-        }
-
-        func appendErr(_ data: Data) { lock.withLock { errData.append(data) } }
-
-        func flush(onLine: (@Sendable (String) -> Void)?) {
-            let rest = lock.withLock { () -> String in
-                defer { pending = Data() }
-                return String(decoding: pending, as: UTF8.self)
-            }
-            if !rest.isEmpty { onLine?(rest) }
-        }
-    }
 }

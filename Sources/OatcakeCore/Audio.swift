@@ -6,9 +6,12 @@ public let sampleRate = recorderSampleRate
 /// Reads a raw 16 kHz mono PCM16 file into floats in [-1, 1].
 func readPcm(_ url: URL) -> [Float] {
     guard let data = try? Data(contentsOf: url, options: .alwaysMapped) else { return [] }
-    return data.withUnsafeBytes { raw in
-        raw.bindMemory(to: Int16.self).map { Float(Int16(littleEndian: $0)) / 32768 }
-    }
+    return floats(data)
+}
+
+/// PCM16 samples, little-endian, as floats in [-1, 1].
+private func floats(_ data: Data) -> [Float] {
+    data.withUnsafeBytes { raw in raw.bindMemory(to: Int16.self).map { Float(Int16(littleEndian: $0)) / 32768 } }
 }
 
 /// The samples of a raw PCM16 file from one sample onwards: what a recording still being written has gained since.
@@ -16,9 +19,7 @@ func readPcm(_ url: URL, fromSample: Int) -> [Float] {
     guard let handle = try? FileHandle(forReadingFrom: url) else { return [] }
     defer { try? handle.close() }
     guard (try? handle.seek(toOffset: UInt64(fromSample) * 2)) != nil, let data = try? handle.readToEnd() else { return [] }
-    return data.withUnsafeBytes { raw in
-        raw.bindMemory(to: Int16.self).map { Float(Int16(littleEndian: $0)) / 32768 }
-    }
+    return floats(data)
 }
 
 /// The samples between two times in seconds, clamped to the track.
@@ -57,9 +58,9 @@ func writeWav(_ url: URL, _ samples: ArraySlice<Float>) throws {
  * call isn't held in memory, and under another name until it's whole.
  */
 func exportAudio(recording dir: URL, to file: URL) throws {
-    let meta = tryJSON(RecorderMeta.self, dir.appendingPathComponent("meta.json"))
+    let meta = tryJSON(RecorderMeta.self, dir.appendingPathComponent(RecorderFile.meta))
     // Each track: where to read it, how many samples in it starts, and how many it has.
-    let tracks = [("mic.pcm", meta?.micOffset ?? 0), ("system.pcm", meta?.systemOffset ?? 0)].compactMap { name, offset -> (handle: FileHandle, lead: Int, samples: Int)? in
+    let tracks = [(RecorderFile.micTrack, meta?.micOffset ?? 0), (RecorderFile.systemTrack, meta?.systemOffset ?? 0)].compactMap { name, offset -> (handle: FileHandle, lead: Int, samples: Int)? in
         let url = dir.appendingPathComponent(name)
         guard let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int64, bytes >= 2,
               let handle = try? FileHandle(forReadingFrom: url) else { return nil }
@@ -88,9 +89,7 @@ func exportAudio(recording dir: URL, to file: URL) throws {
                 guard from < to else { continue }
                 try track.handle.seek(toOffset: UInt64(from - track.lead) * 2)
                 let data = try track.handle.read(upToCount: (to - from) * 2) ?? Data()
-                data.withUnsafeBytes { raw in
-                    for (i, sample) in raw.bindMemory(to: Int16.self).enumerated() { mixed[from - at + i] += Float(Int16(littleEndian: sample)) / 32768 }
-                }
+                for (i, sample) in floats(data).enumerated() { mixed[from - at + i] += sample }
             }
             // Two people talking at once can add up to more than full scale.
             for i in 0..<count { mixed[i] = max(-1, min(1, mixed[i])) }

@@ -155,24 +155,36 @@ final class Transcriber {
      * follows them) and says how many of the samples are dealt with. Speech still going at the end
      * is left for the next call, when more of it has arrived.
      */
-    func transcribeFinished(_ samples: [Float]) async throws -> (utterances: [Utterance], consumed: Int) {
+    func transcribeFinished(_ samples: [Float], last: Bool = false) async throws -> (utterances: [Utterance], consumed: Int) {
         let segments = try await vad.segmentSpeech(samples, config: segmentation)
-        let duration = Double(samples.count) / Double(sampleRate)
+        let (finished, consumed) = finishedSpeech(segments.map { ($0.startTime, $0.endTime) }, samples: samples.count, last: last)
         var utterances: [Utterance] = []
-        var consumed = 0
-        var speaking = false
-        for segment in segments {
-            if segment.endTime > duration - 0.6 {
-                // A little before it starts is kept, so the next call hears its beginning whole.
-                consumed = max(consumed, Int(segment.startTime * Double(sampleRate)) - sampleRate / 4)
-                speaking = true
-                break
-            }
+        for segment in segments.prefix(finished) {
             if let utterance = try await decode(samples, from: segment.startTime, to: segment.endTime) { utterances.append(utterance) }
-            consumed = min(samples.count, Int((segment.endTime * Double(sampleRate)).rounded(.up)))
         }
-        // Silence at the end: all but the last second is done with.
-        if !speaking { consumed = max(consumed, samples.count - sampleRate) }
         return (utterances, consumed)
     }
+}
+
+/// A stretch of speech still going this close to the end of the audio so far may not be over.
+private let stillSpeaking = 0.6
+
+/**
+ * Of the stretches of speech found in audio that's still being recorded: how many are finished (a
+ * pause follows them), and how many of the samples are dealt with. A stretch still going at the end
+ * is left for next time, with a quarter of a second before it so its beginning is heard whole; in
+ * silence, all but the last second is done with. On the `last` pass the recording is over, so
+ * everything is finished: otherwise the call's final sentence would never be shown.
+ */
+func finishedSpeech(_ segments: [(start: Double, end: Double)], samples: Int, last: Bool) -> (finished: Int, consumed: Int) {
+    if last { return (segments.count, samples) }
+    let duration = Double(samples) / Double(sampleRate)
+    var consumed = 0
+    for (i, segment) in segments.enumerated() {
+        if segment.end > duration - stillSpeaking {
+            return (i, max(consumed, Int(segment.start * Double(sampleRate)) - sampleRate / 4))
+        }
+        consumed = min(samples, Int((segment.end * Double(sampleRate)).rounded(.up)))
+    }
+    return (segments.count, max(consumed, samples - sampleRate))
 }
