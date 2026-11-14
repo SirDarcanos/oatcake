@@ -1,13 +1,17 @@
+import AVFoundation
 import Foundation
 
-public let sampleRate = 16_000
+public let sampleRate = recorderSampleRate
 
 /// Reads a raw 16 kHz mono PCM16 file into floats in [-1, 1].
 func readPcm(_ url: URL) -> [Float] {
     guard let data = try? Data(contentsOf: url, options: .alwaysMapped) else { return [] }
-    return data.withUnsafeBytes { raw in
-        raw.bindMemory(to: Int16.self).map { Float(Int16(littleEndian: $0)) / 32768 }
-    }
+    return floats(data)
+}
+
+/// PCM16 samples, little-endian, as floats in [-1, 1].
+private func floats(_ data: Data) -> [Float] {
+    data.withUnsafeBytes { raw in raw.bindMemory(to: Int16.self).map { Float(Int16(littleEndian: $0)) / 32768 } }
 }
 
 /// The samples of a raw PCM16 file from one sample onwards: what a recording still being written has gained since.
@@ -15,9 +19,7 @@ func readPcm(_ url: URL, fromSample: Int) -> [Float] {
     guard let handle = try? FileHandle(forReadingFrom: url) else { return [] }
     defer { try? handle.close() }
     guard (try? handle.seek(toOffset: UInt64(fromSample) * 2)) != nil, let data = try? handle.readToEnd() else { return [] }
-    return data.withUnsafeBytes { raw in
-        raw.bindMemory(to: Int16.self).map { Float(Int16(littleEndian: $0)) / 32768 }
-    }
+    return floats(data)
 }
 
 /// The samples between two times in seconds, clamped to the track.
@@ -48,4 +50,56 @@ func writeWav(_ url: URL, _ samples: ArraySlice<Float>) throws {
         u16(UInt16(bitPattern: Int16((max(-1, min(1, s)) * 32767).rounded())))
     }
     try data.write(to: url)
+}
+
+/**
+ * A recording's two tracks as one file to listen to: mixed to mono, each placed where meta.json
+ * says it starts, as AAC in an .m4a. Read and written half a minute at a time, so an afternoon's
+ * call isn't held in memory, and under another name until it's whole.
+ */
+func exportAudio(recording dir: URL, to file: URL) throws {
+    let meta = tryJSON(RecorderMeta.self, dir.appendingPathComponent(RecorderFile.meta))
+    // Each track: where to read it, how many samples in it starts, and how many it has.
+    let tracks = [(RecorderFile.micTrack, meta?.micOffset ?? 0), (RecorderFile.systemTrack, meta?.systemOffset ?? 0)].compactMap { name, offset -> (handle: FileHandle, lead: Int, samples: Int)? in
+        let url = dir.appendingPathComponent(name)
+        guard let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int64, bytes >= 2,
+              let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        let lead = offset.isFinite ? Int(min(max(0, offset), 86_400) * Double(sampleRate)) : 0
+        return (handle, lead, Int(bytes / 2))
+    }
+    defer { tracks.forEach { try? $0.handle.close() } }
+    let total = tracks.map { $0.lead + $0.samples }.max() ?? 0
+    guard total > 0 else { throw OatcakeError("This recording has no audio to keep.") }
+
+    let tmp = file.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString.prefix(12)).\(file.lastPathComponent)")
+    do {
+        let writer = try AVAudioFile(forWriting: tmp, settings: [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: sampleRate, AVNumberOfChannelsKey: 1],
+                                     commonFormat: .pcmFormatFloat32, interleaved: false)
+        let stretch = sampleRate * 30
+        var at = 0
+        while at < total {
+            let count = min(stretch, total - at)
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: writer.processingFormat, frameCapacity: AVAudioFrameCount(count)),
+                  let mixed = buffer.floatChannelData?[0] else { throw OatcakeError("Couldn’t write the call’s audio.") }
+            buffer.frameLength = AVAudioFrameCount(count)
+            for i in 0..<count { mixed[i] = 0 }
+            for track in tracks {
+                // The part of this track that falls in this stretch.
+                let from = max(at, track.lead), to = min(at + count, track.lead + track.samples)
+                guard from < to else { continue }
+                try track.handle.seek(toOffset: UInt64(from - track.lead) * 2)
+                let data = try track.handle.read(upToCount: (to - from) * 2) ?? Data()
+                for (i, sample) in floats(data).enumerated() { mixed[from - at + i] += sample }
+            }
+            // Two people talking at once can add up to more than full scale.
+            for i in 0..<count { mixed[i] = max(-1, min(1, mixed[i])) }
+            try writer.write(from: buffer)
+            at += count
+        }
+        writer.close()
+        try FileManager.default.moveItem(at: tmp, to: file)
+    } catch {
+        try? FileManager.default.removeItem(at: tmp)
+        throw error
+    }
 }

@@ -2,7 +2,7 @@
 # Oatcake installer: downloads the latest release, checks it, puts it in Applications and opens it.
 # Run it again any time to reinstall or upgrade; installed copies also update themselves.
 #
-#   curl -fsSL https://raw.githubusercontent.com/a8cteam51/oatcake/trunk/install.sh | sh
+#   curl -fsSL https://github.com/a8cteam51/oatcake/releases/latest/download/install.sh | sh
 #
 # Oatcake isn't notarised. Files curl downloads get no quarantine flag, so macOS doesn't block the
 # app the way it blocks a downloaded zip; the checks below stand in for that.
@@ -15,15 +15,20 @@
 #   OATCAKE_REINSTALL=1   reinstall even when this version is already there
 #
 # Checks: the zip's size and SHA-256 against the release's latest.json, that the zip holds just
-# Oatcake.app of that version, validly signed with a certificate (so it can update itself), and that
-# this Mac can run it. latest.json's own signature is checked by Oatcake's updater; this first
-# install trusts GitHub over HTTPS. Adapted from Loominate's installer (github.com/a8cteam51/loominate).
+# Oatcake.app of that version, that the app and its recorder are validly signed with Oatcake's own
+# release certificate (named below by its fingerprint, so no other certificate will do), and that
+# this Mac can run it. latest.json's own signature is checked by Oatcake's updater; this script
+# itself is trusted as GitHub serves it, over HTTPS. Adapted from Loominate's installer
+# (github.com/a8cteam51/loominate).
 #
 # Everything is inside main(), so a download cut off halfway runs nothing.
 main() {
     set -eu
     REPO="a8cteam51/oatcake"
     BUNDLE_ID="local.oatcake"
+    # The "Oatcake Release" certificate every release is signed with (README › Releasing). A new
+    # certificate means a new fingerprint here, in the same release.
+    CERTIFICATE='certificate leaf = H"1d0c58271ef4c8fff761e1d137e4a4d5b1f28a4d"'
     FEED="${OATCAKE_FEED:-https://github.com/$REPO/releases/latest/download/latest.json}"
 
     say() { printf '%s\n' "$*"; }
@@ -34,6 +39,10 @@ main() {
     at_least() {
         awk -v a="$1" -v b="$2" 'BEGIN { split(a, x, "."); split(b, y, "."); exit !((x[1] + 0 > y[1] + 0) || (x[1] + 0 == y[1] + 0 && x[2] + 0 >= y[2] + 0)) }'
     }
+    # True when $1 is validly signed, unmodified, and carries identifier $2 and Oatcake's certificate.
+    signed_by_oatcake() {
+        /usr/bin/codesign --verify --deep --strict -R "=identifier \"$2\" and $CERTIFICATE" "$1" 2>/dev/null
+    }
 
     [ "$(id -u)" -ne 0 ] || die "don't run this with sudo; install as the person who will use Oatcake."
     [ "$(uname -s)" = "Darwin" ] || die "Oatcake is a Mac app."
@@ -42,7 +51,9 @@ main() {
     command -v curl >/dev/null || die "curl is missing."
 
     TMP="$(mktemp -d "${TMPDIR:-/tmp}/oatcake-install.XXXXXX")"
-    trap 'rm -rf "$TMP"' EXIT INT TERM
+    trap 'rm -rf "$TMP"' EXIT
+    # Stopped with Ctrl-C: stop, rather than carry on with the next step.
+    trap 'exit 130' INT TERM
 
     say "Checking the latest Oatcake release..."
     HTTP="$(curl -sSL -o "$TMP/latest.json" -w '%{http_code}' "$FEED" || true)"
@@ -63,8 +74,17 @@ main() {
     [ -n "$VERSION" ] && [ -n "$MIN_OS" ] && [ -n "$ZIP_NAME" ] && [ -n "$ZIP_SHA" ] && [ -n "$ZIP_SIZE" ] \
         || die "the release information is incomplete."
     case "$ZIP_NAME" in */* | *' '* | '') die "the release names an unexpected file." ;; esac
+    # Nothing from the release information is used until it's the kind of value it should be: a
+    # size that isn't a plain number would otherwise be worked out by the shell as it's printed.
+    case "$ZIP_SIZE" in *[!0-9]* | 0*) die "the release information has an unexpected size." ;; esac
+    case "$VERSION" in *[!0-9.]* | .* | *. | *..*) die "the release information has an unexpected version." ;; esac
+    case "$MIN_OS" in *[!0-9.]* | .* | *. | *..*) die "the release information has an unexpected macOS version." ;; esac
+    case "$ZIP_SHA" in *[!0-9a-f]*) die "the release information has an unexpected checksum." ;; esac
+    [ "${#ZIP_SHA}" = 64 ] || die "the release information has an unexpected checksum."
     if [ -n "${OATCAKE_FEED:-}" ]; then
         ZIP_URL="${FEED%/*}/$ZIP_NAME"
+    else
+        case "$ZIP_URL" in "https://github.com/$REPO/releases/download/"*) ;; *) die "the release information points somewhere unexpected." ;; esac
     fi
     at_least "$MACOS" "$MIN_OS" || die "Oatcake $VERSION needs macOS $MIN_OS or later; this Mac has $MACOS."
 
@@ -109,10 +129,10 @@ main() {
     [ -d "$NEW" ] || die "the download doesn't contain Oatcake.app."
     [ "$(ls -A "$TMP/unpacked" | wc -l | tr -d ' ')" = 1 ] || die "the download contains more than Oatcake.app."
     /usr/bin/codesign --verify --deep --strict "$NEW" 2>/dev/null || die "the downloaded app's code signature is invalid. Nothing was installed."
-    case "$(/usr/bin/codesign -d -r - "$NEW" 2>/dev/null)" in
-        *"certificate leaf"*) ;;
-        *) die "the downloaded app isn't signed with Oatcake's release certificate. Nothing was installed." ;;
-    esac
+    signed_by_oatcake "$NEW" "$BUNDLE_ID" \
+        || die "the downloaded app isn't signed with Oatcake's release certificate. Nothing was installed."
+    signed_by_oatcake "$NEW/Contents/Resources/OatcakeRecorder.app" "$BUNDLE_ID.recorder" \
+        || die "the downloaded app's recorder isn't signed with Oatcake's release certificate. Nothing was installed."
     [ "$(plist "$NEW" CFBundleIdentifier)" = "$BUNDLE_ID" ] || die "the downloaded app isn't Oatcake."
     [ "$(plist "$NEW" CFBundleShortVersionString)" = "$VERSION" ] || die "the downloaded app isn't version $VERSION."
     # curl doesn't set the quarantine flag, but clear it in case the zip arrived another way.
@@ -129,24 +149,27 @@ main() {
         /usr/bin/pgrep -xq Oatcake && die "Oatcake is still open. Quit it, then run the installer again."
     fi
 
+    # From here to the end of the swap, Ctrl-C waits: stopping half-way would leave no Oatcake.
+    trap '' INT TERM
     OLD=""
     if [ -d "$DEST" ]; then
         OLD="$DEST_DIR/.Oatcake-old-$$.app"
         mv "$DEST" "$OLD" || die "couldn't move the installed copy aside."
     fi
-    if /usr/bin/ditto "$NEW" "$DEST" && /usr/bin/codesign --verify --deep --strict "$DEST" 2>/dev/null; then
+    if /usr/bin/ditto "$NEW" "$DEST" && signed_by_oatcake "$DEST" "$BUNDLE_ID"; then
         [ -z "$OLD" ] || rm -rf "$OLD"
     else
         rm -rf "$DEST"
         [ -z "$OLD" ] || mv "$OLD" "$DEST"
         die "installing into $DEST_DIR failed; the previous copy was put back."
     fi
+    trap 'exit 130' INT TERM
     touch "$DEST"
     /usr/bin/open "$DEST"
 
     say ""
     say "Installed Oatcake $VERSION in $DEST_DIR."
-    say "The first recording asks for microphone and system-audio permission for \"OatcakeRecorder\"; allow both."
+    say "The first recording asks for microphone and system-audio permission for Oatcake; allow both."
     say "Summaries are written on this Mac. Oatcake downloads the model for them (2.5 to 5 GB) during your first call."
     say "Oatcake checks for updates itself from now on (Settings > Updates)."
 }

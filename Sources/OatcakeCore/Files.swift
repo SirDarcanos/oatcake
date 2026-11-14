@@ -94,7 +94,25 @@ public func encodeJSON<T: Encodable>(_ value: T) throws -> String {
 }
 
 public func readText(_ url: URL) -> String {
-    (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+    guard let data = try? Data(contentsOf: url) else { return "" }
+    // A stray byte from another editor doesn't make the whole file read as empty (and then get saved over).
+    return String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
+}
+
+/// Keeps a file that can't be read beside itself ("config.unreadable.json") before a new one takes
+/// its place. Returns where it went.
+@discardableResult
+func keepUnreadable(_ file: URL) -> URL {
+    let kept = file.deletingPathExtension().appendingPathExtension("unreadable").appendingPathExtension(file.pathExtension)
+    // The same unreadable file is met again every time it's read, until something replaces it: it's kept once.
+    if let before = try? Data(contentsOf: kept), let now = try? Data(contentsOf: file), before == now { return kept }
+    // Copied beside it and then renamed over the earlier kept copy, so a copy that fails loses neither.
+    let arriving = kept.appendingPathExtension("arriving")
+    try? FileManager.default.removeItem(at: arriving)
+    if (try? FileManager.default.copyItem(at: file, to: arriving)) != nil, rename(arriving.path, kept.path) != 0 {
+        try? FileManager.default.removeItem(at: arriving)
+    }
+    return kept
 }
 
 extension String {
@@ -112,18 +130,29 @@ public var gregorian: Calendar {
     return calendar
 }
 
-let isoFormatter: ISO8601DateFormatter = {
-    let f = ISO8601DateFormatter()
-    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return f
-}()
-private let isoPlain = ISO8601DateFormatter()
+/// The ISO 8601 formatters, for use from any thread: ISO8601DateFormatter isn't marked as safe to
+/// share, so they're used one call at a time, behind a lock. (Date's own ISO 8601 format style
+/// would need no lock, but it cuts the milliseconds short where this rounds them, so times already
+/// written would read back a millisecond out.)
+private final class ISOFormatters: @unchecked Sendable {
+    private let lock = NSLock()
+    private let withFraction: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private let plain = ISO8601DateFormatter()
+
+    func string(from date: Date) -> String { lock.withLock { withFraction.string(from: date) } }
+    func date(from string: String) -> Date? { lock.withLock { withFraction.date(from: string) ?? plain.date(from: string) } }
+}
+private let isoFormatters = ISOFormatters()
 
 /// "2026-11-05T14:00:02.682Z", the way the Electron version wrote times.
-public func isoString(_ date: Date) -> String { isoFormatter.string(from: date) }
+public func isoString(_ date: Date) -> String { isoFormatters.string(from: date) }
 
 /// Reads ISO 8601 times with or without fractional seconds.
 public func parseISO(_ string: String?) -> Date? {
     guard let string, !string.isEmpty else { return nil }
-    return isoFormatter.date(from: string) ?? isoPlain.date(from: string)
+    return isoFormatters.date(from: string)
 }

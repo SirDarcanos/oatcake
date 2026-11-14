@@ -4,6 +4,54 @@ A Mac app that records a call, transcribes it on this Mac, tells the other voice
 lets you check who said what, and writes a summary built around the notes you took
 during the call.
 
+## Install
+
+Needs an Apple Silicon Mac on macOS 15 or later (FluidAudio's diariser hits a Core ML bug that
+Apple fixed in macOS 15). Oatcake isn't notarised by Apple, so macOS won't open a copy downloaded
+with a browser until you allow it. There are two ways to install it.
+
+**From Terminal.** Paste this:
+
+```sh
+curl -fsSL https://github.com/a8cteam51/oatcake/releases/latest/download/install.sh | sh
+```
+
+It downloads the latest release, checks its checksum and that it's signed with Oatcake's own
+release certificate, puts Oatcake in Applications (or `~/Applications` if you can't write there)
+and opens it. The installer comes from the release itself. Files that
+curl downloads don't get macOS's quarantine flag, so there's no warning to get past. Run it again
+any time to reinstall.
+
+**By hand.**
+
+1. Download `Oatcake-v…-arm64.zip` from the
+   [latest release](https://github.com/a8cteam51/oatcake/releases/latest) and open it to unzip it.
+2. Drag Oatcake into your Applications folder and open it. macOS says it couldn't check Oatcake
+   for malware and doesn't open it. Choose Done, not Move to Trash.
+3. Open System Settings › Privacy & Security, scroll down to Security, and click **Open Anyway**
+   beside the note about Oatcake.
+4. Open Oatcake again and choose **Open Anyway**. macOS remembers this, and Oatcake updates itself
+   from then on (if it's in a folder you can't write to, Settings › Updates gives the install
+   line instead).
+
+Either way, the first recording asks for microphone and system-audio permission for
+Oatcake. The first recording after updating from a version before 0.5.0 asks once more (see Security for why).
+There's nothing to sign in to and no key to paste: the models run on your Mac,
+and Oatcake fetches them itself, into `~/Library/Application Support/Oatcake/models`. Both start
+downloading when you start your first recording: the language model that writes summaries (Qwen3
+8B, 5.0 GB, on a Mac with 16 GB of memory or more; Qwen3 4B, 2.5 GB, on one with 8 GB) and the
+speech models (about 500 MB; with the live transcript turned off they wait until the call is
+processed). The call's screen shows how far the download has got, and Settings › Summaries can
+start it ahead of time (**Download Now**) or stop it. Oatcake checks there's room on the disk
+first. See Speech models and Language model.
+
+### Before you record
+
+Tell the people on the call that you're recording. Oatcake records their side of it, writes down
+what they say and, once you've put a name to a voice, keeps a fingerprint of that voice on your
+Mac so it can recognise them next time (Settings › People lists them, and **Forget** removes
+one). Whether you need their agreement depends on where you and they are; asking costs nothing.
+
 ## How it works
 
 ```mermaid
@@ -77,14 +125,18 @@ them all to the Trash.
    everything the Mac plays (Zoom, Meet, Slack, anything) is recorded as the other people.
    During the call, write one point per line: each is stamped with the time you started
    typing it, and every line stays editable. The recorder is a small helper app
-   (`Sources/OatcakeRecorder`), so macOS asks for microphone and system-audio permission for
-   "OatcakeRecorder" once; if it hasn't started after a few seconds, the live screen says
+   (`Sources/OatcakeRecorder`) inside Oatcake; macOS asks for microphone and system-audio
+   permission in Oatcake's name, once; if it hasn't started after a few seconds, the live screen says
    to look for that prompt. Pick the microphone on the record screen, from the mic button
    during the call, or in Settings: "Same as Mac" follows System Settings › Sound; a chosen
    mic is used until it's unplugged, then the Mac's input until it's back. Changing mic
    mid-call carries on recording, with the switch filled with silence so your track stays
-   lined up with the call. You're warned after 30 seconds of a silent mic or no call audio.
-   Stop asks first.
+   lined up with the call. You're warned after 30 seconds of a silent mic or no call audio, on
+   the call's screen and with a notification, since you're probably looking at the call. If
+   the recorder stops or never starts (no permission, a full disk), Oatcake notices within a
+   couple of seconds, says so the same two ways, and keeps and processes whatever was
+   recorded. Stop asks first, and so does quitting Oatcake while a call is being recorded,
+   analysed or summarised.
 
    Beside your notes, **Transcript** shows the call as it's said, a moment after each pause
    (a second helper, `Oatcake --live`, transcribes the audio as the recorder writes it). Your
@@ -95,14 +147,16 @@ them all to the Trash.
 
    **Calls are noticed.** When a calling app or a browser starts using your microphone and
    nothing is being recorded, a notification offers **Start recording** (under the calendar
-   event happening now, if there is one). A recording that has had a calling app on the
-   microphone stops by itself once that app has let go and the call audio has been quiet for 15
-   seconds, and starts processing; music still playing, or a call you're only muted on, keeps
+   event happening now, if there is one). When a recording has had a calling app on the
+   microphone, and that app has let go and the call audio has been quiet for 15 seconds, a
+   notification says the call seems to have ended; 30 seconds later the recording stops and
+   starts processing, unless you choose **Keep recording** (on the notification or the call's
+   screen) or the call comes back. Music still playing, or a call you're only muted on, keeps
    it going. Oatcake tells which apps have a microphone open from Core Audio
    (`Sources/OatcakeCore/CallDetector.swift`); it doesn't listen until you record. Both are
    switches in Settings › General.
 
-   While a call is being recorded the **menu bar** shows its running time, with Stop in its
+   While a call is being recorded the **menu bar** shows its running time, with Stop (which asks first) in its
    menu. (The menu bar item is drawn by a third helper, `Oatcake --menu-bar`, a menu-bar-only
    app: macOS doesn't show a Dock app's menu bar menu while another app is in full screen.)
    A recording started from a calendar event keeps the event's **Join the call** button on
@@ -137,7 +191,7 @@ them all to the Trash.
    each Rendered or as editable Markdown from the switch at the top right of the note (saved as
    you type; Summary shows `todo.md` and `summary.md`). **Copy** puts the tab you're on (the summary with its to-dos, the transcript,
    or your notes) on the clipboard as Markdown under the meeting's title and date, and **Share**
-   sends the same text with Mail, Messages or another app. Tick to-dos off in place; a to-do's time jumps to that moment in the
+   sends the same text with Mail, Messages or another app. Tick to-dos off in place; a due date can be a date ("Fri, Oct 30") or a day as it was said ("Friday", "tomorrow", "end of the week"), counted from the day of the meeting; a to-do's time jumps to that moment in the
    transcript. **To-dos** at the top of the sidebar gathers every meeting's to-dos (open
    and overdue counts beside it): Open / Done / All, grouped by due date, folder or owner,
    filtered by owner ("Mine" is your name from Settings). Ticking one there updates that
@@ -231,49 +285,13 @@ None of this is built yet. It's what we'd like to add, in no fixed order.
 
 - A notarised download, so macOS opens Oatcake without the warning or the Terminal line.
 
-## Install
-
-Needs an Apple Silicon Mac on macOS 15 or later (FluidAudio's diariser hits a Core ML bug that
-Apple fixed in macOS 15). Oatcake isn't notarised by Apple, so macOS won't open a copy downloaded
-with a browser until you allow it. There are two ways to install it.
-
-**From Terminal.** Paste this:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/a8cteam51/oatcake/trunk/install.sh | sh
-```
-
-It downloads the latest release, checks its checksum and code signature, puts
-Oatcake in Applications (or `~/Applications` if you can't write there) and opens it. Files that
-curl downloads don't get macOS's quarantine flag, so there's no warning to get past. Run it again
-any time to reinstall.
-
-**By hand.**
-
-1. Download `Oatcake-v…-arm64.zip` from the
-   [latest release](https://github.com/a8cteam51/oatcake/releases/latest) and open it to unzip it.
-2. Drag Oatcake into your Applications folder and open it. macOS says it couldn't check Oatcake
-   for malware and doesn't open it. Choose Done, not Move to Trash.
-3. Open System Settings › Privacy & Security, scroll down to Security, and click **Open Anyway**
-   beside the note about Oatcake.
-4. Open Oatcake again and choose **Open Anyway**. macOS remembers this, and Oatcake updates itself
-   from then on.
-
-Either way, the first recording asks for microphone and system-audio permission for
-"OatcakeRecorder". There's nothing to sign in to and no key to paste: the models run on your Mac,
-and Oatcake fetches them itself during your first call, into
-`~/Library/Application Support/Oatcake/models`. The language model that writes summaries starts
-downloading when you start recording (Qwen3 8B, 5.0 GB, on a Mac with 16 GB of memory or more;
-Qwen3 4B, 2.5 GB, on one with 8 GB), and the speech models (about 500 MB) when the call is
-processed. See Speech models and Language model.
-
 ## Updates
 
 Oatcake looks for a new release 20 seconds after it opens and then once a day (Settings ›
 Updates can turn that off, and has Check Now). A new release shows in the sidebar above
-Settings; **Update** downloads it, checks it, and quits and reopens Oatcake on the new version.
-It waits while a call is being recorded, analysed or saved. Nothing is installed until you
-click.
+Settings; **Update** asks, then downloads it, checks it, and quits and reopens Oatcake on the new
+version. It won't start while a call is being recorded, analysed or saved: it says so, and you
+try again afterwards. Nothing is installed until you click.
 
 Each release carries `latest.json`, a manifest naming the version and its zip (address,
 SHA-256, size), signed with Oatcake's Ed25519 release key. Oatcake checks that signature
@@ -285,9 +303,11 @@ one; a small detached script waits for Oatcake to quit, swaps the two, and opens
 `~/Library/Application Support/Oatcake/update.log`. The mechanics are in
 `Sources/OatcakeCore/Update.swift`.
 
-A copy that can't replace itself says why in Settings and offers the install line instead: a
-development copy, one built without the release certificate, one in a folder you can't write
-to, or one macOS is running from a quarantined download.
+A copy that can't replace itself says why in Settings: a development copy, one macOS is running
+from a quarantined download (move it to Applications), one built without the release
+certificate, or one in a folder you can't write to. For the last two it offers the install line
+instead. Oatcake also remembers the newest release it has been offered, and treats a feed that
+later names an older one as an error rather than as "up to date".
 
 ## Build from source
 
@@ -296,7 +316,7 @@ isn't needed.
 
 ```sh
 swift build                  # debug build of everything
-swift test                   # the core's tests
+swift test                   # the core's tests (Tests/OatcakeCoreTests, a file for each area)
 Scripts/bundle.sh            # build/Oatcake.app, release build, recorder and llama.cpp inside
 Scripts/bundle.sh debug      # the same, debug build
 ```
@@ -328,19 +348,32 @@ Xcode), so views use the `State` property wrapper through the `ViewState` alias.
 Bump the version and push its tag:
 
 ```sh
-Scripts/version.sh patch     # or minor; commits VERSION and tags v0.4.1
+Scripts/version.sh patch     # or minor; commits VERSION and tags v0.5.1
 git push --follow-tags
 ```
 
-The Release workflow (`.github/workflows/release.yml`) runs the tests, builds the app on a
-GitHub Mac runner, signs it and the recorder with the release certificate (and stops if either
-ends up with any other signature), zips it, writes and signs `latest.json`
-(`Scripts/sign-manifest.swift`) with the commit subjects since the previous tag as notes,
-attaches both to a new GitHub release, and checks the public feed serves that `latest.json`. It
-stops if the tag doesn't match `VERSION`. Running it by hand from the Actions tab builds and
-signs without releasing.
+The Release workflow (`.github/workflows/release.yml`) waits for its approver, then runs the
+tests and builds the app on a GitHub Mac runner, and only then puts the release certificate on
+the runner and signs the app, the recorder and llama.cpp's server with it, for the hardened
+runtime (it stops if any of them ends up signed any other way). It zips the app, writes and signs
+`latest.json` (`Scripts/sign-manifest.swift`) with the commit subjects since the previous tag as
+notes, attaches the zip, `latest.json` and `install.sh` to a new GitHub release, and checks the
+public feed serves them. It stops if the tag doesn't match `VERSION`. Running it by hand from the
+Actions tab builds and signs without releasing.
 
-It needs three repository secrets:
+Who can release is settled on GitHub, not in the workflow file:
+
+- The job runs in the **release** environment, which holds the secrets below, lets itself be
+  used only from `trunk` and from `v*` tags, and waits for a named approver before it starts. A
+  branch can change its own copy of the workflow, but it can't read the secrets or sign anything.
+- A ruleset keeps `v*` tags from being made, moved or deleted by anyone but the repository's
+  admins.
+- The install line fetches `install.sh` from the latest release, so what it runs was approved
+  with that release. The copy on `trunk` is the next release's.
+- Every pull request is built and tested by the Test workflow (`.github/workflows/test.yml`),
+  which has no secrets.
+
+The release environment needs three secrets:
 
 - `OATCAKE_SIGNING_P12` and `OATCAKE_SIGNING_P12_PASSWORD`: the "Oatcake Release" code-signing
   identity (a self-signed certificate valid until 2046), base64-encoded `.p12` and its password.
@@ -382,7 +415,7 @@ speaker separation on a known meeting.
 | Silero VAD | finding speech | MIT |
 | Parakeet TDT 0.6B v2 | English transcription (default) | CC-BY-4.0 |
 | Parakeet Ultra (post-trained v3) | 25 European languages | CC-BY-4.0 |
-| pyannote community-1 segmentation and embedding | speaker turns and voice fingerprints | CC-BY-4.0 |
+| pyannote community-1 (segmentation and its WeSpeaker-based embedding) | speaker turns and voice fingerprints | CC-BY-4.0 |
 
 ## Language model
 
@@ -425,7 +458,7 @@ revision and checksum together, then check summaries, to-dos and names on a know
 ## Moving from the Electron version (0.3 and earlier)
 
 0.4.0 is the same app rebuilt in Swift, with the same bundle ID, certificate and update feed, so
-0.3.0 updates to it in place. The first launch:
+0.3.0 updates to it (or to any later version) in place. The first launch, once:
 
 - moves the calendar address from `secrets.json` (Electron's encrypted store) into your
   Keychain, then deletes `secrets.json`;
@@ -466,9 +499,11 @@ Settings in the app (stored in `~/Library/Application Support/Oatcake/config.jso
   replies, with a switch each for summaries, to-dos, name suggestions and Ask. On is slower and
   not always better; it starts on for everything except to-dos. The switches are for Oatcake's
   own models: a server of yours decides for itself.
-- **Transcription model:** Parakeet English, or Parakeet Ultra for 25 European languages
-  (`SpeechModels.asr`); FluidAudio runs other models too.
-- **Keep call audio** (Settings › Storage): off by default; audio is deleted once a meeting is saved.
+- **Speech to text** (Settings › Transcription): Parakeet English, or Parakeet for 25 European
+  languages (`SpeechModels.asr`); FluidAudio runs other models too.
+- **Keep call audio** (Settings › Storage): off by default; audio is deleted once a meeting is
+  saved. When on, the call's audio (both sides, mixed) is saved in the meeting's folder as
+  `audio.m4a`.
 - **Live transcript**, **Offer to record when a call starts**, **Stop recording when the call
   ends:** all on by default (Settings › General); see Record above.
 - **Jargon** (Settings › Summaries): names, products and acronyms, separated by commas. The
@@ -494,8 +529,8 @@ Settings in the app (stored in `~/Library/Application Support/Oatcake/config.jso
   closing Oatcake's window leaves it running in the menu bar, so reminders and call notices keep
   working; its menu reopens the window or quits.
 - **Remind me before calls** (on by default): 5 minutes before each timed event, a notification
-  with **Open call and start note taking** (or **Start note taking** when there's no call
-  link). The button opens the call link, starts recording it (in the folder named like the
+  with **Open call and start note taking**. The button opens the call link when the event has
+  one, starts recording it (in the folder named like the
   event; a new folder for a recurring event without one, ":" and "/" becoming "-"), and
   brings Oatcake forward on the live notes. Clicking the notification itself opens New
   recording for the event. macOS asks once whether Oatcake may send notifications; the
@@ -522,12 +557,41 @@ Settings in the app (stored in `~/Library/Application Support/Oatcake/config.jso
   identity (see Updates).
 - Files Oatcake rewrites (meeting Markdown, config, voiceprints, calendar) are written to a
   new temporary file and renamed into place, never through an existing file or link.
-- Known gap: `OatcakeRecorder.app` holds the microphone and system-audio permissions, and any
-  program running as you can launch it (`open … --args --out <dir>`) to record. Closing that
-  needs the recorder to check who launched it.
-- Recording one call at a time is enforced by the app. If Oatcake quits or crashes mid-call,
-  the next launch picks the recording up again (still running) or finishes it from the audio on
-  disk (recorder gone), so nothing is left recording unseen or stuck.
+- `OatcakeRecorder.app` is what uses the microphone and system-audio permissions (macOS gives
+  them to Oatcake, which it is inside), so it records only for Oatcake. As it starts it connects to a socket Oatcake gave it, checks from the system's own
+  record of the process at the other end that it is Oatcake, signed with the recorder's own
+  certificate, and asks whether Oatcake wants this recording; Oatcake says yes once, for a
+  recording it has just started. Anything else that launches the recorder gets an error and no
+  audio (`RecorderGate` in `Sources/RecorderContract`, `RecorderDoor` in the core). A development
+  build signed ad-hoc skips the check: it has no certificate to check against, and no saved
+  permissions to guard.
+- Recorders before 0.5.0 had no such check, and macOS gives the permissions to Oatcake itself
+  (the recorder is inside it), remembered against Oatcake's code-signing requirement: until
+  0.5.0, "this identifier, this certificate", which every earlier release meets. So from 0.5.0 the
+  requirement also says "0.5.0 or later", and the first time that version opens it withdraws the
+  two permissions (`tccutil reset Microphone` and `AudioCapture`, for Oatcake and for the
+  recorder's own identifier), to be given again to itself.
+  That's why the first recording after updating asks once more. An earlier copy of Oatcake
+  started by something else then no longer records quietly: macOS asks first, in Oatcake's name.
+  It can't tell you which copy is asking, so if that question appears when you haven't just
+  started a recording, choose Don't Allow. Either answer replaces what macOS remembers for
+  Oatcake, so afterwards run `tccutil reset Microphone local.oatcake` in Terminal and allow it
+  again at your next recording.
+- Oatcake itself is signed as using the microphone (`Resources/Oatcake.entitlements`) although
+  only the recorder opens it: macOS counts the recorder's use as Oatcake's, and under the hardened
+  runtime it won't ask for the permission at all without that.
+- The app, the recorder and llama.cpp's server are signed for the hardened runtime, so another
+  program on your Mac can't load its own code into them to borrow the recorder's permissions or
+  read Oatcake's Keychain item.
+- Once a meeting is saved, the recording's working folder in Oatcake's own data folder is
+  deleted: the audio, the analysis with its voice fingerprints, and the working copy of your
+  notes. With **Keep call audio** on, the audio goes into the meeting's own folder as
+  `audio.m4a` first, so it's in one place and goes to the Trash with the meeting.
+- Recording one call at a time is enforced by the app. If Oatcake crashes mid-call, the recorder
+  carries on for up to ten minutes; opening Oatcake again in that time picks the recording up,
+  and after it the recorder finishes by itself. A recorder that has gone is noticed within a
+  couple of seconds and what it captured is kept, so nothing is left recording unseen or stuck.
+- Who can publish a release, and what the install line runs, are covered under Releasing.
 
 ## Accuracy
 
@@ -542,11 +606,14 @@ alike.
 ## Layout
 
 - `Sources/OatcakeRecorder/` — system-audio + mic recorder (helper app)
+- `Sources/RecorderContract/` — the files the recorder and Oatcake pass between them, and the
+  check that the recorder only records for Oatcake
 - `Sources/OatcakeCore/` — recordings, speech pipeline, voiceprints, the language model and its
   download, summaries, meeting folders, calendar, Granola and Quill imports, Ask, updates
 - `Sources/Oatcake/` — the app (SwiftUI); `--analyse` runs the analysis helper, `--live` the live
   transcript's and `--menu-bar` the menu bar item's
-- `Tests/OatcakeCoreTests/` — tests, including the calendar against ical.js's output
+- `Tests/OatcakeCoreTests/` — tests, a file for each area, including the calendar against
+  ical.js's output
 - `Scripts/` — bundling, versioning, signing `latest.json`
 
 ## License

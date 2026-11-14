@@ -52,7 +52,8 @@ private struct QuillTranscript: Decodable {
 private func query<T: Decodable>(_ db: URL, _ sql: String) throws -> [T] {
     // "-init /dev/null": without it sqlite3 reads your own ~/.sqliterc, and a setting there (".timer on",
     // ".echo on") adds lines to what it prints, which then isn't JSON.
-    let out = try runCapturing("/usr/bin/sqlite3", ["-init", "/dev/null", "-readonly", "-json", db.path, sql])
+    // "-safe": the database is somebody else's file, so nothing in it gets to reach outside itself.
+    let out = try runCapturing("/usr/bin/sqlite3", ["-init", "/dev/null", "-safe", "-readonly", "-json", db.path, sql])
     // No rows prints nothing at all.
     return out.trimmed.isEmpty ? [] : try JSONDecoder().decode([T].self, from: Data(out.utf8))
 }
@@ -64,6 +65,8 @@ private func query<T: Decodable>(_ db: URL, _ sql: String) throws -> [T] {
 func quillTranscript(_ json: String, start: Double, me: String, names: [String: String]) -> (markdown: String, participants: [String]) {
     // In the order things were said, whatever order the backup lists them in (kept as it is between equals).
     let blocks = ((try? JSONDecoder().decode(QuillTranscript.self, from: Data(json.utf8)))?.blocks ?? []).compactMap(\.block)
+        // A time that isn't a number of milliseconds anyone could mean is no use for placing a line.
+        .filter { ($0.from ?? 0).isFinite && ($0.to ?? 0).isFinite }
         .enumerated().sorted { ($0.element.from ?? 0, $0.offset) < ($1.element.from ?? 0, $1.offset) }.map(\.element)
     // A recording that began before the meeting's start time counts from its first line, so the lines
     // before the start keep their order and spacing rather than all landing on 00:00.
@@ -104,8 +107,7 @@ func quillSummary(_ notes: [(title: String?, body: String?)]) -> String {
             .trimmed
         return body.isEmpty ? nil : ((n.title ?? "").trimmed, body)
     }
-    // Each note under its title when there are several. "##", as in Oatcake's own summaries: a summary
-    // that starts with a "# " line is read as an older file's title block, and shown without it.
+    // Each note under its title when there are several: "##", as in Oatcake's own summaries.
     let parts = written.map { written.count > 1 && !$0.title.isEmpty ? "## \($0.title)\n\n\($0.body)" : $0.body }
     return parts.isEmpty ? "" : parts.joined(separator: "\n\n") + "\n"
 }
@@ -153,44 +155,21 @@ public func importQuill(_ file: URL, into root: URL, me: String, progress: Impor
     let notesOf = Dictionary(grouping: notes, by: \.meeting)
     let namesOf = Dictionary(grouping: speakers, by: \.meeting).mapValues { Dictionary($0.map { ($0.speaker, $0.name) }, uniquingKeysWith: { a, _ in a }) }
 
-    var known = knownIds(root, key: "quillMeeting")
-    let titleOf = { (m: QuillMeeting) in m.title ?? "Untitled" }
-    var titles: [String: Int] = [:]
-    for m in meetings { titles[titleOf(m), default: 0] += 1 }
-
-    var result = ImportResult(folder: quillFolder)
-    // Why the first meeting that couldn't be written couldn't be.
-    var failure: Error?
-    progress(0, meetings.count)
-    for (i, m) in meetings.enumerated() {
-        defer { progress(i + 1, meetings.count) }
-        let id = m.id.lowercased()
-        guard id.range(of: "^[0-9a-f-]{36}$", options: .regularExpression) != nil, let start = m.start else {
-            result.unreadable += 1
-            continue
-        }
-        if known.contains(id) {
-            result.skipped += 1
-            continue
-        }
-        let title = titleOf(m)
-        let (transcript, participants) = quillTranscript(m.transcript ?? "", start: start, me: me, names: namesOf[m.id] ?? [:])
-        struct Meta: Encodable {
-            var title: String
-            var startedAt: String
-            var endedAt: String?
-            var participants: [String]
-            var source = "quill"
-            var quillMeeting: String
-        }
-        // A meeting that can't be written (a title too long for a folder name, say) is counted and passed
-        // over: the ones after it still come in, on this run and the next.
-        guard let meta = try? encodeJSON(Meta(title: title, startedAt: isoString(Date(timeIntervalSince1970: start / 1000)),
-                                              endedAt: m.end.map { isoString(Date(timeIntervalSince1970: $0 / 1000)) },
-                                              participants: participants, quillMeeting: id)) else {
-            result.unreadable += 1
-            continue
-        }
+    struct Meta: Encodable {
+        var title: String
+        var startedAt: String
+        var endedAt: String?
+        var participants: [String]
+        var source = "quill"
+        var quillMeeting: String
+    }
+    // A time that isn't a date (between 1970 and 2100) counts as no date at all.
+    let date = { (ms: Double?) in ms.flatMap { (0...4_102_444_800_000).contains($0) ? Date(timeIntervalSince1970: $0 / 1000) : nil } }
+    return try importMeetings(meetings, into: root, folder: quillFolder, idKey: "quillMeeting", progress: progress,
+                              id: \.id, title: { $0.title ?? "Untitled" }, startedAt: { date($0.start) }) { m, id, title, started in
+        let (transcript, participants) = quillTranscript(m.transcript ?? "", start: m.start ?? 0, me: me, names: namesOf[m.id] ?? [:])
+        let meta = try encodeJSON(Meta(title: title, startedAt: isoString(started), endedAt: date(m.end).map(isoString),
+                                       participants: participants, quillMeeting: id))
         var files = ["transcript.md": transcript, "meeting.json": meta + "\n"]
         let summary = quillSummary((notesOf[m.id] ?? []).map { ($0.title, $0.body) })
         if !summary.isEmpty { files["summary.md"] = summary }
@@ -207,20 +186,7 @@ public func importQuill(_ file: URL, into root: URL, me: String, progress: Impor
             if let audio = found.first(where: { $0.lastPathComponent.contains("-FINAL-") }) ?? found.first { moving["audio.m4a"] = audio }
         }
         // A row with nothing to show for it (an event Quill listed and never recorded) isn't a meeting.
-        if transcript.trimmed.isEmpty, summary.isEmpty, moving.isEmpty { continue }
-        let series = (titles[title] ?? 0) > 1 ? seriesFolder(title) : ""
-        do {
-            try writeImported(root, base: [quillFolder, series].filter { !$0.isEmpty }.joined(separator: "/"),
-                              title: title, startedAt: Date(timeIntervalSince1970: start / 1000), files: files, moving: moving)
-        } catch {
-            if failure == nil { failure = error }
-            result.unreadable += 1
-            continue
-        }
-        known.insert(id)
-        result.imported += 1
+        if transcript.trimmed.isEmpty, summary.isEmpty, moving.isEmpty { return nil }
+        return ImportedMeeting(files: files, moving: moving)
     }
-    // Nothing could be written at all (no room, or the Meetings folder can't be written to): say why.
-    if result.imported == 0, result.skipped == 0, let failure { throw failure }
-    return result
 }

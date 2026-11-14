@@ -6,13 +6,16 @@ struct TodosView: View {
     @Environment(AppModel.self) private var model
     enum Status: Hashable { case open, done, all }
     enum Grouping: Hashable { case due, folder, owner }
+    /// Whose to-dos are listed.
+    enum Owner: Hashable { case everyone, mine, named(String) }
 
     @ViewState private var status = Status.open
     @ViewState private var grouping = Grouping.due
-    @ViewState private var owner = "all"
+    @ViewState private var owner = Owner.everyone
     @ViewState private var adding = false
     @ViewState private var draft = ""
-    /// Ticks not yet read back from disk, so two quick ticks in one meeting don't undo each other.
+    /// A list's text straight after a tick or an add here, until the app has read it back from disk,
+    /// so two quick ticks in one meeting don't undo each other.
     @ViewState private var local: [String: String] = [:]
     @FocusState private var addFocused: Bool
 
@@ -21,16 +24,21 @@ struct TodosView: View {
     var body: some View {
         let myName = model.config.myName
         let today = Calendar.current.startOfDay(for: Date())
-        let items = allTodoItems(model.todoMeetings.map { m in
-            var m = m
-            if let text = local[m.path] { m.todo = text }
-            return m
-        })
+        // The items were worked out when the to-dos were read. Only a list just ticked or added to
+        // here is read afresh, from its text as it is now.
+        let items = local.isEmpty ? model.library.todoItems
+            : model.library.todoItems.filter { local[$0.meeting.path] == nil } + allTodoItems(model.library.todoMeetings.compactMap { m in
+                local[m.path].map { text in with(m) { $0.todo = text } }
+            })
         let open = items.filter { !$0.todo.done }
         let overdue = items.filter { $0.isOverdue(today: today) }
         // One ticked in Open leaves the list at once. It's under Done, where a mis-tick can be undone.
         var list = items.filter { status == .open ? !$0.todo.done : status == .done ? $0.todo.done : true }
-        if owner == "mine" { list = list.filter { isMe($0.todo.owner, myName) } } else if owner != "all" { list = list.filter { $0.todo.owner == owner } }
+        switch owner {
+        case .everyone: break
+        case .mine: list = list.filter { isMe($0.todo.owner, myName) }
+        case .named(let name): list = list.filter { $0.todo.owner == name }
+        }
         list.sort { a, b in
             let da = a.dueDate ?? .distantFuture, db = b.dueDate ?? .distantFuture
             return da != db ? da < db : (a.meeting.startedAt ?? .distantPast) > (b.meeting.startedAt ?? .distantPast)
@@ -74,7 +82,7 @@ struct TodosView: View {
                     ForEach(group.items) { item in row(item, today: today, myName: myName) }
                 }
                 if groups.isEmpty {
-                    Text(status == .done ? "Nothing ticked off yet." : owner == "all" ? "No open to-dos." : "No open to-dos for this person.")
+                    Text(status == .done ? "Nothing ticked off yet." : owner == .everyone ? "No open to-dos." : "No open to-dos for this person.")
                         .foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 40)
                 }
             }
@@ -83,8 +91,8 @@ struct TodosView: View {
             .frame(maxWidth: 820, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
-        .onChange(of: model.todoMeetings) {
-            local = local.filter { path, text in model.todoMeetings.first { $0.path == path }?.todo != text }
+        .onChange(of: model.library.todoMeetings) {
+            local = local.filter { path, text in model.library.todoMeetings.first { $0.path == path }?.todo != text }
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -104,9 +112,9 @@ struct TodosView: View {
                 }
                 .fixedSize()
                 Picker("Owner", selection: $owner) {
-                    Text("Everyone").tag("all")
-                    Text("Mine").tag("mine")
-                    ForEach(owners, id: \.self) { Text($0).tag($0) }
+                    Text("Everyone").tag(Owner.everyone)
+                    Text("Mine").tag(Owner.mine)
+                    ForEach(owners, id: \.self) { Text($0).tag(Owner.named($0)) }
                 }
                 .fixedSize()
             }
@@ -209,28 +217,31 @@ struct TodosView: View {
     private func add() {
         let text = draft.trimmed
         guard !text.isEmpty else { return }
-        let own = local[""] ?? model.todoMeetings.first { $0.path.isEmpty }?.todo ?? ""
         do {
-            let todo = addTodo(own, typedTodo(text, owner: model.config.myName))
-            try model.writeMeetingFile("", .todo, todo)
-            local[""] = todo
+            try model.library.addTodo("", typedTodo(text, owner: model.config.myName))
+            local[""] = onDisk("")
             draft = ""
             model.toast("Added to Meetings › todo.md")
         } catch {
-            model.toast(error.localizedDescription)
+            model.toast(error.localizedDescription, isError: true)
         }
-        model.refresh()
     }
+
+    /// A list as its file is now. The file is changed as it stands, never written over with what
+    /// this page last read, so this is what's shown until the app has read it back too.
+    private func onDisk(_ path: String) -> String? { try? model.library.readMeeting(path).todo }
 
     private func tick(_ item: TodoItem) {
         do {
-            let todo = toggleTodo(item.meeting.todo, line: item.todo.line)
-            try model.writeMeetingFile(item.meeting.path, .todo, todo)
-            withAnimation { local[item.meeting.path] = todo }
+            guard try model.library.toggleTodo(item.meeting.path, line: item.todo.line, text: item.todo.text) else {
+                // It isn't in the file as it's shown here: nothing was ticked, and the list is read again.
+                withAnimation { local[item.meeting.path] = nil }
+                return model.toast(todoChangedMessage)
+            }
+            withAnimation { local[item.meeting.path] = onDisk(item.meeting.path) }
             model.toast("Saved to \(item.meeting.path.isEmpty ? "Meetings" : folderPath(item.meeting.path)) › todo.md")
         } catch {
-            model.toast(error.localizedDescription)
+            model.toast(error.localizedDescription, isError: true)
         }
-        model.refresh()
     }
 }

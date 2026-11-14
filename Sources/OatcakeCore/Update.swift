@@ -12,7 +12,7 @@ import Foundation
 
 public enum Update {
     public static let feedURL = URL(string: "https://github.com/a8cteam51/oatcake/releases/latest/download/latest.json")!
-    public static let installCommand = "curl -fsSL https://raw.githubusercontent.com/a8cteam51/oatcake/trunk/install.sh | sh"
+    public static let installCommand = "curl -fsSL https://github.com/a8cteam51/oatcake/releases/latest/download/install.sh | sh"
     public static let bundleID = "local.oatcake"
     static let appName = "Oatcake.app"
 
@@ -90,7 +90,7 @@ public enum Update {
     }
 
     /// Downloads the release zip into dir, checking its size and SHA-256 against the manifest.
-    public static func downloadZip(_ manifest: Manifest, into dir: URL, progress: @escaping (Double) -> Void) async throws -> URL {
+    public static func downloadZip(_ manifest: Manifest, into dir: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         guard let url = URL(string: manifest.zip.url) else { throw OatcakeError("The update's address isn't valid.") }
         let bytes: URLSession.AsyncBytes, response: URLResponse
         do {
@@ -214,10 +214,10 @@ public enum Update {
     """#
 
     /// Starts the swap; the caller quits straight after. Its output goes to update.log in Oatcake's data folder.
-    public static func swapAfterExit(installed: URL, staged: URL) throws {
-        try FileManager.default.createDirectory(at: Paths.data, withIntermediateDirectories: true)
-        if !FileManager.default.exists(Paths.updateLog) { FileManager.default.createFile(atPath: Paths.updateLog.path, contents: nil) }
-        let log = try FileHandle(forWritingTo: Paths.updateLog)
+    public static func swapAfterExit(installed: URL, staged: URL, log file: URL = Paths.updateLog) throws {
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if !FileManager.default.exists(file) { FileManager.default.createFile(atPath: file.path, contents: nil) }
+        let log = try FileHandle(forWritingTo: file)
         log.seekToEndOfFile()
         let process = Process()
         // A child process outlives Oatcake: it's handed to launchd when Oatcake exits.

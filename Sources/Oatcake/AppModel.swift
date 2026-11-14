@@ -1,10 +1,11 @@
-// The app's state and everything the windows ask for: the Meetings folder, recordings and their
-// processing, the calendar and call reminders, Ask, and updates.
+// The app as a whole: its settings, where you are in the window, what it says to you (toasts and
+// questions), and the parts that do the work, wired together here. The parts are the Meetings
+// folder (Library), the call being recorded (RecordingController), recordings after the call
+// (Jobs), the language model's downloads (ModelDownloads) and the calendar (CalendarController).
 
 import AppKit
 import OatcakeCore
 import SwiftUI
-import UserNotifications
 
 /// What the detail pane shows.
 enum Selection: Equatable {
@@ -25,12 +26,6 @@ struct Jump: Equatable {
 
 enum MeetingTab: String, CaseIterable { case summary, transcript, notes }
 
-struct JobProgress: Equatable {
-    var step: String
-    var fraction: Double?
-    var error: String?
-}
-
 /// "Stop recording?" and the like: a question with a destructive answer.
 struct Confirmation: Identifiable {
     let id = UUID()
@@ -41,191 +36,200 @@ struct Confirmation: Identifiable {
     var action: () async throws -> Void
 }
 
-/// A line typed during a call.
-struct LiveLine: Identifiable, Equatable {
-    let id = UUID()
-    /// Seconds in when typing started; nil until then, and always for prep notes.
-    var at: Double?
-    var prep: Bool
-    var text: String
-}
-
-/// What you've set on a Who's who screen, kept by the app so looking at something else and coming
-/// back loses nothing.
-struct ReviewDraft: Equatable {
-    struct Voice: Equatable {
-        var name: String
-        /// The name was picked from the calendar invite.
-        var fromInvite = false
-        var mixed = false
-        /// Merged into another voice (`me` for your microphone).
-        var into: String?
-    }
-    var title: String
-    /// Where the meeting will be saved, relative to the Meetings folder.
-    var folder: String
-    var voices: [String: Voice]
+/// What the parts of the app ask of the app around them: the settings, a word to the person using
+/// it, and where they are in the window. Each part is given one; none of them sees AppModel itself.
+@MainActor
+struct AppServices {
+    var config: @MainActor () -> Config = { Config.defaults() }
+    var toast: @MainActor (_ text: String, _ isError: Bool) -> Void = { _, _ in }
+    /// Asks a question with a destructive answer.
+    var confirm: @MainActor (Confirmation) -> Void = { _ in }
+    /// Takes a question back if it's still the one being asked: what it asked about has been settled another way.
+    var withdraw: @MainActor (Confirmation.ID) -> Void = { _ in }
+    /// Something on disk has changed: read the Meetings folder and the recordings again.
+    var refresh: @MainActor () -> Void = {}
+    var showWindow: @MainActor () -> Void = {}
+    var selection: @MainActor () -> Selection? = { nil }
+    var select: @MainActor (Selection?) -> Void = { _ in }
+    /// Back to the meeting list, on the folder it was showing.
+    var showFolder: @MainActor () -> Void = {}
 }
 
 @MainActor @Observable
 final class AppModel {
     var config: Config
-    private(set) var meetings: Meetings
-    var tree: TreeNode?
-    /// Bumps on every change on disk, so open meetings re-read their files.
-    var diskVersion = 0
-    /// nil when no calendar address is set.
-    var calendar: CalendarCache?
-    /// The time, moved on every half minute: what Upcoming's countdowns are worked out from.
-    var now = Date()
-    var calendarFetching = false
-    var pending: [Recording] = []
-    var todoMeetings: [MeetingTodos] = []
-    var progress: [String: JobProgress] = [:]
-    /// Meetings whose summary is being written now, and why the last attempt failed, by path.
-    var summarising = Set<String>()
-    var summaryErrors: [String: String] = [:]
-    /// Where each meeting being summarised lives now: it can be renamed or moved while the model writes.
-    private var summaryJobs: [UUID: String] = [:]
-    var reviewDrafts: [String: ReviewDraft] = [:]
-    var live: Recording?
-    /// The call being recorded, as it's heard: lines from the live helper, and what the helper is doing.
-    var liveLines: [LiveTranscriptLine] = []
-    var liveStatus = ""
+    let library: Library
+    let recording: RecordingController
+    let jobs: Jobs
+    let downloads: ModelDownloads
+    let calendar: CalendarController
     /// Bumped by ⌘F and ⌥⌘F: the open meeting shows Find, the meeting list focuses its search.
     var findRequest = 0
     var searchRequest = 0
     /// File › New Folder: the sidebar asks for the new top-level folder's name. It waits here until the
     /// sidebar takes it, which is after the window has opened if it was closed.
     var wantsNewFolder = false
-    var status = RecorderStatus(state: .starting)
     var selection: Selection?
     /// The folder the middle column lists.
     var folder = ""
     var confirmation: Confirmation?
     var toastText: String?
+    /// The toast showing says something went wrong: it stays longer, and goes when it's clicked.
+    var toastIsError = false
     let updater = Updater()
     let ask = AskChat()
-    /// Notes typed during each call, kept here so leaving the live view and coming back keeps them.
-    var liveNotes: [String: [LiveLine]] = [:]
-    var pendingEvent: CalendarEvent?
-    /// How far each language model's download has got (0 to 1) while one is under way, and why the
-    /// last one stopped, by model.
-    var modelDownloads: [String: Double] = [:]
-    var modelDownloadErrors: [String: String] = [:]
-    /// Bumps when a model's file arrives or is removed, so Settings looks at the disk again.
-    var modelsVersion = 0
-    private var modelDownloadTasks: [String: Task<Void, Error>] = [:]
-
-    /// Recorders running now, by recording ID.
-    private var active: [String: Recording] = [:]
-    private var analysing = Set<String>()
-    /// The analysis helper running for each recording, and the work around it (which goes on to
-    /// suggest names), so discarding a recording stops both.
-    private var helpers: [String: Process] = [:]
-    private var analyses: [String: Task<Void, Never>] = [:]
-    private var autoStarted = Set<String>()
-    private var liveHelper: Process?
-    /// The recording whose live transcript helper is running or on its way up. A second helper for the
-    /// same recording would say every line again.
-    private var liveTranscriptFor: String?
-    /// When a calling app started using the microphone, whether recording has been offered for that
-    /// call, whether the recording in progress has had a calling app on the microphone, and since
-    /// when it has had neither that nor any call audio.
-    private var callSince: Date?
-    private var callOffered = false
-    private var callSeen = false
-    private var callOverSince: Date?
-    private let menuBar = MenuBarItem()
-    private var watcher: FolderWatcher?
+    /// Why the settings couldn't be read at launch, until it has been shown.
+    private var configProblem: String?
     private var timers: [Timer] = []
-    private var statusTimer: Timer?
     private var toastTask: Task<Void, Never>?
-    private var calendarFetch: (url: String, task: Task<CalendarCache, Never>)?
-    private var calendarUrlFetched = ""
-    private var reminded = Set<String>()
-    private var notesSaveTask: Task<Void, Never>?
+    /// A read of the Meetings folder is under way, and another has been asked for since it began.
+    private var refreshing = false
+    private var refreshWanted = false
     var openMainWindow: (() -> Void)?
 
     init() {
-        let config = Config.load()
+        let (config, problem) = Config.loadWithProblem()
         self.config = config
-        meetings = Meetings(root: config.meetingsRoot)
+        configProblem = problem
+        library = Library(root: config.meetingsRoot)
+        downloads = ModelDownloads()
+        calendar = CalendarController()
+        jobs = Jobs(downloads: downloads)
+        recording = RecordingController(calendar: calendar, downloads: downloads)
+        wire()
+    }
+
+    /// Gives each part what it asks of the app, and of the other parts.
+    private func wire() {
+        let app = AppServices(config: { [unowned self] in self.config },
+                              toast: { [unowned self] text, isError in self.toast(text, isError: isError) },
+                              confirm: { [unowned self] in self.confirmation = $0 },
+                              withdraw: { [unowned self] id in if self.confirmation?.id == id { self.confirmation = nil } },
+                              refresh: { [unowned self] in self.refresh() },
+                              showWindow: { [unowned self] in self.showWindow() },
+                              selection: { [unowned self] in self.selection },
+                              select: { [unowned self] in self.selection = $0 },
+                              showFolder: { [unowned self] in self.openFolder(self.folder) })
+        library.app = app
+        recording.app = app
+        jobs.app = app
+        downloads.app = app
+        calendar.app = app
+        library.whenMoved = { [unowned self] from, to in self.moved(from: from, to: to) }
+        calendar.changed = { [unowned self] in self.recording.updateMenuBar() }
+        recording.folderForEvent = { [unowned self] title, recurring in try self.library.meetings.folderForEvent(title: title, recurring: recurring) }
+        recording.ended = { [unowned self] rec in self.jobs.progress[rec.id] = JobProgress() }
+    }
+
+    /// Why the settings couldn't be read at launch, once: Oatcake is on its defaults, and should say so.
+    func takeConfigProblem() -> String? {
+        defer { configProblem = nil }
+        return configProblem
     }
 
     func start() {
         // Left by the Electron version: its secrets move into the Keychain, its speech models and
-        // Chromium caches go.
-        Secrets.migrateFromElectron()
+        // Chromium caches go. Once: after that there's nothing of its to find. (A secret that couldn't
+        // be moved stays in its file, and this is tried again at the next launch.)
+        if !UserDefaults.standard.bool(forKey: "electronCleanUpDone") {
+            Secrets.migrateFromElectron()
+            SpeechModels.removeOldModels()
+            try? FileManager.default.removeItem(at: Paths.data.appendingPathComponent("Chromium"))
+            if !FileManager.default.fileExists(atPath: Paths.data.appendingPathComponent("secrets.json").path) {
+                UserDefaults.standard.set(true, forKey: "electronCleanUpDone")
+            }
+        }
         Secrets.forgetRetired()
-        SpeechModels.removeOldModels()
+        // The recording permissions given to earlier versions are withdrawn, to be asked for again by
+        // this one (Recordings.withdrawEarlierPermissions). Once, and only by a copy whose signature
+        // says which versions it stands for: a development build's doesn't. Tried again at the next
+        // launch if it couldn't be done.
+        if !UserDefaults.standard.bool(forKey: "earlierPermissionsWithdrawn"), let id = Bundle.main.bundleIdentifier {
+            let bundle = Bundle.main.bundleURL
+            Task.detached {
+                guard let requirement = try? Update.designatedRequirement(bundle), requirement.contains("CFBundleShortVersionString") else { return }
+                if Recordings.withdrawEarlierPermissions(of: id) { UserDefaults.standard.set(true, forKey: "earlierPermissionsWithdrawn") }
+            }
+        }
         // A language model left running by a copy of Oatcake that didn't get to stop it.
         ModelServer.stopLeftover()
-        try? FileManager.default.removeItem(at: Paths.data.appendingPathComponent("Chromium"))
+        jobs.tidySavedRecordings()
 
-        resumeRecordings()
-        watchMeetings()
+        recording.resumeRecordings()
+        library.watchMeetings()
         // The first load happens before the window shows, so it opens on your last meeting rather
         // than on whatever the sidebar selects by itself.
-        tree = meetings.tree()
-        todoMeetings = meetings.allTodos()
-        pending = Recordings.list().filter { $0.state == .recorded || $0.state == .processed }
+        library.tree = library.meetings.tree()
+        if let tree = library.tree { library.setTodos(library.meetings.allTodos(in: tree)) }
+        jobs.pending = Recordings.list().filter { $0.state == .recorded || $0.state == .processed }
         openLastMeeting()
         refresh()
-        // An address set in an earlier session counts as already fetched, so this only fetches if stale.
-        calendarUrlFetched = calendarAddress
-        refreshCalendar()
-        checkReminders()
-        timers.append(Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in Task { @MainActor in self.refreshCalendar() } })
+        calendar.start()
         timers.append(Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
             Task { @MainActor in
-                self.now = Date()
-                self.checkReminders()
-                self.updateMenuBar()
+                self.calendar.now = Date()
+                self.library.countTodosIfNewDay()
+                self.calendar.checkReminders()
+                self.recording.updateMenuBar()
                 // The language model gives its memory back after ten minutes with nothing to write.
                 await ModelServer.shared.stopIfIdle(for: 600)
             }
         })
-        timers.append(Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in Task { @MainActor in self.checkCall() } })
-        menuBar.stop = { [weak self] in Task { @MainActor in await self?.stopLive() } }
-        menuBar.open = { [weak self] in self?.showWindow() }
-        menuBar.record = { [weak self] in self?.newRecording() }
-        menuBar.openEvent = { [weak self] event in self?.openEvent(event) }
-        updateMenuBar()
+        recording.startChecks()
+        recording.menuBar.stop = { [weak self] in self?.stopFromMenuBar() }
+        recording.menuBar.open = { [weak self] in self?.showWindow() }
+        recording.menuBar.record = { [weak self] in self?.newRecording() }
+        recording.menuBar.openEvent = { [weak self] event in self?.openEvent(event) }
+        recording.updateMenuBar()
         updater.start(autoCheck: { [weak self] in self?.config.updateCheck ?? false },
                       busy: { [weak self] in self?.busyReason })
     }
 
     // MARK: - Meetings folder
 
+    /// Reads the Meetings folder and the recordings again, for every part that shows them.
     func refresh() {
-        let meetings = meetings
+        // One read at a time. However many more are asked for while it runs, there's one more after
+        // it: that one sees everything that changed, and no earlier read can land on top of a later one.
+        if refreshing {
+            refreshWanted = true
+            return
+        }
+        refreshing = true
+        let meetings = library.meetings
         Task {
             let (tree, pending, todos) = await Task.detached {
-                (meetings.tree(), Recordings.list().filter { $0.state == .recorded || $0.state == .processed }, meetings.allTodos())
+                // The folder is walked once: the to-dos are read from the tree just built.
+                let tree = meetings.tree()
+                return (tree, Recordings.list().filter { $0.state == .recorded || $0.state == .processed }, meetings.allTodos(in: tree))
             }.value
+            refreshing = false
+            defer {
+                if refreshWanted {
+                    refreshWanted = false
+                    refresh()
+                }
+            }
+            // Another Meetings folder was chosen while this one was being read: its read is on its way.
+            guard library.meetings === meetings else { return }
             // Without animation: the sidebar's outline animates rows in when a section (Needs review)
             // appears, and leaves a stray copy of an expanded folder's selected row behind.
             var quiet = Transaction()
             quiet.disablesAnimations = true
             withTransaction(quiet) {
-                self.tree = tree
-                self.pending = pending
-                self.todoMeetings = todos
-                self.diskVersion += 1
+                self.library.tree = tree
+                self.jobs.pending = pending
+                self.library.setTodos(todos)
+                self.library.diskVersion += 1
             }
-            // Recordings waiting to be processed start straight away, in the background.
-            for rec in pending where rec.state == .recorded && !autoStarted.contains(rec.id) {
-                autoStarted.insert(rec.id)
-                analyse(rec.id)
-            }
-            updateBadge()
+            jobs.startWaiting()
+            jobs.updateBadge()
         }
     }
 
     /// Opens the meeting you were last reading, or on first run the most recent one.
     private func openLastMeeting() {
-        guard selection == nil, let tree else { return }
+        guard selection == nil, let tree = library.tree else { return }
         if let last = UserDefaults.standard.string(forKey: "lastMeeting"), tree.find(last)?.kind == .meeting {
             return openMeeting(last)
         }
@@ -234,14 +238,8 @@ final class AppModel {
         }
     }
 
-    // Keep the sidebar in step with Finder.
-    private func watchMeetings() {
-        try? FileManager.default.createDirectory(at: meetings.root, withIntermediateDirectories: true)
-        watcher = FolderWatcher(meetings.root) { [weak self] in self?.refresh() }
-    }
-
     func openMeeting(_ path: String, jump: Jump? = nil) {
-        guard tree?.find(path)?.kind == .meeting else { return }
+        guard library.tree?.find(path)?.kind == .meeting else { return }
         folder = parentOf(path)
         selection = .meeting(path, jump: jump)
         UserDefaults.standard.set(path, forKey: "lastMeeting")
@@ -250,7 +248,7 @@ final class AppModel {
     /// Opens a meeting picked in the middle column, which stays as it is (all meetings, a folder, or
     /// search results) rather than switching to the meeting's own folder.
     func selectMeeting(_ path: String, jump: Jump? = nil) {
-        guard tree?.find(path)?.kind == .meeting else { return }
+        guard library.tree?.find(path)?.kind == .meeting else { return }
         selection = .meeting(path, jump: jump)
         UserDefaults.standard.set(path, forKey: "lastMeeting")
     }
@@ -267,7 +265,7 @@ final class AppModel {
 
     func openFolder(_ path: String) {
         folder = path
-        if let first = listedIn(tree?.find(path)).first {
+        if let first = listedIn(library.tree?.find(path)).first {
             selection = .meeting(first.path)
             UserDefaults.standard.set(first.path, forKey: "lastMeeting")
         } else {
@@ -279,10 +277,7 @@ final class AppModel {
     func moved(from: String, to: String) {
         let remap = { (p: String) in p == from ? to : p.hasPrefix(from + "/") ? to + p.dropFirst(from.count) : p }
         folder = remap(folder)
-        // A summary on its way follows the meeting to where it is now.
-        summarising = Set(summarising.map(remap))
-        summaryJobs = summaryJobs.mapValues(remap)
-        summaryErrors = Dictionary(summaryErrors.map { (remap($0.key), $0.value) }, uniquingKeysWith: { a, _ in a })
+        jobs.moved(remap)
         switch selection {
         case .meeting(let p, let jump): selection = .meeting(remap(p), jump: jump)
         case .folder(let p): selection = .folder(remap(p))
@@ -291,80 +286,27 @@ final class AppModel {
         refresh()
     }
 
-    func rename(_ path: String, to name: String) {
-        guard !name.trimmed.isEmpty, name.trimmed != baseName(path) else { return }
-        attempt { moved(from: path, to: try meetings.rename(path, to: name)) }
-    }
-
-    /// A meeting's new title, in meeting.json and in its folder's name.
-    func retitle(_ path: String, to title: String) {
-        guard !title.trimmed.isEmpty else { return }
-        attempt { moved(from: path, to: try meetings.retitle(path, to: title)) }
-    }
-
-    func move(_ path: String, into target: String) {
-        guard path != target, !target.hasPrefix(path + "/"), parentOf(path) != target else { return }
-        attempt {
-            moved(from: path, to: try meetings.move(path, into: target))
-            toast("Moved to \(folderPath(target))")
+    /// A passing note at the bottom of the window. One that says something went wrong stays for
+    /// eight seconds or until it's clicked, and is read out by VoiceOver, which never sees the note itself.
+    func toast(_ text: String, isError: Bool = false) {
+        withAnimation {
+            toastText = text
+            toastIsError = isError
         }
-    }
-
-    @discardableResult
-    func createFolder(in parent: String, named name: String) -> String? {
-        var made: String?
-        attempt { made = try meetings.createFolder(in: parent, named: name) }
-        refresh()
-        return made
-    }
-
-    /// Moves meetings or folders to the Trash. One that can't be moved stops the rest, and the toast
-    /// says how many went before it and why.
-    func trash(_ nodes: [TreeNode]) {
-        defer { refresh() }
-        var moved = 0
-        do {
-            for node in nodes {
-                try meetings.trash(node.path)
-                moved += 1
-            }
-        } catch {
-            toast(nodes.count == 1 ? error.localizedDescription
-                                   : "Moved \(moved) of \(nodes.count) meetings to the Trash — \(error.localizedDescription)")
-            return
-        }
-        if nodes.count == 1, let node = nodes.first {
-            toast("Moved “\(node.kind == .meeting ? meetingTitle(node) : node.name)” to the Trash")
-        } else if !nodes.isEmpty {
-            toast("Moved \(nodes.count) meetings to the Trash")
-        }
-    }
-
-    func reveal(_ path: String) { reveal([path]) }
-
-    func reveal(_ paths: [String]) {
-        let urls = paths.compactMap { try? resolveInside(meetings.root, $0) }
-        guard !urls.isEmpty else { return }
-        NSWorkspace.shared.activateFileViewerSelecting(urls)
-    }
-
-    func readMeeting(_ path: String) throws -> MeetingFiles { try meetings.read(path) }
-
-    func writeMeetingFile(_ path: String, _ file: MeetingFile, _ content: String) throws {
-        try meetings.write(path, file, content)
-    }
-
-    private func attempt(_ work: () throws -> Void) {
-        do { try work() } catch { toast(error.localizedDescription) }
-    }
-
-    func toast(_ text: String) {
-        withAnimation { toastText = text }
         toastTask?.cancel()
         toastTask = Task {
-            try? await Task.sleep(for: .seconds(2.4))
+            try? await Task.sleep(for: .seconds(isError ? 8 : 2.4))
             if !Task.isCancelled { withAnimation { toastText = nil } }
         }
+        if isError, let window = NSApp.mainWindow ?? NSApp.keyWindow {
+            NSAccessibility.post(element: window, notification: .announcementRequested,
+                                 userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+        }
+    }
+
+    func dismissToast() {
+        toastTask?.cancel()
+        withAnimation { toastText = nil }
     }
 
     // MARK: - Settings
@@ -376,13 +318,8 @@ final class AppModel {
         // A control that sets what it already shows (a picker redrawn, a field losing focus) changes nothing.
         guard saved != config else { return }
         config = saved
-        try? saved.save()
-        for rec in active.values { try? Recordings.setMic(rec.dir, uid: saved.mic?.uid) }
-        // The live transcript follows its switch straight away, mid-call too.
-        if let live {
-            if !saved.liveTranscript { stopLiveTranscript() } else if liveHelper == nil { startLiveTranscript(live) }
-        }
-        updateMenuBar()
+        do { try saved.save() } catch { toast("Couldn’t save your settings: \(error.localizedDescription)", isError: true) }
+        recording.settingsChanged(saved)
     }
 
     /// Saves the microphone choice and switches any running recording to it.
@@ -400,147 +337,27 @@ final class AppModel {
         panel.prompt = "Choose"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         config.outputDir = url.path
-        try? config.save()
-        meetings = Meetings(root: url)
-        watchMeetings()
+        do { try config.save() } catch { toast("Couldn’t save your settings, so Oatcake will be back on the old folder next time: \(error.localizedDescription)", isError: true) }
+        library.open(url)
         refresh()
     }
 
-    /// What's being imported ("Granola", "Quill"), if anything. Kept here rather than in the Settings
-    /// row, which starts afresh if its window is closed and opened again: one import at a time.
-    var importing: String?
-
-    /// Settings › Import from Granola: pick the export, import it, and show the new meetings.
-    func importGranolaExport(progress: @escaping ImportProgress) async throws -> ImportResult? {
-        let panel = NSOpenPanel()
-        panel.title = "Import from Granola"
-        panel.prompt = "Import"
-        panel.allowedContentTypes = [.zip, .commaSeparatedText]
-        guard importing == nil, panel.runModal() == .OK, let url = panel.url else { return nil }
-        importing = "Granola"
-        defer { importing = nil }
-        let root = meetings.root
-        progress(0, 0)
-        let result = try await Task.detached { try importGranola(url, into: root, progress: progress) }.value
-        refresh()
-        return result
-    }
-
-    /// Settings › Import from Quill: pick Quill's backup, import it, and show the new meetings.
-    func importQuillBackup(progress: @escaping ImportProgress) async throws -> ImportResult? {
-        let panel = NSOpenPanel()
-        panel.title = "Import from Quill"
-        panel.prompt = "Import"
-        panel.allowedContentTypes = [.zip]
-        guard importing == nil, panel.runModal() == .OK, let url = panel.url else { return nil }
-        importing = "Quill"
-        defer { importing = nil }
-        let root = meetings.root, me = config.myName
-        progress(0, 0)
-        let result = try await Task.detached { try importQuill(url, into: root, me: me, progress: progress) }.value
-        refresh()
-        return result
-    }
-
-    func setSecret(_ name: SecretName, _ value: String) {
+    /// Saves (or, with "", removes) a secret. Returns why it couldn't, for Settings to show beside the field.
+    @discardableResult
+    func setSecret(_ name: SecretName, _ value: String) -> String? {
         let before = Secrets.get(name)
-        attempt { try Secrets.set(name, value) }
-        if name == .calendar, Secrets.get(.calendar) != before { calendarChanged() }
+        var problem: String?
+        do { try Secrets.set(name, value) } catch { problem = error.localizedDescription }
+        if name == .calendar, Secrets.get(.calendar) != before { calendar.addressChanged() }
+        return problem
     }
 
-    // MARK: - Calendar
-
-    /// The calendar's private iCal address. "" = no calendar.
-    private var calendarAddress: String { Secrets.get(.calendar).trimmed }
-
-    /// Fetched at most once an hour (checked every 5 minutes, so a Mac that slept catches up),
-    /// straight away when its address changes, and whenever the refresh button is pressed.
-    func refreshCalendar(force: Bool = false) {
-        let url = calendarAddress
-        guard !url.isEmpty else {
-            calendar = nil
-            return
-        }
-        // Joins a fetch already running for this address.
-        if calendarFetch?.url == url { return }
-        let cached = CalendarCache.load()
-        if calendar == nil { calendar = cached }
-        if !force, url == calendarUrlFetched, !cached.isStale() { return }
-        calendarFetching = true
-        let task = Task { await fetchCalendar(url) }
-        calendarFetch = (url, task)
-        Task {
-            let cache = await task.value
-            // The address changed meanwhile: an older fetch's result is thrown away.
-            guard calendarFetch?.url == url else { return }
-            calendarFetch = nil
-            calendarFetching = false
-            calendarUrlFetched = url
-            try? cache.save()
-            calendar = cache
-            updateMenuBar()
-        }
-    }
-
-    /// A new (or no) calendar address: forget the old one's events and fetch the new one.
-    private func calendarChanged() {
-        calendarFetch = nil
-        calendarFetching = false
-        calendarUrlFetched = ""
-        try? FileManager.default.removeItem(at: Paths.calendar)
-        calendar = nil
-        if !calendarAddress.isEmpty { refreshCalendar(force: true) }
-    }
-
-    // Call reminders: 5 minutes before each call, a notification whose button opens the call and
-    // starts recording it. Clicking the notification itself opens New recording for the event.
-    private func checkReminders() {
-        guard config.callReminders, let calendar else { return }
-        let now = Date()
-        for event in calendar.events where !event.allDay && !reminded.contains(event.id) {
-            let until = event.startDate.timeIntervalSince(now)
-            // In the five minutes before it starts (or the first minute after, if the Mac was asleep).
-            guard until <= 300, until >= -60 else { continue }
-            reminded.insert(event.id)
-            Reminders.show(event)
-        }
-    }
-
-    /// Shows a reminder for the next timed event straight away, for checking notifications work.
-    func testReminder() -> String? {
-        guard let next = calendar?.events.first(where: { !$0.allDay && $0.endDate > Date() }) else { return nil }
-        Reminders.show(next)
-        return next.title
-    }
+    // MARK: - Around the window
 
     /// A clicked reminder: New recording for its event, unless a call is already being recorded.
     func openEvent(_ event: CalendarEvent) {
         showWindow()
-        selection = live != nil ? .live : .new(event)
-    }
-
-    /// Opens the call's link, starts recording it, and brings Oatcake forward on the live notes.
-    func startFromEvent(_ event: CalendarEvent) {
-        if let link = event.callLink, let url = URL(string: link) { NSWorkspace.shared.open(url) }
-        // Already recording: go back to that recording rather than start a second.
-        if active.isEmpty {
-            do {
-                let folder = try meetings.folderForEvent(title: event.title, recurring: event.seriesId != nil)
-                try startRecording(title: event.title, folder: folder, options: startOptions(event))
-            } catch {
-                let alert = NSAlert()
-                alert.messageText = "Couldn't start recording"
-                alert.informativeText = error.localizedDescription
-                alert.runModal()
-                return
-            }
-        }
-        // After the browser has opened the call, so Oatcake ends up in front for the notes.
-        Task {
-            try? await Task.sleep(for: .milliseconds(800))
-            showWindow()
-            selection = .live
-        }
+        selection = recording.live != nil ? .live : .new(event)
     }
 
     func showWindow() {
@@ -553,649 +370,73 @@ final class AppModel {
         }
     }
 
-    // MARK: - Recording
+    private var mainWindowIsUp: Bool { NSApp.windows.contains { $0.identifier?.rawValue == "main" && $0.isVisible } }
+
+    /// Menu bar › Stop Recording…: asks first, as the window's Stop does, and the question is asked in
+    /// the window, which comes forward. A window that was closed has to be there before anything can
+    /// be asked in it, so the question waits for it. If no window comes, the recording is stopped:
+    /// that's what was chosen, and it mustn't carry on with you thinking it had ended.
+    private func stopFromMenuBar() {
+        let wasUp = mainWindowIsUp
+        showWindow()
+        if wasUp { return recording.confirmStop() }
+        Task {
+            for _ in 0..<30 where !mainWindowIsUp { try? await Task.sleep(for: .milliseconds(100)) }
+            guard mainWindowIsUp else {
+                await recording.stopLive()
+                return
+            }
+            // The window is there a moment before what's in it is.
+            try? await Task.sleep(for: .milliseconds(300))
+            recording.confirmStop()
+        }
+    }
 
     /// New recording (⌘N, the sidebar button, the menu bar): the screen to start one, or the call already being recorded.
     func newRecording(_ event: CalendarEvent? = nil) {
         showWindow()
-        selection = live != nil ? .live : .new(event)
-    }
-
-    /// A recording started straight from a calendar event carries the event, any prep notes written
-    /// for it on New recording, and who else is invited.
-    private func startOptions(_ event: CalendarEvent) -> Recordings.StartOptions {
-        .init(eventId: event.id, prep: PrepNotes.load(event.id), attendees: otherAttendees(event, myName: config.myName).map(attendeeName))
-    }
-
-    /// The link to the call being recorded, when it was started from a calendar event that has one.
-    var liveCallLink: URL? {
-        guard let id = live?.eventId, let link = calendar?.events.first(where: { $0.id == id })?.callLink else { return nil }
-        return URL(string: link)
-    }
-
-    func startRecording(title: String, folder: String, options: Recordings.StartOptions) throws {
-        // One call at a time: a second recorder would capture the same audio.
-        guard active.isEmpty else { throw OatcakeError("Oatcake is already recording a call. Stop it first.") }
-        let rec = try Recordings.start(title: title, folder: folder, micUid: config.mic?.uid, options: options)
-        active[rec.id] = rec
-        // The prep is in the call's notes now.
-        if !options.prep.isEmpty { try? PrepNotes.save(options.eventId, []) }
-        goLive(rec)
-    }
-
-    private func goLive(_ rec: Recording) {
-        live = rec
-        status = RecorderStatus(state: .starting)
-        selection = .live
-        callSeen = false
-        callOverSince = nil
-        statusTimer?.invalidate()
-        statusTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
-            Task { @MainActor in
-                guard let live = self.live else { return }
-                self.status = Recordings.status(live)
-                self.updateMenuBar()
-            }
-        }
-        startLiveTranscript(rec)
-        updateMenuBar()
-        // The language model is fetched while the first call is recorded, to be there when it ends.
-        if let chosenModel, !LocalModels.isDownloaded(chosenModel) { downloadModel(chosenModel) }
-    }
-
-    /// Recordings left from an earlier run: a recorder still going is picked up again; a dead one is finished off.
-    private func resumeRecordings() {
-        for rec in Recordings.list() where rec.state == .recording {
-            if Recordings.isRunning(rec) {
-                active[rec.id] = rec
-                goLive(rec)
-            } else {
-                Recordings.finishInterrupted(rec)
-            }
-        }
-    }
-
-    /// Asks the recorder to finish and waits for its meta.json; keeps whatever audio it captured if it had already stopped.
-    private func stopRecorder(_ rec: Recording) async {
-        Recordings.stop(rec)
-        for _ in 0..<50 where !FileManager.default.fileExists(atPath: rec.dir.appendingPathComponent("meta.json").path) {
-            try? await Task.sleep(for: .milliseconds(100))
-        }
-        Recordings.finishInterrupted(rec)
-        active.removeValue(forKey: rec.id)
-    }
-
-    private func endLive() {
-        stopLiveTranscript()
-        live = nil
-        statusTimer?.invalidate()
-        statusTimer = nil
-        status = RecorderStatus(state: .starting)
-        updateMenuBar()
-    }
-
-    func confirmStop() {
-        confirmation = Confirmation(
-            title: "Stop recording?",
-            text: "Oatcake will transcribe the call and ask you to check who’s who. You can’t add more to this recording afterwards.",
-            ok: "Stop recording", cancel: "Keep recording") { [self] in await stopLive() }
-    }
-
-    /// Stops the call being recorded and starts processing it. If you're on its notes you go to its
-    /// progress; anywhere else, you stay there.
-    func stopLive() async {
-        guard let rec = live else { return }
-        let watching = selection == .live
-        saveLiveNotes(rec.id)
-        await stopRecorder(rec)
-        endLive()
-        progress[rec.id] = JobProgress(step: "Starting")
-        if watching || selection == .live { selection = .job(rec.id) }
-        refresh()
-    }
-
-    /// Cancel before any audio arrived: stop the recorder and throw the recording away.
-    func cancelRecording(hasNotes: Bool) {
-        let cancel = { [self] in
-            guard let rec = live else { return }
-            await stopRecorder(rec)
-            try Recordings.discard(rec.id)
-            liveNotes.removeValue(forKey: rec.id)
-            endLive()
-            openFolder(folder)
-            toast("Recording cancelled")
-            refresh()
-        }
-        if !hasNotes {
-            Task { do { try await cancel() } catch { toast(error.localizedDescription) } }
-            return
-        }
-        confirmation = Confirmation(title: "Cancel this recording?",
-                                    text: "Nothing has been recorded yet. The notes you’ve typed for it will be deleted.",
-                                    ok: "Cancel recording", cancel: "Keep waiting", action: cancel)
-    }
-
-    /// Never leave the recorder (or the language model) running behind a closed app.
-    func stopAllRecorders() {
-        if let live { saveLiveNotes(live.id) }
-        stopLiveTranscript()
-        for rec in active.values { Recordings.stop(rec) }
-        ModelServer.stopLeftover()
-    }
-
-    var isRecording: Bool { !active.isEmpty }
-
-    func saveLiveNotes(_ id: String) {
-        guard let lines = liveNotes[id] else { return }
-        try? Recordings.saveNotes(id, lines.filter { !$0.text.trimmed.isEmpty }.map { Note(at: $0.prep ? nil : $0.at ?? 0, text: $0.text.trimmed) })
-    }
-
-    /// Saved 600 ms after the last keystroke.
-    func liveNotesChanged(_ id: String) {
-        notesSaveTask?.cancel()
-        notesSaveTask = Task {
-            try? await Task.sleep(for: .milliseconds(600))
-            if !Task.isCancelled { saveLiveNotes(id) }
-        }
-    }
-
-    // MARK: - Calls
-
-    /// Every couple of seconds: is a calling app using the microphone? A call that starts while
-    /// nothing is being recorded gets an offer to record it. A recording that has had a calling
-    /// app on the microphone stops once that app has let go and the call audio has been quiet for a
-    /// quarter of a minute; music still playing, or a call you're only muted on, keeps it going.
-    private func checkCall() {
-        guard config.callNotice || (config.autoStop && live != nil) else { return }
-        let apps = CallDetector.appsOnCall()
-        let now = Date()
-        guard !apps.isEmpty else {
-            callSince = nil
-            guard live != nil, callSeen, config.autoStop, status.state == .recording, (status.systemLevel ?? 0) < 0.001 else {
-                callOverSince = nil
-                return
-            }
-            callOverSince = callOverSince ?? now
-            if now.timeIntervalSince(callOverSince!) >= 15 { callEnded() }
-            return
-        }
-        callOverSince = nil
-        if callSince == nil {
-            callSince = now
-            callOffered = false
-        }
-        if live != nil {
-            callSeen = true
-        } else if config.callNotice, !callOffered, now.timeIntervalSince(callSince!) >= 4 {
-            callOffered = true
-            Reminders.offerRecording(app: apps[0], event: currentEvent)
-        }
-    }
-
-    private func callEnded() {
-        guard let rec = live else { return }
-        callOverSince = nil
-        Task {
-            await stopLive()
-            Reminders.stopped(rec.title)
-            toast("The call ended, so recording stopped")
-        }
-    }
-
-    /// The calendar event happening now (or starting within ten minutes), if any.
-    var currentEvent: CalendarEvent? {
-        let now = Date()
-        return calendar?.events.first { !$0.allDay && $0.startDate.addingTimeInterval(-600) <= now && $0.endDate > now }
-    }
-
-    /// From the "On a call?" notification: record it, under the calendar event happening now if there is one.
-    func recordCall() {
-        showWindow()
-        guard active.isEmpty else { return selection = .live }
-        do {
-            if let event = currentEvent {
-                let folder = try meetings.folderForEvent(title: event.title, recurring: event.seriesId != nil)
-                try startRecording(title: event.title, folder: folder, options: startOptions(event))
-            } else {
-                try startRecording(title: "Call", folder: "", options: .init())
-            }
-        } catch {
-            toast(error.localizedDescription)
-        }
-    }
-
-    // MARK: - Live transcript
-
-    private func startLiveTranscript(_ rec: Recording) {
-        // Asked for again while the helper is still on its way up (settings saved just after the call
-        // started, say): one is enough.
-        guard liveTranscriptFor != rec.id else { return }
-        liveLines = []
-        liveStatus = ""
-        guard config.liveTranscript, liveHelper == nil else { return }
-        liveTranscriptFor = rec.id
-        liveStatus = "Starting"
-        Task {
-            _ = try? await ChildProcess.run(Bundle.main.executableURL!, ["--live", rec.dir.path], onStart: { process in
-                Task { @MainActor in
-                    // The call may have ended (or the switch been turned off) before the helper got going.
-                    if self.live?.id == rec.id, self.liveTranscriptFor == rec.id, self.config.liveTranscript { self.liveHelper = process } else { process.terminate() }
-                }
-            }, onLine: { line in
-                guard let event = try? JSONDecoder().decode(LiveEvent.self, from: Data(line.utf8)) else { return }
-                Task { @MainActor in
-                    guard self.live?.id == rec.id else { return }
-                    if let line = event.line { self.liveLines.append(line) }
-                    if let status = event.status { self.liveStatus = status }
-                    if let error = event.error { self.liveStatus = "The live transcript stopped: \(error)" }
-                }
-            })
-        }
-    }
-
-    private func stopLiveTranscript() {
-        liveHelper?.terminate()
-        liveHelper = nil
-        liveTranscriptFor = nil
-    }
-
-    // MARK: - Menu bar
-
-    /// The menu bar shows the call being recorded (with Stop) or, with a calendar connected and the
-    /// setting on, the time until the next call.
-    var showsNextCallInMenuBar: Bool { config.menuBarNextCall && calendar != nil }
-
-    func updateMenuBar() {
-        if let live {
-            menuBar.show(.recording(title: live.title, elapsed: status.state == .recording ? status.elapsed ?? 0 : nil))
-        } else if showsNextCallInMenuBar {
-            let now = Date()
-            menuBar.show(.upcoming((calendar?.events ?? []).filter { !$0.allDay && $0.endDate > now }))
-        } else {
-            menuBar.hide()
-        }
-    }
-
-    // MARK: - Processing
-
-    func analyse(_ id: String) {
-        guard let rec = Recordings.get(id), !analysing.contains(id) else { return }
-        analysing.insert(id)
-        progress[id] = JobProgress(step: progress[id]?.step ?? "Starting")
-        analyses[id] = Task {
-            // Steps arrive as they happen; the outcome is read from the full output once it exits.
-            let result = try? await ChildProcess.run(Bundle.main.executableURL!, ["--analyse", rec.dir.path], onStart: { process in
-                Task { @MainActor in self.helpers[id] = process }
-            }, onLine: { line in
-                guard let p = try? JSONDecoder().decode(AnalysisProgress.self, from: Data(line.utf8)), p.step != nil else { return }
-                Task { @MainActor in self.apply(id, p) }
-            })
-            helpers.removeValue(forKey: id)
-            var outcome = (result?.stdout ?? "").split(separator: "\n").reversed()
-                .compactMap { try? JSONDecoder().decode(AnalysisProgress.self, from: Data($0.utf8)) }
-                .first { $0.done == true || $0.error != nil }
-            if outcome == nil {
-                if result?.status == 0, FileManager.default.fileExists(atPath: rec.dir.appendingPathComponent("analysis.json").path) {
-                    outcome = AnalysisProgress(done: true)
-                } else {
-                    let detail = result.map { $0.stderr.trimmed.isEmpty ? "" : ": " + String($0.stderr.trimmed.suffix(300)) } ?? ""
-                    outcome = AnalysisProgress(error: "Analysis stopped (code \(result?.status ?? -1))\(detail)")
-                }
-            }
-            // Step 5, here rather than in the helper: the language model is the app's to run. A model
-            // that's still downloading isn't waited for; the names can be typed.
-            if outcome?.done == true, Recordings.get(id) != nil, !Task.isCancelled, hasUnnamedVoices(rec.dir) {
-                progress[id] = JobProgress(step: analysisSteps[4])
-                if let chosenModel, !LocalModels.isDownloaded(chosenModel) { downloadModel(chosenModel) }
-                await suggestNames(rec.dir, config: config)
-            }
-            analysing.remove(id)
-            analyses.removeValue(forKey: id)
-            // Discarded while it ran: nothing to report.
-            guard Recordings.get(id) != nil else {
-                progress.removeValue(forKey: id)
-                return
-            }
-            if let outcome { apply(id, outcome) }
-        }
-    }
-
-    /// Whether a recording is still being worked on (its review waits until it isn't).
-    func isAnalysing(_ id: String) -> Bool { analysing.contains(id) }
-
-    private func apply(_ id: String, _ p: AnalysisProgress) {
-        if p.done == true {
-            progress.removeValue(forKey: id)
-            refresh()
-        } else if let error = p.error {
-            progress[id] = JobProgress(step: progress[id]?.step ?? "Starting", error: error)
-        } else if let step = p.step {
-            progress[id] = JobProgress(step: step, fraction: p.fraction)
-        }
-        updateBadge()
-    }
-
-    func retry(_ rec: Recording) {
-        progress[rec.id] = JobProgress(step: "Starting")
-        analyse(rec.id)
-    }
-
-    func discard(_ rec: Recording) {
-        confirmation = Confirmation(title: "Discard this recording?",
-                                    text: "The audio, transcript and your notes will be deleted. This can’t be undone.",
-                                    ok: "Discard", cancel: "Cancel") { [self] in
-            // A helper still analysing it would write its transcript and clips back after the folder had gone.
-            helpers.removeValue(forKey: rec.id)?.terminate()
-            analyses.removeValue(forKey: rec.id)?.cancel()
-            try Recordings.discard(rec.id)
-            reviewDrafts.removeValue(forKey: rec.id)
-            progress.removeValue(forKey: rec.id)
-            openFolder(folder)
-            toast("Recording discarded")
-            refresh()
-        }
-    }
-
-    /// Saves a reviewed recording as a meeting and starts writing its summary. Returns the meeting's path.
-    func saveRecording(_ rec: Recording, decisions: [String: Decision], folder: String, title: String) throws -> String {
-        let path = try saveMeeting(config, rec, decisions: decisions, folder: folder, title: title)
-        reviewDrafts.removeValue(forKey: rec.id)
-        writeSummary(path)
-        return path
-    }
-
-    /// Writes a saved meeting's summary and to-dos in the background: after every save, and from
-    /// Write summary when an earlier attempt couldn't reach the model.
-    func writeSummary(_ path: String) {
-        guard !summarising.contains(path) else { return }
-        summarising.insert(path)
-        summaryErrors.removeValue(forKey: path)
-        let job = UUID()
-        summaryJobs[job] = path
-        let config = config
-        Task {
-            do {
-                try await ensureModel()
-                let draft = try await OatcakeCore.draftSummary(config, meeting: path)
-                try OatcakeCore.writeSummary(draft, config: config, meeting: summaryJobs[job] ?? path)
-            } catch {
-                summaryErrors[summaryJobs[job] ?? path] = error.localizedDescription
-            }
-            summarising.remove(summaryJobs[job] ?? path)
-            summaryJobs.removeValue(forKey: job)
-            refresh()
-        }
-    }
-
-    // MARK: - Language model
-
-    /// The model chosen in Settings, when it's one Oatcake downloads and runs itself.
-    var chosenModel: LocalModel? { LocalModels.find(config.llm.model) }
-
-    /// "Downloading the language model: 42% of 5.0 GB", while the chosen one is on its way.
-    var modelDownloadStatus: String? {
-        guard let chosenModel, let fraction = modelDownloads[chosenModel.id] else { return nil }
-        return "Downloading the language model: \(Int(fraction * 100))% of \(chosenModel.downloadSize)"
-    }
-
-    /// Starts downloading a model, or joins the download already under way.
-    @discardableResult
-    func downloadModel(_ model: LocalModel) -> Task<Void, Error> {
-        if let task = modelDownloadTasks[model.id] { return task }
-        modelDownloadErrors.removeValue(forKey: model.id)
-        modelDownloads[model.id] = 0
-        let task = Task {
-            defer {
-                modelDownloadTasks.removeValue(forKey: model.id)
-                modelDownloads.removeValue(forKey: model.id)
-                modelsVersion += 1
-            }
-            do {
-                try await ModelDownload.fetch(model) { fraction in
-                    Task { @MainActor in
-                        if self.modelDownloadTasks[model.id] != nil { self.modelDownloads[model.id] = fraction }
-                    }
-                }
-            } catch {
-                if !isCancellation(error) { modelDownloadErrors[model.id] = error.localizedDescription }
-                throw error
-            }
-        }
-        modelDownloadTasks[model.id] = task
-        return task
-    }
-
-    func stopModelDownload(_ model: LocalModel) { modelDownloadTasks[model.id]?.cancel() }
-
-    /// Deletes a model's file, stopping its download or the model itself first.
-    func removeModel(_ model: LocalModel) {
-        let download = modelDownloadTasks[model.id]
-        download?.cancel()
-        Task {
-            _ = try? await download?.value
-            await ModelServer.shared.stop()
-            LocalModels.remove(model)
-            modelsVersion += 1
-        }
-    }
-
-    /// Waits for the chosen model to be on this Mac, downloading it if it isn't. A server of your
-    /// own needs nothing.
-    func ensureModel() async throws {
-        guard let chosenModel, !LocalModels.isDownloaded(chosenModel) else { return }
-        let download = downloadModel(chosenModel)
-        // Looked at again every so often, so that whatever is waiting (a question, say) can be
-        // stopped without stopping the download.
-        while modelDownloadTasks[chosenModel.id] != nil {
-            try Task.checkCancellation()
-            try await Task.sleep(for: .milliseconds(300))
-        }
-        do {
-            try await download.value
-        } catch where isCancellation(error) {
-            // The download was stopped (in Settings), not what was waiting for it.
-            throw OatcakeError(modelNotDownloadedMessage)
-        }
+        selection = recording.live != nil ? .live : .new(event)
     }
 
     // MARK: - Status
 
-    struct Job: Identifiable {
-        enum Status { case processing, review, failed }
-        var rec: Recording
-        var status: Status
-        var step: Int
-        var id: String { rec.id }
-    }
+    /// Work that closing the window shouldn't end: anything an update waits for, and a model on its way down.
+    var hasWorkInFlight: Bool { busyReason != nil || downloads.isDownloading }
 
-    var jobs: [Job] {
-        pending.sorted { $0.startedAt > $1.startedAt }.map { rec in
-            let p = progress[rec.id]
-            return Job(rec: rec, status: p?.error != nil ? .failed : rec.state == .processed && !analysing.contains(rec.id) ? .review : .processing,
-                       step: stepNumber(p?.step ?? ""))
+    /// What quitting now would interrupt, as a question to ask first; nil when it would interrupt
+    /// nothing. (The updater's own quit never gets here with one: it checks `busyReason`, which
+    /// covers the same things, just before it quits.)
+    var quitQuestion: (title: String, text: String, ok: String)? {
+        if let live = recording.live, recording.recorderFailure == nil {
+            return ("Stop recording and quit?",
+                    "Oatcake is recording “\(live.title)”. Quitting stops the recording. What’s been recorded so far is transcribed the next time you open Oatcake.",
+                    "Stop Recording and Quit")
         }
-    }
-
-    /// The Dock badge counts what's waiting for you: recordings to review, or that failed.
-    private func updateBadge() {
-        let waiting = jobs.filter { $0.status != .processing }.count
-        NSApp.dockTile.badgeLabel = waiting > 0 ? String(waiting) : nil
-    }
-
-    var todoCounts: (open: Int, overdue: Int) {
-        let items = allTodoItems(todoMeetings)
-        return (items.filter { !$0.todo.done }.count, items.filter { $0.isOverdue() }.count)
+        var doing: [String] = []
+        var after: [String] = []
+        if jobs.isAnalysingAny {
+            doing.append("analysing a call")
+            after.append("The analysis starts again the next time you open Oatcake.")
+        }
+        if !jobs.summarising.isEmpty {
+            doing.append("writing a summary")
+            after.append("A summary that isn’t finished can be written later, with Write summary in its meeting.")
+        }
+        if let importing = library.importing {
+            doing.append("importing from \(importing)")
+            after.append("Importing again carries on with the meetings that didn’t come in.")
+        }
+        guard !doing.isEmpty else { return nil }
+        let what = doing.count > 1 ? doing.dropLast().joined(separator: ", ") + " and " + doing.last! : doing[0]
+        return ("Quit Oatcake?", "Oatcake is \(what). \(after.joined(separator: " "))", "Quit")
     }
 
     /// Why an update has to wait, if it does.
     var busyReason: String? {
-        if !active.isEmpty { return "Oatcake is recording a call. Install the update after you stop." }
-        if !analysing.isEmpty { return "Oatcake is analysing a call. Install the update when it's done." }
-        if !summarising.isEmpty { return "Oatcake is writing a summary. Try again in a moment." }
-        if importing != nil { return "Oatcake is importing meetings. Install the update when it's done." }
+        if recording.isRecording { return "Oatcake is recording a call. Install the update after you stop." }
+        if jobs.isAnalysingAny { return "Oatcake is analysing a call. Install the update when it's done." }
+        if !jobs.summarising.isEmpty { return "Oatcake is writing a summary. Try again in a moment." }
+        if library.importing != nil { return "Oatcake is importing meetings. Install the update when it's done." }
         return nil
-    }
-}
-
-/// Step 1–5 for a progress message; downloads and model loading count as step 1.
-func stepNumber(_ step: String) -> Int { max(1, (analysisSteps.firstIndex(of: step) ?? -1) + 1) }
-
-/// Calls back (debounced) whenever anything under a folder changes.
-final class FolderWatcher {
-    private var stream: FSEventStreamRef?
-    private let onChange: () -> Void
-
-    init(_ url: URL, onChange: @escaping () -> Void) {
-        self.onChange = onChange
-        var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
-        let callback: FSEventStreamCallback = { _, info, _, _, _, _ in
-            guard let info else { return }
-            Unmanaged<FolderWatcher>.fromOpaque(info).takeUnretainedValue().onChange()
-        }
-        stream = FSEventStreamCreate(nil, callback, &context, [url.path] as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.25,
-                                     FSEventStreamCreateFlags(kFSEventStreamCreateFlagNoDefer))
-        if let stream {
-            FSEventStreamSetDispatchQueue(stream, .main)
-            FSEventStreamStart(stream)
-        }
-    }
-
-    deinit {
-        if let stream {
-            FSEventStreamStop(stream)
-            FSEventStreamInvalidate(stream)
-            FSEventStreamRelease(stream)
-        }
-    }
-}
-
-/// Call reminders through Notification Center, with one button.
-enum Reminders {
-    static let category = "call-reminder"
-    static let startAction = "start"
-
-    static let callCategory = "call-noticed"
-    static let recordAction = "record"
-
-    static func register() {
-        let center = UNUserNotificationCenter.current()
-        let start = UNNotificationAction(identifier: startAction, title: "Open call and start note taking", options: [.foreground])
-        let record = UNNotificationAction(identifier: recordAction, title: "Start recording", options: [.foreground])
-        center.setNotificationCategories([UNNotificationCategory(identifier: category, actions: [start], intentIdentifiers: []),
-                                          UNNotificationCategory(identifier: callCategory, actions: [record], intentIdentifiers: [])])
-    }
-
-    private static func post(_ content: UNMutableNotificationContent, id: String) {
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            guard granted else { return }
-            center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
-        }
-    }
-
-    /// A calling app has started using the microphone and nothing is being recorded.
-    static func offerRecording(app: String, event: CalendarEvent?) {
-        let content = UNMutableNotificationContent()
-        content.title = "On a call?"
-        content.body = "\(app) is using your microphone\(event.map { " (\($0.title))" } ?? ""). Oatcake isn’t recording."
-        content.categoryIdentifier = callCategory
-        content.sound = .default
-        post(content, id: "call-noticed")
-    }
-
-    /// A recording stopped by itself because its call ended.
-    static func stopped(_ title: String) {
-        let content = UNMutableNotificationContent()
-        content.title = "Recording stopped"
-        content.body = "The call ended, so Oatcake stopped recording “\(title)” and is transcribing it."
-        post(content, id: "call-ended")
-    }
-
-    static func show(_ event: CalendarEvent) {
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            guard granted else { return }
-            let minutes = Int((event.startDate.timeIntervalSinceNow / 60).rounded())
-            let content = UNMutableNotificationContent()
-            content.title = event.title
-            content.body = [minutes > 0 ? "In \(minutes) min" : "Starting now", "\(hhmm(event.startDate))–\(hhmm(event.endDate))",
-                            event.callLink.flatMap(callApp)].compactMap { $0 }.joined(separator: " · ")
-            content.categoryIdentifier = category
-            content.userInfo = ["event": (try? encodeJSON(event)) ?? ""]
-            content.sound = .default
-            center.add(UNNotificationRequest(identifier: event.id, content: content, trigger: nil))
-        }
-    }
-
-    static func event(from response: UNNotificationResponse) -> CalendarEvent? {
-        (response.notification.request.content.userInfo["event"] as? String)
-            .flatMap { try? JSONDecoder().decode(CalendarEvent.self, from: Data($0.utf8)) }
-    }
-}
-
-// MARK: - Ask
-
-struct AskTurn: Identifiable {
-    let id = UUID()
-    var question: String
-    var answer: String?
-    var error: String?
-    var stopped = false
-    var step: String?
-    var startedAt = Date()
-    var running: Bool { answer == nil && error == nil && !stopped }
-}
-
-/// One conversation for as long as the app is open. It carries on as you move between meetings, so
-/// following a link in an answer doesn't lose it. Each question is asked about the meeting that's open.
-@MainActor @Observable
-final class AskChat {
-    var turns: [AskTurn] = []
-    var open = false
-    private var tasks: [UUID: Task<Void, Never>] = [:]
-
-    var running: AskTurn? { turns.first(where: \.running) }
-
-    func send(_ question: String, meeting: String, app: AppModel) {
-        let history = turns.compactMap { turn in turn.answer.map { AskExchange(question: turn.question, answer: $0) } }
-        let turn = AskTurn(question: question)
-        turns.append(turn)
-        open = true
-        let config = app.config
-        tasks[turn.id] = Task {
-            do {
-                // The first question may find the model still on its way.
-                let waiting = Task {
-                    while !Task.isCancelled {
-                        if let status = app.modelDownloadStatus { update(turn.id) { $0.step = status } }
-                        try? await Task.sleep(for: .seconds(1))
-                    }
-                }
-                defer { waiting.cancel() }
-                try await app.ensureModel()
-                waiting.cancel()
-                let answer = try await OatcakeCore.ask(config, meeting: meeting, question: question, history: history) { step in
-                    Task { @MainActor in self.update(turn.id) { $0.step = step } }
-                }
-                update(turn.id) { $0.answer = answer }
-            } catch {
-                let message = error.localizedDescription
-                update(turn.id) { if Task.isCancelled || isCancellation(error) { $0.stopped = true } else { $0.error = message } }
-            }
-            tasks.removeValue(forKey: turn.id)
-        }
-    }
-
-    func cancel() {
-        if let running { tasks[running.id]?.cancel() }
-    }
-
-    func newChat() {
-        turns = []
-        open = true
-    }
-
-    private func update(_ id: UUID, _ change: (inout AskTurn) -> Void) {
-        if let i = turns.firstIndex(where: { $0.id == id }) { change(&turns[i]) }
     }
 }

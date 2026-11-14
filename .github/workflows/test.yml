@@ -1,0 +1,46 @@
+name: Test
+
+# Every pull request and every push to trunk: build everything and run the tests. No secrets here;
+# signing and releasing are the Release workflow's, behind its environment.
+on:
+  pull_request:
+  push:
+    branches: [trunk]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - run: swift build
+
+      # A test that hangs would hold the job for hours and say nothing. After five minutes this says
+      # where the tests are stuck, and fails.
+      - name: Run the tests
+        run: |
+          swift test & tests=$!
+          for _ in $(seq 1 60); do kill -0 "$tests" 2>/dev/null || break; sleep 5; done
+          if kill -0 "$tests" 2>/dev/null; then
+            echo "::error::The tests were still running after five minutes."
+            for helper in $(pgrep -f 'swiftpm-testing-helper|xctest'); do sudo sample "$helper" 3 2>/dev/null | sed -n '1,400p'; done
+            kill "$tests"
+            exit 1
+          fi
+          wait "$tests"
+
+      - name: Check the scripts parse
+        run: |
+          sh -n install.sh
+          bash -n Scripts/bundle.sh
+          bash -n Scripts/version.sh

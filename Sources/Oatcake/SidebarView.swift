@@ -22,16 +22,16 @@ struct SidebarView: View {
 
     var body: some View {
         List(selection: selectionBinding) {
-            if let live = model.live { liveRow(live).tag(SidebarItem.live) }
+            if let live = model.recording.live { liveRow(live).tag(SidebarItem.live) }
             todosRow.tag(SidebarItem.todos)
-            if model.calendar != nil { upcoming }
-            if !model.jobs.isEmpty {
+            if model.calendar.cache != nil { upcoming }
+            if !model.jobs.list.isEmpty {
                 Section("Needs review") {
-                    ForEach(model.jobs) { job in jobRow(job).tag(SidebarItem.job(job.id)) }
+                    ForEach(model.jobs.list) { job in jobRow(job).tag(SidebarItem.job(job.id)) }
                 }
             }
             Section {
-                if let tree = model.tree {
+                if let tree = model.library.tree {
                     ForEach(visibleFolders(tree), id: \.node.path) { item in
                         FolderRow(node: item.node, depth: item.depth, open: $open, renaming: $renaming, draft: $draft,
                                   newFolderIn: $newFolderIn, dropTarget: $dropTarget)
@@ -91,14 +91,14 @@ struct SidebarView: View {
         }
         .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $draft)
-            Button("Rename") { if let node = renaming { model.rename(node.path, to: draft) } }
+            Button("Rename") { if let node = renaming { model.library.rename(node.path, to: draft) } }
             Button("Cancel", role: .cancel) {}
         }
         .alert("New Folder", isPresented: Binding(get: { newFolderIn != nil }, set: { if !$0 { newFolderIn = nil } })) {
             TextField("Folder name", text: $draft)
             Button("Create") {
                 guard let parent = newFolderIn, !draft.trimmed.isEmpty else { return }
-                if model.createFolder(in: parent, named: draft) != nil, !parent.isEmpty { open.insert(parent) }
+                if model.library.createFolder(in: parent, named: draft) != nil, !parent.isEmpty { open.insert(parent) }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -149,26 +149,36 @@ struct SidebarView: View {
 
     private func drop(_ items: [String], on target: String) -> Bool {
         guard let item = items.first, item.hasPrefix(dragPrefix) else { return false }
-        model.move(String(item.dropFirst(dragPrefix.count)), into: target)
+        model.library.move(String(item.dropFirst(dragPrefix.count)), into: target)
         return true
     }
 
     // MARK: Rows
 
     private func liveRow(_ rec: Recording) -> some View {
-        let starting = model.status.state != .recording
+        // What's true of it: on its way up, recording, or not recording at all.
+        let state = model.recording.status.state
+        let failed = model.recording.recorderFailure != nil
+        let recording = state == .recording && !failed
+        let label = failed ? "Couldn’t record" : state == .starting ? "Starting…" : recording ? "Recording · \(clock(model.recording.status.elapsed ?? 0))" : "Recording stopped"
         return HStack(spacing: 9) {
-            if starting { Circle().fill(.secondary).frame(width: 7, height: 7) } else { RecDot() }
+            if recording {
+                RecDot()
+            } else if failed {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).font(.caption)
+            } else {
+                Circle().fill(.secondary).frame(width: 7, height: 7)
+            }
             VStack(alignment: .leading, spacing: 1) {
                 Text(rec.title).lineLimit(1)
-                Text(starting ? "Starting…" : "Recording · \(clock(model.status.elapsed ?? 0))")
-                    .font(.caption).foregroundStyle(starting ? AnyShapeStyle(.secondary) : AnyShapeStyle(.red)).monospacedDigit()
+                Text(label)
+                    .font(.caption).foregroundStyle(recording || failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary)).monospacedDigit()
             }
         }
     }
 
     private var todosRow: some View {
-        let counts = model.todoCounts
+        let counts = model.library.todoCounts
         return HStack {
             Label("To-dos", systemImage: "checkmark.square")
             Spacer()
@@ -182,8 +192,8 @@ struct SidebarView: View {
     /// half-minute tick. (They used to sit in a TimelineView, but a Section built inside one stops
     /// SwiftUI with a fatal error in a sidebar list, so the app couldn't open with a calendar set.)
     @ViewBuilder private var upcoming: some View {
-        let calendar = model.calendar!
-        let now = model.now
+        let calendar = model.calendar.cache!
+        let now = model.calendar.now
         let endOfTomorrow = Calendar.current.date(byAdding: .day, value: 2, to: Calendar.current.startOfDay(for: now))!
         let events = Array(calendar.events.filter { !$0.allDay && $0.endDate > now && $0.startDate < endOfTomorrow }.prefix(6))
         let next = events.first { $0.startDate > now }
@@ -200,14 +210,14 @@ struct SidebarView: View {
             HStack {
                 Text("Upcoming")
                 Spacer()
-                Button { model.refreshCalendar(force: true) } label: {
+                Button { model.calendar.refresh(force: true) } label: {
                     Image(systemName: "arrow.clockwise")
                         .foregroundStyle(calendar.error != nil ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
-                        .symbolEffect(.rotate, isActive: model.calendarFetching)
+                        .symbolEffect(.rotate, isActive: model.calendar.fetching)
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Refresh the calendar")
-                .disabled(model.calendarFetching)
+                .disabled(model.calendar.fetching)
                 .help("\(calendarTip(calendar)). Refresh now.")
             }
             .padding(.trailing, headerButtonInset)
@@ -216,8 +226,8 @@ struct SidebarView: View {
 
     private func eventRow(_ e: CalendarEvent, next: CalendarEvent?, now: Date) -> some View {
         // Status and countdown sit in the time column, so they never cut the title short.
-        let recording = model.live?.eventId == e.id
-        let starting = model.status.state != .recording
+        let recording = model.recording.live?.eventId == e.id
+        let starting = model.recording.status.state != .recording
         let minsToNext = next.map { Int(ceil($0.startDate.timeIntervalSince(now) / 60)) } ?? .max
         let label: String
         let color: AnyShapeStyle
@@ -247,18 +257,22 @@ struct SidebarView: View {
     }
 
     private func calendarTip(_ c: CalendarCache) -> String {
-        if model.calendarFetching { return "Fetching…" }
-        if let error = c.error { return error }
+        if model.calendar.fetching { return "Fetching…" }
+        if let failure = c.failure { return failure }
         if let updated = parseISO(c.updatedAt) { return "Updated \(hhmm(updated))" }
         return "Not fetched yet"
     }
 
     private func calendarMessage(_ c: CalendarCache, events: [CalendarEvent]) -> String? {
-        if c.updatedAt == nil { return c.error ?? "Fetching your calendar…" }
-        return events.isEmpty ? "Nothing else today or tomorrow." : nil
+        guard let updated = parseISO(c.updatedAt) else { return c.failure ?? "Fetching your calendar…" }
+        let nothing = events.isEmpty ? "Nothing else today or tomorrow." : nil
+        // Said in words, not only by the arrow turning red: what's listed may be out of date.
+        guard c.error != nil else { return nothing }
+        let when = Calendar.current.isDateInToday(updated) ? hhmm(updated) : "\(shortDate(updated)), \(hhmm(updated))"
+        return [nothing, "The calendar couldn’t be updated. This is how it stood at \(when)."].compactMap { $0 }.joined(separator: " ")
     }
 
-    private func jobRow(_ job: AppModel.Job) -> some View {
+    private func jobRow(_ job: Jobs.Job) -> some View {
         HStack(spacing: 9) {
             Group {
                 switch job.status {
@@ -276,7 +290,7 @@ struct SidebarView: View {
         }
     }
 
-    private func jobStatus(_ job: AppModel.Job) -> String {
+    private func jobStatus(_ job: Jobs.Job) -> String {
         switch job.status {
         case .processing: "Processing · step \(job.step) of 5"
         case .review: "Ready to review"
@@ -337,15 +351,15 @@ private struct FolderRow: View {
         .draggable(dragPrefix + node.path)
         .dropDestination(for: String.self) { items, _ in
             guard let item = items.first, item.hasPrefix(dragPrefix) else { return false }
-            model.move(String(item.dropFirst(dragPrefix.count)), into: node.path)
+            model.library.move(String(item.dropFirst(dragPrefix.count)), into: node.path)
             return true
         } isTargeted: { dropTarget = $0 ? node.path : (dropTarget == node.path ? nil : dropTarget) }
         .contextMenu {
             Button("Rename…") { draft = node.name; renaming = node }
             Button("New Folder Inside…") { draft = ""; newFolderIn = node.path }
-            Button("Show in Finder") { model.reveal(node.path) }
+            Button("Show in Finder") { model.library.reveal(node.path) }
             Divider()
-            Button("Move to Trash") { model.trash([node]) }
+            Button("Move to Trash") { model.library.trashFolder(node) }
         }
     }
 }
@@ -353,6 +367,7 @@ private struct FolderRow: View {
 /// A newer release: Update installs it and relaunches; Details (when this copy can't update itself) opens Settings.
 private struct UpdateNotice: View {
     @Environment(AppModel.self) private var model
+    @ViewState private var confirming = false
 
     var body: some View {
         let u = model.updater
@@ -369,10 +384,16 @@ private struct UpdateNotice: View {
                     ProgressView().controlSize(.small)
                 } else if u.blocked != nil {
                     // Opens Settings on its Updates pane.
-                    SettingsLink { Text("Details") }
-                        .simultaneousGesture(TapGesture().onEnded { UserDefaults.standard.set("updates", forKey: "settingsPane") })
+                    SettingsPaneLink(pane: "updates", title: "Details")
                 } else {
-                    Button("Update") { Task { await u.install() } }.buttonStyle(.borderedProminent)
+                    // Asked first: it quits Oatcake, and whatever is half done in a window goes with it.
+                    Button("Update…") { confirming = true }.buttonStyle(.borderedProminent)
+                        .alert("Install Oatcake \(available.version)?", isPresented: $confirming) {
+                            Button("Install and Relaunch") { Task { await u.install() } }
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("Oatcake downloads it, quits and reopens on the new version. A Who’s who you haven’t saved yet keeps its recording, but not the names you’ve typed.")
+                        }
                 }
             }
             .padding(.horizontal, 14)

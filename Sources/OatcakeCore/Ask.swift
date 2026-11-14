@@ -213,8 +213,8 @@ func otherMeetings(_ meetings: Meetings, others: [TreeNode], besides rel: String
             section("To-dos ([x] = done)", files.todo),
             section("Transcript lines that match the search ([mm:ss] is the time into that call)", lines.joined(separator: "\n\n")),
         ].compactMap { $0 }.joined(separator: "\n\n")
-        // Cut to its share of the room, at about three characters a token.
-        found.append((node.path, String(text.prefix(each * 3))))
+        // Cut to its share of the room.
+        found.append((node.path, String(text.prefix(LocalModels.bytes(forTokens: each)))))
     }
     return found
 }
@@ -231,7 +231,7 @@ private let hrefCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvw
  * shown as the time alone. A tag for a meeting that wasn't given is left as the model wrote it.
  */
 func citationLinks(_ answer: String, sources: [String]) -> String {
-    let time = try! NSRegularExpression(pattern: #"\d{1,2}:\d\d(?::\d\d)?"#)
+    let time = try! NSRegularExpression(pattern: stampForm)
     func href(_ path: String) -> String { path.addingPercentEncoding(withAllowedCharacters: hrefCharacters) ?? path }
     func label(_ path: String) -> String {
         meetingLinkText(path) ?? ((path as NSString).lastPathComponent).replacingOccurrences(of: "]", with: "\\]")
@@ -256,7 +256,7 @@ func citationLinks(_ answer: String, sources: [String]) -> String {
     }
     // With only the open meeting in front of it, a bare "[12:34]" can only be a time in that one.
     if sources.count == 1 {
-        out = replacing(out, #"\[(\d{1,2}:\d\d(?::\d\d)?)\](?!\()"#) { g in g[1].map { "[\($0)](\(href(sources[0]))#\($0))" } }
+        out = replacing(out, "\\[(\(stampForm))\\](?!\\()") { g in g[1].map { "[\($0)](\(href(sources[0]))#\($0))" } }
     }
     return out
 }

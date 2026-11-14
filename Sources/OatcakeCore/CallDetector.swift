@@ -22,7 +22,12 @@ public enum CallDetector {
     /// The calling app a bundle ID belongs to, if it is one.
     static func callingApp(_ bundleID: String) -> String? {
         let id = bundleID.lowercased()
-        return callingApps.first { id == $0.prefix || id.hasPrefix($0.prefix + ".") }?.name
+        return callingApps.first { app in
+            guard id.hasPrefix(app.prefix) else { return false }
+            // The app itself, one of its helpers ("….helper"), or a later edition of it ("com.microsoft.teams2").
+            let rest = id.dropFirst(app.prefix.count).drop(while: \.isNumber)
+            return rest.isEmpty || rest.hasPrefix(".")
+        }?.name
     }
 
     /// The calling apps with a microphone open right now, e.g. ["Google Chrome"]. Empty when there are none.

@@ -1,6 +1,7 @@
 #!/bin/bash
-# Builds build/Oatcake.app: the app, with the recorder as its own app bundle inside it so macOS asks
-# for microphone and system-audio permission for "OatcakeRecorder" alone, and with llama.cpp's
+# Builds build/Oatcake.app: the app, with the recorder as its own app bundle inside it (macOS counts
+# what the recorder uses as Oatcake's, and asks for the microphone and system audio in Oatcake's
+# name), and with llama.cpp's
 # server, which runs the language model on this Mac (see Sources/OatcakeCore/LocalModel.swift).
 #
 #   Scripts/bundle.sh            release build
@@ -18,9 +19,16 @@ VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 APP="$ROOT/build/Oatcake.app"
 cd "$ROOT"
 
-swift build -c "$CONFIG" --product Oatcake
-swift build -c "$CONFIG" --product OatcakeRecorder
-BIN="$(swift build -c "$CONFIG" --show-bin-path)"
+# OATCAKE_BIN names the folder of binaries when they're already built. The release workflow builds
+# before the signing identity is on the runner and passes it, so nothing of the package's or its
+# dependency's runs once there is something to sign with.
+if [[ -n "${OATCAKE_BIN:-}" ]]; then
+    BIN="$OATCAKE_BIN"
+else
+    swift build -c "$CONFIG" --product Oatcake
+    swift build -c "$CONFIG" --product OatcakeRecorder
+    BIN="$(swift build -c "$CONFIG" --show-bin-path)"
+fi
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -85,10 +93,38 @@ if [[ -n "${OATCAKE_SIGN_KEYCHAIN:-}" ]]; then KEYCHAIN=(--keychain "$OATCAKE_SI
 # The recorder and llama.cpp sit in Resources, where --deep doesn't reach, so they're signed on
 # their own first: llama.cpp's files with the same identity as the app, in place of the ad-hoc
 # signatures they come with.
+#
+# Everything is signed for the hardened runtime, so macOS won't let another program on this Mac
+# load its own code into Oatcake or the recorder (and so borrow the recorder's microphone
+# permission, or Oatcake's Keychain items). The recorder says it uses the microphone, which the
+# hardened runtime asks it to, and so does Oatcake, because macOS counts the recorder's use as
+# Oatcake's (Resources/Oatcake.entitlements); llama.cpp's server may load the libraries that came with it.
 for file in "${LLAMA_FILES[@]}"; do
-    codesign --force --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$LLAMA/$file"
+    if [[ "$file" == llama-server ]]; then
+        codesign --force --options runtime --entitlements Resources/Llama.entitlements --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$LLAMA/$file"
+    else
+        codesign --force --options runtime --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$LLAMA/$file"
+    fi
 done
-codesign --force --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$RECORDER"
-codesign --force --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$APP"
+# macOS remembers the permissions Oatcake is given (the microphone and system audio, which the
+# recorder inside it uses) against a designated requirement. Left to itself that's "this identifier,
+# this certificate", which every earlier release meets too, and before 0.5.0 their recorders record
+# for whoever starts them. So the requirement also says 0.5.0 or later: an earlier copy doesn't
+# inherit what this one is allowed. The version is in Info.plist, which the signature seals.
+# Releases before this one still accept it as an update: it meets theirs. Here macOS counts the
+# recorder's use as Oatcake's and remembers it against Oatcake's requirement; the recorder's says
+# the same in case a version of macOS goes by that. Not for an ad-hoc build, whose requirement is
+# its own hash.
+sign_for_this_version() { # <bundle> <entitlements>
+    codesign --force --options runtime --entitlements "$2" --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$1"
+    if [[ "$IDENTITY" != "-" ]]; then
+        local requirement
+        requirement="$(codesign -d -r - "$1" 2>/dev/null | sed -n 's/^designated => //p')"
+        codesign --force --options runtime --entitlements "$2" --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} \
+            -r="designated => $requirement and info [CFBundleShortVersionString] >= \"0.5.0\"" "$1"
+    fi
+}
+sign_for_this_version "$RECORDER" Resources/OatcakeRecorder.entitlements
+sign_for_this_version "$APP" Resources/Oatcake.entitlements
 codesign --verify --deep --strict "$APP"
 echo "Built $APP $VERSION, signed $([[ "$IDENTITY" == "-" ]] && echo ad-hoc || echo "with \"$IDENTITY\"")"

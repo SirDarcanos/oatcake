@@ -81,36 +81,6 @@ public struct LlmConfig: Codable, Equatable, Sendable {
     }
 }
 
-/**
- * Whether a model server's address is on this Mac or your own network: localhost, a name with no
- * dots or ending in .local, or a private or link-local IP address. Oatcake sends transcripts to a
- * local model only at an address like that, so one can't be pointed at somebody else's service.
- */
-public func isLocalEndpoint(_ address: String) -> Bool {
-    guard let url = URL(string: address.trimmed), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
-          let host = url.host(percentEncoded: false)?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]")), !host.isEmpty else { return false }
-    if host.contains(":") {
-        // IPv6: this Mac, link-local, or a unique local address.
-        return host == "::1" || host.hasPrefix("fe8") || host.hasPrefix("fe9") || host.hasPrefix("fea") || host.hasPrefix("feb")
-            || host.hasPrefix("fc") || host.hasPrefix("fd")
-    }
-    let parts = host.split(separator: ".", omittingEmptySubsequences: false)
-    if parts.count == 4, let n = Optional(parts.compactMap { UInt8($0) }), n.count == 4 {
-        return n[0] == 127 || n[0] == 10 || (n[0] == 172 && (16...31).contains(n[1])) || (n[0] == 192 && n[1] == 168) || (n[0] == 169 && n[1] == 254)
-    }
-    // A name: this Mac, a machine named on your network, or a Bonjour name.
-    return host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local") || !host.contains(".")
-}
-
-public struct MicChoice: Codable, Equatable, Hashable, Sendable {
-    public var uid: String
-    public var name: String
-    public init(uid: String, name: String) {
-        self.uid = uid
-        self.name = name
-    }
-}
-
 public struct Config: Codable, Equatable, Sendable {
     /// Your name: the microphone track is always you.
     public var myName: String
@@ -119,7 +89,7 @@ public struct Config: Codable, Equatable, Sendable {
     /// Speech-to-text model, a key of SpeechModels.asr.
     public var asrModel: String
     public var llm: LlmConfig
-    /// Keep the raw audio after a call is saved (needed to re-run with another model).
+    /// Keep the call's audio after it's saved: it goes into the meeting's folder as audio.m4a.
     public var keepAudio: Bool
     /// The microphone to record. nil follows the Mac's input (System Settings › Sound).
     public var mic: MicChoice?
@@ -239,62 +209,27 @@ public struct Config: Codable, Equatable, Sendable {
     /// then the shape to give them in, which stays Oatcake's.
     public var todosTask: String { (todoInstructions.trimmed.isEmpty ? defaultTodoInstructions : todoInstructions.trimmed) + "\n" + todosFormat }
 
-    public static func load() -> Config {
-        try? FileManager.default.createDirectory(at: Paths.data, withIntermediateDirectories: true)
-        guard let data = try? Data(contentsOf: Paths.config), let config = try? JSONDecoder().decode(Config.self, from: data) else {
-            let base = defaults()
-            if !FileManager.default.exists(Paths.config) { try? base.save() }
-            return base
+    public static func load() -> Config { loadWithProblem().config }
+
+    /**
+     * The settings, and what went wrong when the file is there and can't be read (a hand edit, a sync
+     * conflict). Oatcake then starts on its defaults, and the first change to a setting would save
+     * over the file: so it's kept beside itself as config.unreadable.json, and the problem is said.
+     */
+    public static func loadWithProblem(file: URL = Paths.config) -> (config: Config, problem: String?) {
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if let data = try? Data(contentsOf: file), let config = try? JSONDecoder().decode(Config.self, from: data) { return (config, nil) }
+        let base = defaults()
+        guard FileManager.default.exists(file) else {
+            try? base.save(to: file)
+            return (base, nil)
         }
-        return config
+        let kept = keepUnreadable(file)
+        return (base, "Oatcake couldn’t read its settings (\(file.lastPathComponent)), so it has started with the ones it comes with. The file is kept beside it as \(kept.lastPathComponent), and your Meetings folder may need choosing again in Settings › Storage.")
     }
 
-    public func save() throws {
-        try FileManager.default.createDirectory(at: Paths.data, withIntermediateDirectories: true)
-        try writeAtomic(Paths.config, try encodeJSON(self) + "\n")
+    public func save(to file: URL = Paths.config) throws {
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try writeAtomic(file, try encodeJSON(self) + "\n")
     }
-}
-
-/// What Oatcake's own helper processes are started with: this process's environment, without the
-/// calendar's private address, which is none of their business.
-public enum ShellEnvironment {
-    public static func childEnvironment() -> [String: String] {
-        var env = ProcessInfo.processInfo.environment
-        env.removeValue(forKey: "OATCAKE_CALENDAR_URL")
-        return env
-    }
-}
-
-/// Runs a command and returns its standard output; throws with its error output when it fails.
-@discardableResult
-public func runCapturing(_ executable: String, _ arguments: [String], timeout: TimeInterval? = nil, environment: [String: String]? = nil) throws -> String {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: executable)
-    process.arguments = arguments
-    if let environment { process.environment = environment }
-    let out = Pipe(), err = Pipe()
-    process.standardOutput = out
-    process.standardError = err
-    process.standardInput = FileHandle.nullDevice
-    try process.run()
-    if let timeout {
-        let deadline = DispatchTime.now() + timeout
-        DispatchQueue.global().asyncAfter(deadline: deadline) { if process.isRunning { process.terminate() } }
-    }
-    // Both pipes are read before waiting (one on another thread), so a full pipe can't stall the process.
-    var errData = Data()
-    let errRead = DispatchGroup()
-    errRead.enter()
-    DispatchQueue.global().async {
-        errData = err.fileHandleForReading.readDataToEndOfFile()
-        errRead.leave()
-    }
-    let outData = out.fileHandleForReading.readDataToEndOfFile()
-    errRead.wait()
-    process.waitUntilExit()
-    guard process.terminationStatus == 0 else {
-        let message = String(decoding: errData, as: UTF8.self).trimmed
-        throw OatcakeError(message.isEmpty ? "\(URL(fileURLWithPath: executable).lastPathComponent) exited \(process.terminationStatus)" : message)
-    }
-    return String(decoding: outData, as: UTF8.self)
 }

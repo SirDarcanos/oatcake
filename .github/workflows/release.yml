@@ -5,7 +5,10 @@ name: Release
 #   Scripts/version.sh patch && git push --follow-tags
 # Running the workflow by hand (Actions › Release › Run workflow) builds and signs without releasing.
 #
-# Secrets (README › Releasing):
+# The job runs in the "release" environment, which holds the secrets and waits for its approver:
+# a branch's own copy of this file can't read them, and nothing is signed without that approval.
+#
+# Secrets, in the release environment (README › Releasing):
 #   OATCAKE_SIGNING_P12, OATCAKE_SIGNING_P12_PASSWORD  the "Oatcake Release" code-signing identity
 #   OATCAKE_UPDATE_KEY                                 the Ed25519 key that signs latest.json
 on:
@@ -19,6 +22,9 @@ permissions:
 jobs:
   release:
     runs-on: macos-26
+    # A release takes about seven minutes. Anything much longer is stuck.
+    timeout-minutes: 30
+    environment: release
     permissions:
       contents: write # to create the release
     steps:
@@ -35,6 +41,17 @@ jobs:
             echo "::error::Tag $GITHUB_REF_NAME doesn't match VERSION ($version). Use Scripts/version.sh to make the tag."
             exit 1
           fi
+
+      # Tested and built before the signing identity is on the runner: nothing that runs while the
+      # package and its dependency are built or tested can sign with it. Packaging then only copies
+      # what was built (OATCAKE_BIN), without running swift again.
+      - run: swift test
+
+      - name: Build
+        run: |
+          swift build -c release --product Oatcake
+          swift build -c release --product OatcakeRecorder
+          echo "OATCAKE_BIN=$(swift build -c release --show-bin-path)" >> "$GITHUB_ENV"
 
       # A throwaway keychain holding only the release identity. It's self-signed and so not trusted,
       # which codesign accepts; what matters is that every release carries the same one.
@@ -59,14 +76,12 @@ jobs:
           # codesign on the runner only finds identities in keychains on the search list.
           security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
           security find-identity -p codesigning "$keychain"
-          # Fail here rather than after the build if the identity can't sign.
+          # Fail here rather than part-way through packaging if the identity can't sign.
           cp /usr/bin/true "$RUNNER_TEMP/sign-test"
           codesign --force --sign "Oatcake Release" --keychain "$keychain" "$RUNNER_TEMP/sign-test"
           echo "OATCAKE_SIGN_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
 
-      - run: swift test
-
-      # Builds the app and the recorder, bundles them with llama.cpp's server (a fixed build, checked
+      # Bundles the app and the recorder (built above) with llama.cpp's server (a fixed build, checked
       # against its SHA-256) and signs the lot (Scripts/bundle.sh).
       - name: Package
         env:
@@ -88,7 +103,36 @@ jobs:
               *"certificate leaf"*) ;;
               *) echo "::error::$bundle isn't signed with the release certificate."; exit 1 ;;
             esac
+            # And for the hardened runtime, so nothing else on a Mac can load its code into it.
+            case "$(codesign -d -v "$bundle" 2>&1)" in
+              *"(runtime)"*) ;;
+              *) echo "::error::$bundle isn't signed for the hardened runtime."; exit 1 ;;
+            esac
           done
+          # The app's requirement names the versions it stands for, so the permissions macOS gives
+          # it aren't also an earlier release's (Scripts/bundle.sh).
+          for bundle in "$app" "$app/Contents/Resources/OatcakeRecorder.app"; do
+            case "$(codesign -d -r - "$bundle" 2>/dev/null)" in
+              *CFBundleShortVersionString*) ;;
+              *) echo "::error::$bundle's designated requirement doesn't name a version."; exit 1 ;;
+            esac
+          done
+          # Without this on Oatcake itself, macOS never asks for the microphone and nothing can be recorded.
+          for bundle in "$app" "$app/Contents/Resources/OatcakeRecorder.app"; do
+            case "$(codesign -d --entitlements - "$bundle" 2>/dev/null)" in
+              *com.apple.security.device.audio-input*) ;;
+              *) echo "::error::$bundle isn't signed as using the microphone."; exit 1 ;;
+            esac
+          done
+
+      # install.sh names the certificate it accepts. It has to be the one this was signed with, or
+      # the installer published with this release would turn the release away.
+      - name: Check install.sh accepts this build
+        run: |
+          certificate="$(sed -n "s/^ *CERTIFICATE='\(.*\)'$/\1/p" install.sh)"
+          test -n "$certificate"
+          codesign --verify --deep --strict -R "=identifier \"local.oatcake\" and $certificate" build/Oatcake.app
+          codesign --verify --deep --strict -R "=identifier \"local.oatcake.recorder\" and $certificate" build/Oatcake.app/Contents/Resources/OatcakeRecorder.app
 
       # ditto keeps the code signatures intact.
       - name: Zip
@@ -110,7 +154,8 @@ jobs:
             --zip "$ZIP" \
             --url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$ZIP" \
             --notes "$RUNNER_TEMP/notes.txt" > latest.json
-          cat latest.json
+          # What was signed, without the signature: a run by hand signs a build that isn't released.
+          plutil -extract payload raw -o - latest.json | base64 --decode
 
       - name: Release
         if: github.ref_type == 'tag'
@@ -120,14 +165,15 @@ jobs:
             For Apple Silicon Macs on macOS 15 or later. To install, paste this into Terminal:
 
             ```
-            curl -fsSL https://raw.githubusercontent.com/a8cteam51/oatcake/trunk/install.sh | sh
+            curl -fsSL https://github.com/a8cteam51/oatcake/releases/latest/download/install.sh | sh
             ```
 
             Or download the zip below, move Oatcake to your Applications folder and open it. Oatcake isn't notarised, so macOS blocks a copy downloaded with a browser until you click Open Anyway in System Settings › Privacy & Security; the install line avoids that.
 
             Installed copies update themselves (Settings › Updates). The first recording asks for microphone and system-audio permission for "OatcakeRecorder".
-        # --notes goes above the generated list of changes.
-        run: gh release create "$GITHUB_REF_NAME" "$ZIP" latest.json --repo "$GITHUB_REPOSITORY" --title "Oatcake $GITHUB_REF_NAME" --generate-notes --notes "$NOTES"
+        # --notes goes above the generated list of changes. install.sh goes out with the release, so
+        # the install line runs the installer that was approved with it, not whatever trunk holds.
+        run: gh release create "$GITHUB_REF_NAME" "$ZIP" latest.json install.sh --repo "$GITHUB_REPOSITORY" --title "Oatcake $GITHUB_REF_NAME" --generate-notes --notes "$NOTES"
 
       # What install.sh and installed copies will fetch.
       - name: Check the feed serves this release
@@ -135,3 +181,4 @@ jobs:
         run: |
           sleep 5
           curl -fsSL "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/latest.json" | cmp - latest.json
+          curl -fsSL "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/install.sh" | cmp - install.sh

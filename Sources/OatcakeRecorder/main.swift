@@ -1,11 +1,18 @@
 // Records a meeting as two tracks: the microphone (you) and everything the Mac
 // plays (everyone else), captured with a Core Audio process tap.
 //
-// Usage: oatcake-recorder --out <dir>      record until SIGINT or SIGTERM
-//        oatcake-recorder --list-inputs   print the input devices as JSON
+// Usage: oatcake-recorder --out <dir> --ask <socket>   record until SIGINT or SIGTERM
+//        oatcake-recorder --list-inputs               print the input devices as JSON
 // Writes 16 kHz mono PCM16 to <dir>/mic.pcm and <dir>/system.pcm, status.json
 // once a second, and meta.json on stop. Reads <dir>/mic.json every second for the
-// chosen input, so it can be changed mid-call.
+// chosen input, so it can be changed mid-call. The files' names and shapes are
+// RecorderContract's, which Oatcake reads them with.
+//
+// It records only for Oatcake: before anything is captured it asks, on the socket it
+// was given, whether Oatcake wants this recording, having checked by code signature
+// that it is Oatcake at the other end (RecorderGate). It stops by itself when its
+// folder is deleted, when the disk can't take any more, and when Oatcake has been
+// gone for ten minutes.
 //
 // The system-audio tap is adapted from OpenWhispr's macos-audio-tap.swift
 // (MIT, Copyright (c) 2024 OpenWhispr Team). See THIRD_PARTY_NOTICES.md.
@@ -13,8 +20,10 @@
 import AVFoundation
 import CoreAudio
 import Foundation
+import RecorderContract
+import Security
 
-let sampleRate = 16_000.0
+let sampleRate = Double(recorderSampleRate)
 let targetFormat = AVAudioFormat(
     commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: true)!
 
@@ -24,11 +33,13 @@ final class Track {
     private let handle: FileHandle
     private var converter: AVAudioConverter?
     private let lock = NSLock()
-    private(set) var samplesWritten = 0
-    private(set) var firstBufferAt: Date?
+    private var samplesWritten = 0
+    private var _firstBufferAt: Date?
     private var _lastBufferAt: Date?
     private var gapPending = false
     private var peak: Float = 0
+    private var closed = false
+    private var _failure: String?
 
     init(name: String, path: String) throws {
         self.name = name
@@ -69,24 +80,44 @@ final class Track {
         }
 
         lock.lock()
+        defer { lock.unlock() }
+        // A buffer that was already on its way when the recording finished, or after the disk filled.
+        guard !closed, _failure == nil else { return }
         let now = Date()
-        if let first = firstBufferAt {
-            // After the source changed, fill the time it took with silence so this track
-            // stays lined up with the other one.
-            let expected = Int(now.timeIntervalSince(first) * sampleRate) - count
-            if gapPending, expected > samplesWritten {
-                handle.write(Data(count: (expected - samplesWritten) * 2))
-                samplesWritten = expected
+        do {
+            if let first = _firstBufferAt {
+                // After the source changed, fill the time it took with silence so this track
+                // stays lined up with the other one.
+                let expected = Int(now.timeIntervalSince(first) * sampleRate) - count
+                if gapPending, expected > samplesWritten {
+                    try handle.write(contentsOf: Data(count: (expected - samplesWritten) * 2))
+                    samplesWritten = expected
+                }
+            } else {
+                _firstBufferAt = now
             }
-        } else {
-            firstBufferAt = now
+            gapPending = false
+            _lastBufferAt = now
+            try handle.write(contentsOf: Data(bytes: samples, count: count * 2))
+            samplesWritten += count
+            peak = max(peak, Float(bufferPeak) / Float(Int16.max))
+        } catch {
+            // Most likely a full disk. The main loop sees this and finishes the recording with what's there.
+            _failure = error.localizedDescription
         }
-        gapPending = false
-        _lastBufferAt = now
-        handle.write(Data(bytes: samples, count: count * 2))
-        samplesWritten += count
-        peak = max(peak, Float(bufferPeak) / Float(Int16.max))
-        lock.unlock()
+    }
+
+    /// Why this track could no longer be written, once it couldn't.
+    var failure: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _failure
+    }
+
+    var firstBufferAt: Date? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _firstBufferAt
     }
 
     var lastBufferAt: Date? {
@@ -120,6 +151,7 @@ final class Track {
 
     func close() {
         lock.lock()
+        closed = true
         try? handle.close()
         lock.unlock()
     }
@@ -283,7 +315,6 @@ final class MicCapture {
     /// Device UID from mic.json; nil follows the Mac's input.
     var wanted: String?
     private(set) var device: InputDevice?
-    private(set) var switches: [[String: Any]] = []
 
     init(track: Track) { self.track = track }
 
@@ -322,7 +353,6 @@ final class MicCapture {
         self.format = format
         device = target
         startedAt = Date()
-        switches.append(["at": track.elapsed, "uid": target.uid, "name": target.name])
     }
 
     func stop() {
@@ -346,10 +376,82 @@ func check(_ status: OSStatus, _ what: String) throws {
     guard status == noErr else { throw RecorderError("\(what) failed (OSStatus \(status))") }
 }
 
-func writeJSON(_ object: [String: Any], to path: String) {
-    guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
-    else { return }
+private let jsonEncoder: JSONEncoder = {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    return encoder
+}()
+
+func writeJSON<T: Encodable>(_ value: T, to path: String) {
+    guard let data = try? jsonEncoder.encode(value) else { return }
     try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
+}
+
+// MARK: - Who's asking
+
+/// This program's own designated requirement, as text: who signed it.
+func ownRequirement() -> String? {
+    var me: SecCode?
+    var staticCode: SecStaticCode?
+    var requirement: SecRequirement?
+    var text: CFString?
+    guard SecCodeCopySelf([], &me) == errSecSuccess, let me,
+          SecCodeCopyStaticCode(me, [], &staticCode) == errSecSuccess, let staticCode,
+          SecCodeCopyDesignatedRequirement(staticCode, [], &requirement) == errSecSuccess, let requirement,
+          SecRequirementCopyString(requirement, [], &text) == errSecSuccess, let text else { return nil }
+    return text as String
+}
+
+/**
+ * Asks whoever is listening on `socketPath` whether a recording into `dir` is wanted, and believes
+ * the answer only if that program's code signature meets `requirement` (it is Oatcake, signed with
+ * this recorder's certificate). The check is on the process at the other end of the connection, as
+ * the system identifies it, so it can't be faked by what's sent or by reusing a process ID.
+ */
+func oatcakeWants(_ dir: String, askingAt socketPath: String, requirement: String) -> Bool {
+    let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+    guard fd >= 0 else { return false }
+    defer { close(fd) }
+    var timeout = timeval(tv_sec: 5, tv_usec: 0)
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+
+    var address = sockaddr_un()
+    address.sun_family = sa_family_t(AF_UNIX)
+    let path = Array(socketPath.utf8)
+    let room = MemoryLayout.size(ofValue: address.sun_path)
+    guard path.count < room else { return false }
+    withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: path) }
+    let connected = withUnsafePointer(to: &address) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+    }
+    guard connected == 0 else { return false }
+
+    // Who is it? The system's own token for the process holding the other end.
+    var token = audit_token_t()
+    var tokenSize = socklen_t(MemoryLayout<audit_token_t>.size)
+    guard getsockopt(fd, SOL_LOCAL, LOCAL_PEERTOKEN, &token, &tokenSize) == 0 else { return false }
+    let tokenData = withUnsafeBytes(of: &token) { Data($0) }
+    var peer: SecCode?
+    var wanted: SecRequirement?
+    guard SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributeAudit: tokenData] as CFDictionary, [], &peer) == errSecSuccess, let peer,
+          SecRequirementCreateWithString(requirement as CFString, [], &wanted) == errSecSuccess, let wanted,
+          SecCodeCheckValidity(peer, [], wanted) == errSecSuccess else { return false }
+    // And it has to be signed for the hardened runtime: a copy that isn't can have another program's
+    // code loaded into it, and then it isn't only Oatcake that's answering.
+    var peerOnDisk: SecStaticCode?
+    var signing: CFDictionary?
+    guard SecCodeCopyStaticCode(peer, [], &peerOnDisk) == errSecSuccess, let peerOnDisk,
+          SecCodeCopySigningInformation(peerOnDisk, SecCSFlags(rawValue: kSecCSSigningInformation), &signing) == errSecSuccess,
+          let flags = (signing as? [String: Any])?[kSecCodeInfoFlags as String] as? UInt32,
+          flags & SecCodeSignatureFlags.runtime.rawValue != 0 else { return false }
+
+    let question = Array((dir + "\n").utf8)
+    guard question.withUnsafeBytes({ write(fd, $0.baseAddress, $0.count) }) == question.count else { return false }
+    var reply = [UInt8](repeating: 0, count: 16)
+    let got = read(fd, &reply, reply.count)
+    guard got > 0 else { return false }
+    return String(decoding: reply[..<got], as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) == RecorderGate.yes
 }
 
 func requestMicAccess() -> Bool {
@@ -357,10 +459,10 @@ func requestMicAccess() -> Bool {
     case .authorized: return true
     case .notDetermined:
         let done = DispatchSemaphore(value: 0)
-        var granted = false
-        AVCaptureDevice.requestAccess(for: .audio) { granted = $0; done.signal() }
+        AVCaptureDevice.requestAccess(for: .audio) { _ in done.signal() }
         done.wait()
-        return granted
+        // Asked again rather than carried across from the answer's own thread.
+        return AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
     default: return false
     }
 }
@@ -376,25 +478,57 @@ if args.contains("--list-inputs") {
     exit(0)
 }
 guard let outFlag = args.firstIndex(of: "--out"), outFlag + 1 < args.count else {
-    FileHandle.standardError.write("usage: oatcake-recorder --out <dir> | --list-inputs\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: oatcake-recorder --out <dir> --ask <socket> | --list-inputs\n".data(using: .utf8)!)
     exit(2)
 }
 let outDir = args[outFlag + 1]
-let statusPath = "\(outDir)/status.json"
-try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
-try? "\(getpid())".write(toFile: "\(outDir)/recorder.pid", atomically: true, encoding: .utf8)
+let statusPath = "\(outDir)/\(RecorderFile.status)"
+
+/// Whether the recording's folder is still there. Oatcake makes it; if it has gone (the recording
+/// was cancelled or discarded) there's nothing to record into, and it isn't made again.
+func folderExists() -> Bool {
+    var isDirectory: ObjCBool = false
+    return FileManager.default.fileExists(atPath: outDir, isDirectory: &isDirectory) && isDirectory.boolValue
+}
+guard folderExists() else { exit(2) }
+
+/// Whether another recorder is already at work in this folder. Then the folder is that recording's,
+/// and this one leaves without touching anything in it.
+func anotherRecorderIsHere() -> Bool {
+    guard let text = try? String(contentsOfFile: "\(outDir)/\(RecorderFile.pid)", encoding: .utf8),
+          let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)), pid > 1, pid != getpid() else { return false }
+    return kill(pid, 0) == 0 || errno == EPERM
+}
+guard !anotherRecorderIsHere() else { exit(1) }
+// A recording that's already over (stopped before this recorder got going) isn't started again.
+guard !FileManager.default.fileExists(atPath: "\(outDir)/\(RecorderFile.meta)") else { exit(0) }
 
 func fail(_ message: String) -> Never {
-    writeJSON(["state": "error", "error": message], to: statusPath)
+    if folderExists() { writeJSON(RecorderStatus(state: .error, error: message), to: statusPath) }
+    try? FileManager.default.removeItem(atPath: "\(outDir)/\(RecorderFile.pid)")
     exit(1)
 }
+
+// Nothing is captured, and no permission is asked for, until it's known that Oatcake wants this.
+switch RecorderGate.caller(forRecorder: ownRequirement() ?? "") {
+case .anyone:
+    break
+case .nobody:
+    fail("The recorder couldn’t check that Oatcake started it, so nothing was recorded. Install Oatcake again.")
+case .mustMeet(let requirement):
+    let askFlag = args.firstIndex(of: RecorderGate.argument)
+    guard let askFlag, askFlag + 1 < args.count, oatcakeWants(outDir, askingAt: args[askFlag + 1], requirement: requirement) else {
+        fail("The recorder only records when Oatcake asks it to, and it couldn’t confirm that Oatcake did.")
+    }
+}
+try? "\(getpid())".write(toFile: "\(outDir)/\(RecorderFile.pid)", atomically: true, encoding: .utf8)
 
 let startedAt = Date()
 let micTrack: Track
 let systemTrack: Track
 do {
-    micTrack = try Track(name: "mic", path: "\(outDir)/mic.pcm")
-    systemTrack = try Track(name: "system", path: "\(outDir)/system.pcm")
+    micTrack = try Track(name: "mic", path: "\(outDir)/\(RecorderFile.micTrack)")
+    systemTrack = try Track(name: "system", path: "\(outDir)/\(RecorderFile.systemTrack)")
 } catch {
     fail("cannot create audio files in \(outDir): \(error)")
 }
@@ -405,10 +539,15 @@ guard requestMicAccess() else {
 
 /// The app writes {"uid": "<device UID>"} to mic.json to choose an input (null = the Mac's).
 func wantedMic() -> String? {
-    guard let data = FileManager.default.contents(atPath: "\(outDir)/mic.json"),
-          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-    else { return nil }
-    return object["uid"] as? String
+    guard let data = FileManager.default.contents(atPath: "\(outDir)/\(RecorderFile.mic)") else { return nil }
+    return (try? JSONDecoder().decode(MicRequest.self, from: data))?.uid
+}
+
+/// Whether the Oatcake that owns this recording is still running. True when there's no saying.
+func ownerIsRunning() -> Bool {
+    guard let text = try? String(contentsOfFile: "\(outDir)/\(RecorderFile.owner)", encoding: .utf8),
+          let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)), pid > 1 else { return true }
+    return kill(pid, 0) == 0 || errno == EPERM
 }
 
 let system = SystemAudioCapture(track: systemTrack)
@@ -421,58 +560,70 @@ do {
 mic.wanted = wantedMic()
 mic.check()
 
-func offset(_ track: Track) -> Double {
+@MainActor func offset(_ track: Track) -> Double {
     track.firstBufferAt.map { $0.timeIntervalSince(startedAt) } ?? 0
 }
 
 let iso = ISO8601DateFormatter()
+var ownerGoneSince: Date?
 let statusTimer = DispatchSource.makeTimerSource(queue: .main)
 statusTimer.schedule(deadline: .now() + 1, repeating: 1)
-statusTimer.setEventHandler {
+// The timer and the signals below are all handled on the main queue, which is where this program's state lives.
+statusTimer.setEventHandler { MainActor.assumeIsolated {
+    // The recording was cancelled or discarded: there's nothing left to record into.
+    guard folderExists() else {
+        mic.stop()
+        system.stop()
+        exit(0)
+    }
+    if let failure = micTrack.failure ?? systemTrack.failure {
+        finish(because: "The recording stopped because it couldn’t be written to disk any more (\(failure)). What was recorded up to then is kept.")
+    }
+    // Oatcake quitting stops the recorder itself; this is for an Oatcake that crashed and wasn't opened again.
+    if ownerIsRunning() {
+        ownerGoneSince = nil
+    } else if let since = ownerGoneSince {
+        if Date().timeIntervalSince(since) >= recorderOwnerGrace {
+            finish(because: "Oatcake wasn’t running, so the recording stopped by itself after ten minutes.")
+        }
+    } else {
+        ownerGoneSince = Date()
+    }
     mic.wanted = wantedMic()
     mic.check()
-    writeJSON([
-        "state": "recording",
-        "startedAt": iso.string(from: startedAt),
-        "elapsed": Date().timeIntervalSince(startedAt),
-        "micLevel": micTrack.takePeak(),
-        "systemLevel": systemTrack.takePeak(),
-        "micSeconds": Double(micTrack.samplesWritten) / sampleRate,
-        "systemSeconds": Double(systemTrack.samplesWritten) / sampleRate,
-        "micDevice": mic.device.map { ["uid": $0.uid, "name": $0.name] } as Any,
-    ], to: statusPath)
-}
+    writeJSON(RecorderStatus(state: .recording, elapsed: Date().timeIntervalSince(startedAt),
+                             micLevel: Double(micTrack.takePeak()), systemLevel: Double(systemTrack.takePeak()),
+                             micDevice: mic.device.map { MicChoice(uid: $0.uid, name: $0.name) }), to: statusPath)
+} }
 statusTimer.resume()
 
-func finish() -> Never {
+/// Finishes the recording: meta.json, then a last status. `because` is why it stopped when it
+/// wasn't asked to; Oatcake shows it.
+@MainActor func finish(because reason: String? = nil) -> Never {
     statusTimer.cancel()
     mic.stop()
     system.stop()
     micTrack.close()
     systemTrack.close()
-    let meta: [String: Any] = [
-        "startedAt": iso.string(from: startedAt),
-        "endedAt": iso.string(from: Date()),
-        "sampleRate": Int(sampleRate),
-        // Seconds from startedAt to each track's first sample, for aligning the two.
-        "micOffset": offset(micTrack),
-        "systemOffset": offset(systemTrack),
-        // Which input was recorded when, in seconds into the mic track.
-        "micDevices": mic.switches,
-    ]
-    writeJSON(meta, to: "\(outDir)/meta.json")
-    writeJSON(["state": "stopped"], to: statusPath)
-    try? FileManager.default.removeItem(atPath: "\(outDir)/recorder.pid")
-    exit(0)
+    writeJSON(RecorderMeta(startedAt: iso.string(from: startedAt), endedAt: iso.string(from: Date()),
+                           micOffset: offset(micTrack), systemOffset: offset(systemTrack)),
+              to: "\(outDir)/\(RecorderFile.meta)")
+    writeJSON(reason.map { RecorderStatus(state: .error, error: $0) } ?? RecorderStatus(state: .stopped), to: statusPath)
+    try? FileManager.default.removeItem(atPath: "\(outDir)/\(RecorderFile.pid)")
+    exit(reason == nil ? 0 : 1)
 }
 
 var signalSources: [DispatchSourceSignal] = []
 for sig in [SIGINT, SIGTERM] {
     signal(sig, SIG_IGN)
     let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
-    source.setEventHandler { finish() }
+    // The closure's type is spelled out: finish() never returns, and the compiler in Xcode 26 can't
+    // work out what a closure made only of that call should return.
+    source.setEventHandler { MainActor.assumeIsolated { () -> Void in finish() } }
     source.resume()
     signalSources.append(source)
 }
 
-dispatchMain()
+// A run loop on the main thread, rather than dispatchMain(): everything above that's handled on the
+// main queue then really is on the main thread, which is what it says it is.
+while true { RunLoop.main.run(mode: .default, before: .distantFuture) }

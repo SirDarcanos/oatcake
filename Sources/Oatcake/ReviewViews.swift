@@ -9,15 +9,14 @@ func recordingMeta(_ rec: Recording) -> String {
 }
 
 /// The failure in plain words; the raw message stays behind "Details".
-private func explain(_ error: String) -> String {
-    let e = error.lowercased()
-    if e.contains("json") || e.contains("couldn’t be read") || e.contains("data couldn") { return "Its recording details couldn’t be read. The files may be damaged or incomplete." }
-    if e.contains("no such file") || e.contains("doesn’t exist") { return "Some of its audio files are missing." }
-    if e.contains("model") || e.contains("download") || e.contains("network") || e.contains("internet") {
-        return "The speech models couldn’t be loaded. Check your internet connection, then try again."
+private func explain(_ failure: AnalysisFailure?) -> String {
+    switch failure {
+    case .unreadableRecording: "Its recording details couldn’t be read. The files may be damaged or incomplete."
+    case .missingAudio: "Some of its audio files are missing."
+    case .speechModels: "The speech models couldn’t be loaded. Check your internet connection, then try again."
+    case .helperStopped: "The processing helper stopped unexpectedly. Trying again usually works."
+    case .other, nil: "Something went wrong while processing this recording. Trying again usually works."
     }
-    if e.contains("code ") { return "The processing helper stopped unexpectedly. Trying again usually works." }
-    return "Something went wrong while processing this recording. Trying again usually works."
 }
 
 struct ProcessingView: View {
@@ -26,10 +25,13 @@ struct ProcessingView: View {
     @ViewState private var details = false
 
     var body: some View {
-        let progress = model.progress[rec.id]
-        let step = progress?.step ?? "Starting"
-        let n = stepNumber(step)
-        let within = progress?.fraction ?? (analysisSteps.contains(step) ? 0.5 : 0.1)
+        let progress = model.jobs.progress[rec.id]
+        let stage = progress?.stage
+        let step = stage?.title ?? "Starting"
+        let n = stage?.number ?? 1
+        let within = progress?.fraction ?? (stage?.isStep == true ? 0.5 : 0.1)
+        // The first recording on a Mac fetches the speech models before anything can be transcribed.
+        let downloading = stage == .downloadingModels
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(pathAbove(rec.folder ?? "", rec.title)).font(.callout).foregroundStyle(.secondary)
@@ -38,16 +40,16 @@ struct ProcessingView: View {
             }
             if let error = progress?.error {
                 Notice(tone: .red) {
-                    Text("Couldn’t finish “\(analysisSteps.contains(step) ? step : "Getting the recording ready")”").fontWeight(.semibold)
+                    Text("Couldn’t finish “\(stage?.isStep == true ? step : "Getting the recording ready")”").fontWeight(.semibold)
                     HStack(spacing: 4) {
-                        Text(explain(error))
+                        Text(explain(progress?.failure))
                         Button(details ? "Hide details" : "Details") { details.toggle() }.buttonStyle(.link)
                     }
                     if details { Text(error).font(.system(.caption, design: .monospaced)).textSelection(.enabled).padding(.top, 4) }
                 }
                 HStack {
-                    Button("Try again") { model.retry(rec) }.buttonStyle(.borderedProminent)
-                    Button("Discard…") { model.discard(rec) }
+                    Button("Try again") { model.jobs.retry(rec) }.buttonStyle(.borderedProminent)
+                    Button("Discard…") { model.jobs.discard(rec) }
                 }
             } else {
                 VStack(alignment: .leading, spacing: 6) {
@@ -57,9 +59,16 @@ struct ProcessingView: View {
                         Text("Step \(n) of 5").foregroundStyle(.secondary)
                     }
                     .font(.callout)
-                    ProgressView(value: (Double(n - 1) + within) / 5)
+                    // How long a download takes depends on the connection, so its bar doesn't pretend to know.
+                    if downloading {
+                        ProgressView().progressViewStyle(.linear).accessibilityLabel("Downloading")
+                    } else {
+                        ProgressView(value: (Double(n - 1) + within) / 5)
+                    }
                 }
-                Text("An hour-long call takes a minute or two. You can keep working — it’ll wait under Needs review.")
+                Text(downloading
+                     ? "The speech models (about 500 MB) are downloading. That’s the first time only; after it, an hour-long call takes a minute or two. You can keep working — it’ll wait under Needs review."
+                     : "An hour-long call takes a minute or two. You can keep working — it’ll wait under Needs review.")
                     .font(.callout).foregroundStyle(.secondary)
             }
         }
@@ -70,7 +79,7 @@ struct ProcessingView: View {
                 (Text(progress?.error != nil ? "Couldn’t finish" : "Processing").fontWeight(.semibold) + Text(" · \(rec.title)").foregroundStyle(.secondary)).lineLimit(1)
             }
             if progress?.error == nil {
-                ToolbarItem(placement: .automatic) { Button("Discard…") { model.discard(rec) } }
+                ToolbarItem(placement: .automatic) { Button("Discard…") { model.jobs.discard(rec) } }
             }
         }
     }
@@ -136,8 +145,8 @@ struct ReviewView: View {
 
     /// What's been set so far lives with the app, so leaving this screen and coming back keeps it.
     private var draft: ReviewDraft {
-        get { model.reviewDrafts[rec.id] ?? ReviewDraft(title: rec.title, folder: rec.folder ?? "", voices: [:]) }
-        nonmutating set { model.reviewDrafts[rec.id] = newValue }
+        get { model.jobs.reviewDrafts[rec.id] ?? ReviewDraft(title: rec.title, folder: rec.folder ?? "", voices: [:]) }
+        nonmutating set { model.jobs.reviewDrafts[rec.id] = newValue }
     }
     private var voices: [String: Voice] {
         get { draft.voices }
@@ -169,7 +178,7 @@ struct ReviewView: View {
             let a = try loadAnalysis(rec)
             analysis = a
             people = knownPeople()
-            if model.reviewDrafts[rec.id] == nil {
+            if model.jobs.reviewDrafts[rec.id] == nil {
                 draft = ReviewDraft(title: rec.title, folder: rec.folder ?? "",
                                     voices: Dictionary(uniqueKeysWithValues: a.speakers.map { ($0.id, Voice(name: $0.suggestion?.name ?? "")) }))
             }
@@ -208,7 +217,7 @@ struct ReviewView: View {
         }
         ToolbarItemGroup(placement: .automatic) {
             Toggle(isOn: $showTranscript) { Text("Transcript") }.toggleStyle(.button)
-            Button("Discard…") { model.discard(rec) }.disabled(saved)
+            Button("Discard…") { model.jobs.discard(rec) }.disabled(saved)
             if unnamed > 0 {
                 Text("\(unnamed) voice\(unnamed == 1 ? "" : "s") unnamed").font(.callout).foregroundStyle(.secondary)
                     .help("Unnamed voices are saved as “Voice 1”, “Voice 2”…")
@@ -224,7 +233,7 @@ struct ReviewView: View {
         let visible = analysis.speakers.filter { voices[$0.id]?.into == nil }
         let meTalk = analysis.me?.seconds ?? analysis.lines.filter { $0.speaker == me }.reduce(0) { $0 + $1.end - $1.start }
         let colors = provisionalColors(names(analysis))
-        let folders = (model.tree?.allFolders ?? []).map(\.path)
+        let folders = (model.library.tree?.allFolders ?? []).map(\.path)
         return VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Picker("Folder", selection: Binding(get: { draft.folder }, set: { draft.folder = $0 })) {
@@ -249,18 +258,15 @@ struct ReviewView: View {
             if analysis.speakers.isEmpty {
                 Notice(tone: .amber) {
                     Text("No other voices were heard").fontWeight(.semibold)
-                    Text("Only your microphone picked anything up. If people were talking on the call, check that OatcakeRecorder is allowed in System Settings › Privacy & Security › Screen & System Audio Recording.")
+                    Text("Only your microphone picked anything up. If people were talking on the call, check that Oatcake is allowed in System Settings › Privacy & Security › Screen & System Audio Recording.")
                 }
             }
+            // Why the model's name suggestions were skipped, in plain words.
+            if let error = analysis.nameSuggestionError {
+                Notice(tone: .amber) { ModelError(raw: error, prefix: "Names weren’t suggested for this call. ") }
+            }
             ForEach(analysis.warnings, id: \.self) { w in
-                Notice(tone: .amber) {
-                    // "Name suggestions skipped: <what the model said>", in plain words.
-                    if let colon = w.range(of: "skipped: ") {
-                        ModelError(raw: String(w[colon.upperBound...]), prefix: "Names weren’t suggested for this call. ")
-                    } else {
-                        Text(w)
-                    }
-                }
+                Notice(tone: .amber) { Text(w) }
             }
 
             card {
@@ -320,6 +326,7 @@ struct ReviewView: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
                 .help("Merge or mark as mixed")
+                .accessibilityLabel("Merge \(shown) with another voice, or mark it as mixed")
             }
             clips(s.quotes)
             if !v.mixed {
@@ -400,7 +407,8 @@ struct ReviewView: View {
     }
 
     private func transcript(_ analysis: Analysis) -> some View {
-        let colors = provisionalColors(names(analysis))
+        // The names are text here, so each person's colour is in the shade that reads against the window.
+        let colors = provisionalNameColors(names(analysis))
         return ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
@@ -437,7 +445,7 @@ struct ReviewView: View {
         let folder = draft.folder
         let everyone = names(analysis)
         do {
-            let path = try model.saveRecording(rec, decisions: decisions, folder: folder, title: title)
+            let path = try model.jobs.saveRecording(rec, decisions: decisions, folder: folder, title: title)
             saved = true
             // Colours are claimed in the order this screen showed them, so nobody changes colour on saving.
             for name in everyone { _ = person(name) }
@@ -446,7 +454,7 @@ struct ReviewView: View {
             model.toast("Saved to \(folderPath(folder))")
             Task {
                 // The tree reloads in the background; open the meeting once it's there, unless you've moved on.
-                for _ in 0..<40 where model.tree?.find(path) == nil {
+                for _ in 0..<40 where model.library.tree?.find(path) == nil {
                     try? await Task.sleep(for: .milliseconds(50))
                 }
                 // On its summary, whichever tab you last read another meeting on: that's where the summary arrives.

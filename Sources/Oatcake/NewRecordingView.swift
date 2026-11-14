@@ -37,21 +37,33 @@ struct NewRecordingView: View {
                 if !openTodos.isEmpty { previousTodos }
                 prepNotes
                 if !error.isEmpty { Notice(tone: .red) { Text(error) } }
-                HStack(spacing: 10) {
-                    Button(action: start) {
-                        Label(starting ? "Starting…" : "Start recording", systemImage: "circle.fill")
-                            .padding(.horizontal, 6)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        Button(action: start) {
+                            Label(starting ? "Starting…" : "Start recording", systemImage: "circle.fill")
+                                .padding(.horizontal, 6)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                        .controlSize(.large)
+                        .disabled(starting)
+                        if let link = event?.callLink, let url = URL(string: link) {
+                            Button { NSWorkspace.shared.open(url) } label: { Label("Join the call", systemImage: "video") }
+                                .controlSize(.large)
+                                .help("Opens \(callApp(link) ?? "the call")")
+                        }
+                        Button("Cancel") { model.openFolder(model.folder) }.controlSize(.large).buttonStyle(.borderless)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .controlSize(.large)
-                    .disabled(starting)
-                    if let link = event?.callLink, let url = URL(string: link) {
-                        Button { NSWorkspace.shared.open(url) } label: { Label("Join the call", systemImage: "video") }
-                            .controlSize(.large)
-                            .help("Opens \(callApp(link) ?? "the call")")
+                    VStack(alignment: .leading, spacing: 3) {
+                        // Said before it happens: the first recording brings a download of several gigabytes with it.
+                        let _ = model.downloads.modelsVersion
+                        if let chosen = model.downloads.chosenModel, !LocalModels.isDownloaded(chosen), model.downloads.modelDownloads[chosen.id] == nil {
+                            Text("The language model that writes summaries (\(chosen.downloadSize)) starts downloading when you start recording.")
+                        }
+                        Text("Let the people on the call know you’re recording.")
                     }
-                    Button("Cancel") { model.openFolder(model.folder) }.controlSize(.large).buttonStyle(.borderless)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
             }
             .padding(.horizontal, 40)
@@ -72,7 +84,7 @@ struct NewRecordingView: View {
         // A point typed but not entered is kept too. Not once the call is being recorded, from here
         // or from a reminder: its prep notes have gone into the call, and saving them again would
         // bring them back for the next time.
-        .onDisappear { if !starting && (event == nil || model.live?.eventId != event?.id) { addPrep(prepDraft) } }
+        .onDisappear { if !starting && (event == nil || model.recording.live?.eventId != event?.id) { addPrep(prepDraft) } }
     }
 
     /**
@@ -89,9 +101,9 @@ struct NewRecordingView: View {
             folder = model.folder.isEmpty ? topLevel : model.folder
             return
         }
-        if let tree = model.tree, let match = matchingFolder(event.title, in: tree) {
+        if let tree = model.library.tree, let match = matchingFolder(event.title, in: tree) {
             folder = match
-        } else if let tree = model.tree, let earlier = latestMeeting(titled: event.title, in: tree) {
+        } else if let tree = model.library.tree, let earlier = latestMeeting(titled: event.title, in: tree) {
             let parent = parentOf(earlier.path)
             folder = parent.isEmpty ? topLevel : parent
         } else if event.seriesId != nil {
@@ -115,7 +127,7 @@ struct NewRecordingView: View {
                 Text("Folder").foregroundStyle(.secondary)
                 Picker("Folder", selection: $folder) {
                     Text("Meetings (top level)").tag(topLevel)
-                    ForEach(model.tree?.allFolders ?? []) { Text(folderPath($0.path)).tag($0.path) }
+                    ForEach(model.library.tree?.allFolders ?? []) { Text(folderPath($0.path)).tag($0.path) }
                     Divider()
                     Text("New folder…").tag(newFolder)
                 }
@@ -174,7 +186,7 @@ struct NewRecordingView: View {
 
     /// The top level isn't a series, so there's nothing to carry over from "last time".
     private var candidates: [TreeNode] {
-        folder == newFolder || folder == topLevel ? [] : Array(listedIn(model.tree?.find(folder)).prefix(8))
+        folder == newFolder || folder == topLevel ? [] : Array(listedIn(model.library.tree?.find(folder)).prefix(8))
     }
     /// Re-read only when the folder or its meetings change: ticking a to-do rewrites todo.md, which
     /// refreshes the tree, and that mustn't reset the list (a mis-tick stays visible to undo).
@@ -185,7 +197,7 @@ struct NewRecordingView: View {
         previous = nil
         ticked = []
         for m in candidates {
-            guard let todo = try? model.readMeeting(m.path).todo, !parseTodos(todo).isEmpty else { continue }
+            guard let todo = try? model.library.readMeeting(m.path).todo, !parseTodos(todo).isEmpty else { continue }
             previous = (m.path, meetingDate(m), todo)
             return
         }
@@ -216,10 +228,19 @@ struct NewRecordingView: View {
 
     private func tick(_ t: Todo) {
         guard let p = previous else { return }
-        let todo = toggleTodo(p.todo, line: t.line)
-        previous = (p.path, p.date, todo)
-        ticked.insert(t.line)
-        do { try model.writeMeetingFile(p.path, .todo, todo) } catch { model.toast(error.localizedDescription) }
+        // The file is ticked as it is now, not written over with the copy this screen has been holding.
+        do {
+            guard try model.library.toggleTodo(p.path, line: t.line, text: t.text) else {
+                // It isn't in the file as it's shown here: nothing was ticked, and the list is read again.
+                model.toast(todoChangedMessage)
+                Task { await loadPrevious() }
+                return
+            }
+            previous = (p.path, p.date, toggleTodo(p.todo, line: t.line))
+            ticked.insert(t.line)
+        } catch {
+            model.toast(error.localizedDescription, isError: true)
+        }
     }
 
     // MARK: Prep notes
@@ -258,7 +279,7 @@ struct NewRecordingView: View {
     /// Prep notes are saved as they change, so they're still here when you come back to this call.
     private func setPrep(_ notes: [String]) {
         prep = notes
-        do { try PrepNotes.save(event?.id, notes) } catch { model.toast(error.localizedDescription) }
+        do { try PrepNotes.save(event?.id, notes) } catch { model.toast(error.localizedDescription, isError: true) }
     }
 
     private func addPrep(_ text: String) {
@@ -276,7 +297,7 @@ struct NewRecordingView: View {
             var target = folder == topLevel ? "" : folder
             if folder == newFolder {
                 // A top-level folder with this name already exists: use it.
-                if let existing = model.tree?.subfolders.first(where: { loose($0.name) == loose(newName) }) {
+                if let existing = model.library.tree?.subfolders.first(where: { loose($0.name) == loose(newName) }) {
                     target = existing.path
                 } else {
                     target = try Meetings(root: model.config.meetingsRoot).createFolder(in: "", named: newName)
@@ -284,7 +305,7 @@ struct NewRecordingView: View {
             }
             let notes = prep + prepLines(prepDraft)
             let name = title.trimmed.isEmpty ? (folderName.isEmpty ? "Untitled meeting" : folderName) : title.trimmed
-            try model.startRecording(title: name, folder: target,
+            try model.recording.startRecording(title: name, folder: target,
                                      options: .init(eventId: event?.id, prep: notes, attendees: event.map { others($0).map(attendeeName) } ?? []))
         } catch {
             self.error = error.localizedDescription
