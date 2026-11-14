@@ -214,7 +214,7 @@ struct MeetingView: View {
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .principal) {
-            Picker("Tab", selection: Binding(get: { tab }, set: switchTab)) {
+            Picker("Tab", selection: Binding(get: { tab }, set: { switchTab($0) })) {
                 Text("Summary").tag(MeetingTab.summary).help("⌘1")
                 Text("Transcript").tag(MeetingTab.transcript).help("⌘2")
                 Text("My notes").tag(MeetingTab.notes).help("⌘3")
