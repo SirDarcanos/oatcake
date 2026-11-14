@@ -29,8 +29,8 @@ let package = Package(
             dependencies: ["OatcakeCore"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
-        // The recorder: its own app bundle inside Oatcake.app, so macOS asks for microphone and
-        // system-audio permission for it alone.
+        // The recorder: its own app bundle inside Oatcake.app. macOS counts the microphone and system
+        // audio it uses as Oatcake's, and asks for them in Oatcake's name.
         .executableTarget(
             name: "OatcakeRecorder",
             dependencies: ["RecorderContract"],

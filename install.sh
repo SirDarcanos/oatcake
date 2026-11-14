@@ -169,7 +169,7 @@ main() {
 
     say ""
     say "Installed Oatcake $VERSION in $DEST_DIR."
-    say "The first recording asks for microphone and system-audio permission for \"OatcakeRecorder\"; allow both."
+    say "The first recording asks for microphone and system-audio permission for Oatcake; allow both."
     say "Summaries are written on this Mac. Oatcake downloads the model for them (2.5 to 5 GB) during your first call."
     say "Oatcake checks for updates itself from now on (Settings > Updates)."
 }

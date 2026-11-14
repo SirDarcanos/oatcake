@@ -72,13 +72,19 @@ public enum Recordings {
      * release meets, and their recorders record for whoever starts them. From 0.5.0 the requirement
      * also says "0.5.0 or later" (Scripts/bundle.sh). So the permissions are withdrawn once, and
      * macOS asks again at the next recording: given to this version, they no longer cover an
-     * earlier copy of Oatcake that something else has started. The recorder's own identifier is
-     * done too, in case a version of macOS remembers them against that. False when macOS wouldn't.
+     * earlier copy of Oatcake that something else has started. False when macOS wouldn't.
+     *
+     * The recorder's own identifier is done too, in case a version of macOS remembers them against
+     * that, but it doesn't count towards the answer: macOS refuses an identifier it has never seen
+     * launched, as a new install's recorder is, and trying again later would take away permissions
+     * that had been given since.
      */
     public static func withdrawEarlierPermissions(of bundleID: String) -> Bool {
-        [bundleID, bundleID + ".recorder"].allSatisfy { id in
-            ["Microphone", "AudioCapture"].allSatisfy { (try? runCapturing("/usr/bin/tccutil", ["reset", $0, id])) != nil }
+        func withdraw(_ id: String) -> Bool {
+            ["Microphone", "AudioCapture"].map { (try? runCapturing("/usr/bin/tccutil", ["reset", $0, id])) != nil }.allSatisfy { $0 }
         }
+        _ = withdraw(bundleID + ".recorder")
+        return withdraw(bundleID)
     }
 
     static var recorderBinary: URL { recorderApp.appendingPathComponent("Contents/MacOS/oatcake-recorder") }
@@ -128,7 +134,8 @@ public enum Recordings {
         try writeAtomic(dir.appendingPathComponent(RecorderFile.owner), String(getpid()))
         // The recorder only records for Oatcake: it asks at this socket whether this folder's recording is wanted.
         let socket = try door.expect(dir)
-        // Launched through LaunchServices so macOS treats the recorder as its own app for permissions.
+        // Launched through LaunchServices, so it runs as an app of its own and not as Oatcake's child
+        // (macOS still counts the microphone and system audio it uses as Oatcake's).
         do {
             try runCapturing("/usr/bin/open", ["-n", "-g", recorderApp.path, "--args", "--out", dir.path, RecorderGate.argument, socket])
         } catch {
