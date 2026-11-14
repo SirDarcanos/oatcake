@@ -30,6 +30,8 @@ struct ProcessingView: View {
         let step = progress?.step ?? "Starting"
         let n = stepNumber(step)
         let within = progress?.fraction ?? (analysisSteps.contains(step) ? 0.5 : 0.1)
+        // The first recording on a Mac fetches the speech models before anything can be transcribed.
+        let downloading = step.hasPrefix("Downloading")
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(pathAbove(rec.folder ?? "", rec.title)).font(.callout).foregroundStyle(.secondary)
@@ -57,9 +59,16 @@ struct ProcessingView: View {
                         Text("Step \(n) of 5").foregroundStyle(.secondary)
                     }
                     .font(.callout)
-                    ProgressView(value: (Double(n - 1) + within) / 5)
+                    // How long a download takes depends on the connection, so its bar doesn't pretend to know.
+                    if downloading {
+                        ProgressView().progressViewStyle(.linear).accessibilityLabel("Downloading")
+                    } else {
+                        ProgressView(value: (Double(n - 1) + within) / 5)
+                    }
                 }
-                Text("An hour-long call takes a minute or two. You can keep working — it’ll wait under Needs review.")
+                Text(downloading
+                     ? "The speech models (about 500 MB) are downloading. That’s the first time only; after it, an hour-long call takes a minute or two. You can keep working — it’ll wait under Needs review."
+                     : "An hour-long call takes a minute or two. You can keep working — it’ll wait under Needs review.")
                     .font(.callout).foregroundStyle(.secondary)
             }
         }
@@ -320,6 +329,7 @@ struct ReviewView: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
                 .help("Merge or mark as mixed")
+                .accessibilityLabel("Merge \(shown) with another voice, or mark it as mixed")
             }
             clips(s.quotes)
             if !v.mixed {
@@ -400,7 +410,8 @@ struct ReviewView: View {
     }
 
     private func transcript(_ analysis: Analysis) -> some View {
-        let colors = provisionalColors(names(analysis))
+        // The names are text here, so each person's colour is in the shade that reads against the window.
+        let colors = provisionalNameColors(names(analysis))
         return ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {

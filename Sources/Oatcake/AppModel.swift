@@ -4,6 +4,7 @@
 import AppKit
 import OatcakeCore
 import SwiftUI
+import UniformTypeIdentifiers
 import UserNotifications
 
 /// What the detail pane shows.
@@ -116,6 +117,11 @@ final class AppModel {
     var folder = ""
     var confirmation: Confirmation?
     var toastText: String?
+    /// The toast showing says something went wrong: it stays longer, and goes when it's clicked.
+    var toastIsError = false
+    /// What the last import from Granola or Quill did, in words, and whether it failed. Kept here
+    /// rather than in Settings' row, so it's still there if Settings was closed while it ran.
+    var importOutcomes: [String: (text: String, failed: Bool)] = [:]
     let updater = Updater()
     let ask = AskChat()
     /// Notes typed during each call, kept here so leaving the live view and coming back keeps them.
@@ -378,7 +384,7 @@ final class AppModel {
             }
         } catch {
             toast(nodes.count == 1 ? error.localizedDescription
-                                   : "Moved \(moved) of \(nodes.count) meetings to the Trash — \(error.localizedDescription)")
+                                   : "Moved \(moved) of \(nodes.count) meetings to the Trash — \(error.localizedDescription)", isError: true)
             return
         }
         if nodes.count == 1, let node = nodes.first {
@@ -386,6 +392,15 @@ final class AppModel {
         } else if !nodes.isEmpty {
             toast("Moved \(nodes.count) meetings to the Trash")
         }
+    }
+
+    /// A folder's Move to Trash. One with meetings in it asks first: it takes them all with it.
+    func trashFolder(_ node: TreeNode) {
+        let count = node.allMeetings.count
+        guard count > 0 else { return trash([node]) }
+        confirmation = Confirmation(title: "Move “\(node.name)” to the Trash?",
+                                    text: "It holds \(count) meeting\(count == 1 ? "" : "s"), which go with it. You can put them back from the Trash in Finder.",
+                                    ok: "Move to Trash", cancel: "Cancel") { [self] in trash([node]) }
     }
 
     func reveal(_ path: String) { reveal([path]) }
@@ -402,17 +417,45 @@ final class AppModel {
         try meetings.write(path, file, content)
     }
 
-    private func attempt(_ work: () throws -> Void) {
-        do { try work() } catch { toast(error.localizedDescription) }
+    /// Ticks or unticks a to-do in todo.md as it is now, not as a view last read it: a tick never
+    /// writes back over to-dos that have arrived since (the summary's, say). `text` is the to-do's
+    /// task, which finds it if its line has moved. "" is the Meetings folder's own list.
+    func toggleTodo(_ path: String, line: Int, text: String) throws {
+        try meetings.toggleTodo(path, line: line, text: text)
+        refresh()
     }
 
-    func toast(_ text: String) {
-        withAnimation { toastText = text }
+    /// Adds a to-do to the end of todo.md as it is now.
+    func addTodo(_ path: String, _ text: String) throws {
+        try meetings.addTodo(path, text)
+        refresh()
+    }
+
+    private func attempt(_ work: () throws -> Void) {
+        do { try work() } catch { toast(error.localizedDescription, isError: true) }
+    }
+
+    /// A passing note at the bottom of the window. One that says something went wrong stays for
+    /// eight seconds or until it's clicked, and is read out by VoiceOver, which never sees the note itself.
+    func toast(_ text: String, isError: Bool = false) {
+        withAnimation {
+            toastText = text
+            toastIsError = isError
+        }
         toastTask?.cancel()
         toastTask = Task {
-            try? await Task.sleep(for: .seconds(2.4))
+            try? await Task.sleep(for: .seconds(isError ? 8 : 2.4))
             if !Task.isCancelled { withAnimation { toastText = nil } }
         }
+        if isError, let window = NSApp.mainWindow ?? NSApp.keyWindow {
+            NSAccessibility.post(element: window, notification: .announcementRequested,
+                                 userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+        }
+    }
+
+    func dismissToast() {
+        toastTask?.cancel()
+        withAnimation { toastText = nil }
     }
 
     // MARK: - Settings
@@ -424,7 +467,7 @@ final class AppModel {
         // A control that sets what it already shows (a picker redrawn, a field losing focus) changes nothing.
         guard saved != config else { return }
         config = saved
-        try? saved.save()
+        do { try saved.save() } catch { toast("Couldn’t save your settings: \(error.localizedDescription)", isError: true) }
         for rec in active.values { try? Recordings.setMic(rec.dir, uid: saved.mic?.uid) }
         // The live transcript follows its switch straight away, mid-call too.
         if let live {
@@ -448,7 +491,7 @@ final class AppModel {
         panel.prompt = "Choose"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         config.outputDir = url.path
-        try? config.save()
+        do { try config.save() } catch { toast("Couldn’t save your settings, so Oatcake will be back on the old folder next time: \(error.localizedDescription)", isError: true) }
         meetings = Meetings(root: url)
         watchMeetings()
         refresh()
@@ -459,41 +502,53 @@ final class AppModel {
     var importing: String?
 
     /// Settings › Import from Granola: pick the export, import it, and show the new meetings.
-    func importGranolaExport(progress: @escaping ImportProgress) async throws -> ImportResult? {
-        let panel = NSOpenPanel()
-        panel.title = "Import from Granola"
-        panel.prompt = "Import"
-        panel.allowedContentTypes = [.zip, .commaSeparatedText]
-        guard importing == nil, panel.runModal() == .OK, let url = panel.url else { return nil }
-        importing = "Granola"
-        defer { importing = nil }
-        let root = meetings.root
-        progress(0, 0)
-        let result = try await Task.detached { try importGranola(url, into: root, progress: progress) }.value
-        refresh()
-        return result
+    func importGranolaExport(progress: @escaping ImportProgress) async {
+        await runImport("Granola", types: [.zip, .commaSeparatedText], progress: progress) { url, root in
+            try importGranola(url, into: root, progress: progress)
+        }
     }
 
     /// Settings › Import from Quill: pick Quill's backup, import it, and show the new meetings.
-    func importQuillBackup(progress: @escaping ImportProgress) async throws -> ImportResult? {
-        let panel = NSOpenPanel()
-        panel.title = "Import from Quill"
-        panel.prompt = "Import"
-        panel.allowedContentTypes = [.zip]
-        guard importing == nil, panel.runModal() == .OK, let url = panel.url else { return nil }
-        importing = "Quill"
-        defer { importing = nil }
-        let root = meetings.root, me = config.myName
-        progress(0, 0)
-        let result = try await Task.detached { try importQuill(url, into: root, me: me, progress: progress) }.value
-        refresh()
-        return result
+    func importQuillBackup(progress: @escaping ImportProgress) async {
+        let me = config.myName
+        await runImport("Quill", types: [.zip], progress: progress) { url, root in
+            try importQuill(url, into: root, me: me, progress: progress)
+        }
     }
 
-    func setSecret(_ name: SecretName, _ value: String) {
+    /// Picks the file, imports it off the main thread, and leaves what happened in `importOutcomes`.
+    private func runImport(_ source: String, types: [UTType], progress: @escaping ImportProgress,
+                           _ work: @escaping @Sendable (URL, URL) throws -> ImportResult) async {
+        let panel = NSOpenPanel()
+        panel.title = "Import from \(source)"
+        panel.prompt = "Import"
+        panel.allowedContentTypes = types
+        guard importing == nil, panel.runModal() == .OK, let url = panel.url else { return }
+        importing = source
+        defer { importing = nil }
+        let root = meetings.root
+        progress(0, 0)
+        func plural(_ n: Int, _ word: String) -> String { "\(n) \(word)\(n == 1 ? "" : "s")" }
+        do {
+            let r = try await Task.detached { try work(url, root) }.value
+            let text = [r.imported > 0 ? "Imported \(plural(r.imported, "meeting")) into the \(r.folder) folder." : "Nothing new to import.",
+                        r.skipped > 0 ? "\(plural(r.skipped, "meeting")) already here." : nil,
+                        r.unreadable > 0 ? "\(plural(r.unreadable, "meeting")) couldn't be read." : nil].compactMap { $0 }.joined(separator: " ")
+            importOutcomes[source] = (text, false)
+            refresh()
+        } catch {
+            importOutcomes[source] = (error.localizedDescription, true)
+        }
+    }
+
+    /// Saves (or, with "", removes) a secret. Returns why it couldn't, for Settings to show beside the field.
+    @discardableResult
+    func setSecret(_ name: SecretName, _ value: String) -> String? {
         let before = Secrets.get(name)
-        attempt { try Secrets.set(name, value) }
+        var problem: String?
+        do { try Secrets.set(name, value) } catch { problem = error.localizedDescription }
         if name == .calendar, Secrets.get(.calendar) != before { calendarChanged() }
+        return problem
     }
 
     // MARK: - Calendar
@@ -579,7 +634,7 @@ final class AppModel {
                 // Said in Oatcake's window and as a notification: the call's own window is in front by now,
                 // and an alert would sit behind it while the call went unrecorded.
                 showWindow()
-                toast(error.localizedDescription)
+                toast(error.localizedDescription, isError: true)
                 Reminders.say("Oatcake couldn’t start recording", error.localizedDescription, id: "start-failed")
                 return
             }
@@ -817,7 +872,7 @@ final class AppModel {
             refresh()
         }
         if !hasNotes {
-            Task { do { try await cancel() } catch { toast(error.localizedDescription) } }
+            Task { do { try await cancel() } catch { toast(error.localizedDescription, isError: true) } }
             return
         }
         confirmation = Confirmation(title: "Cancel this recording?",
@@ -942,7 +997,7 @@ final class AppModel {
                 try startRecording(title: "Call", folder: "", options: .init())
             }
         } catch {
-            toast(error.localizedDescription)
+            toast(error.localizedDescription, isError: true)
         }
     }
 
@@ -1146,15 +1201,29 @@ final class AppModel {
                 modelDownloads.removeValue(forKey: model.id)
                 modelsVersion += 1
             }
-            do {
-                try await ModelDownload.fetch(model) { fraction in
-                    Task { @MainActor in
-                        if self.modelDownloadTasks[model.id] != nil { self.modelDownloads[model.id] = fraction }
+            // A connection that drops part-way is tried again by itself, a little later each time: the
+            // file carries on from where it stopped. Not after Stop, and not when the download never
+            // got going (no room on the disk, a refusal from the server) or failed after it was whole.
+            var waits = [5, 15, 45]
+            while true {
+                let reached = Furthest()
+                do {
+                    try await ModelDownload.fetch(model) { fraction in
+                        reached.note(fraction)
+                        Task { @MainActor in
+                            if self.modelDownloadTasks[model.id] != nil { self.modelDownloads[model.id] = fraction }
+                        }
                     }
+                    return
+                } catch {
+                    if isCancellation(error) { throw error }
+                    let dropped = reached.value >= 0 && reached.value < 0.999
+                    guard dropped, !waits.isEmpty else {
+                        modelDownloadErrors[model.id] = error.localizedDescription
+                        throw error
+                    }
+                    try await Task.sleep(for: .seconds(waits.removeFirst()))
                 }
-            } catch {
-                if !isCancellation(error) { modelDownloadErrors[model.id] = error.localizedDescription }
-                throw error
             }
         }
         modelDownloadTasks[model.id] = task
@@ -1262,6 +1331,14 @@ final class AppModel {
         if importing != nil { return "Oatcake is importing meetings. Install the update when it's done." }
         return nil
     }
+}
+
+/// How far a download attempt got, noted from whichever thread reports it.
+private final class Furthest: @unchecked Sendable {
+    private let lock = NSLock()
+    private var fraction = -1.0
+    var value: Double { lock.withLock { fraction } }
+    func note(_ f: Double) { lock.withLock { fraction = max(fraction, f) } }
 }
 
 /// Step 1–5 for a progress message; downloads and model loading count as step 1.

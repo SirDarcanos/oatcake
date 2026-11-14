@@ -6,6 +6,7 @@ struct LiveView: View {
     @Environment(AppModel.self) private var model
     let rec: Recording
     @FocusState private var focused: UUID?
+    @AppStorage(TextScale.key) private var textScale = 1.0
     @ViewState private var devices: [InputDevice] = []
     @ViewState private var showTranscript = UserDefaults.standard.object(forKey: "liveTranscriptShown") as? Bool ?? true
 
@@ -158,6 +159,8 @@ struct LiveView: View {
     private var transcript: some View {
         let lines = liveTranscript(model.liveLines)
         let myName = model.config.myName.isEmpty ? "You" : model.config.myName
+        // Your name as text, in the shade that reads against the window (the avatar's own is too close to it).
+        let mine = provisionalNameColors([myName])[myName] ?? .primary
         let stopped = model.liveStatus.hasPrefix("The live transcript stopped")
         return ScrollViewReader { proxy in
             ScrollView {
@@ -175,7 +178,7 @@ struct LiveView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             HStack {
                                 Text(line.track == .mic ? myName : callPlaceholder(for: rec.id, lineAt: line.start)).fontWeight(.semibold)
-                                    .foregroundStyle(line.track == .mic ? AnyShapeStyle(person(myName).color) : AnyShapeStyle(.secondary))
+                                    .foregroundStyle(line.track == .mic ? AnyShapeStyle(mine) : AnyShapeStyle(.secondary))
                                 Text(clock(line.start)).foregroundStyle(.tertiary).monospacedDigit()
                             }
                             .font(.caption)
@@ -230,7 +233,7 @@ struct LiveView: View {
                     })
                 }))
                 .textFieldStyle(.plain)
-                .font(.system(size: 14))
+                .font(.system(size: 14 * TextScale.clamped(textScale)))
                 .focused($focused, equals: line.id)
                 .onSubmit { returnPressed(on: line) }
                 .onKeyPress(.upArrow) { move(from: line, by: -1) }

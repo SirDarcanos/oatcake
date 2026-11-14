@@ -33,6 +33,10 @@ final class Updater {
     private var timer: Timer?
     // OATCAKE_UPDATE_FEED points at another latest.json, for trying a release before it's published.
     private let feed = ProcessInfo.processInfo.environment["OATCAKE_UPDATE_FEED"].flatMap(URL.init(string:)) ?? Update.feedURL
+    /// The newest version the real feed has ever offered this Mac. An answer that names an older one
+    /// is an old answer (a signed one can't be forged, but an old one can be served again), and
+    /// isn't taken to mean there's nothing newer.
+    private static let newestOfferedKey = "newestVersionOffered"
 
     /// The running bundle, when this is a packaged app rather than a development build.
     private var bundle: URL? {
@@ -82,6 +86,13 @@ final class Updater {
         error = nil
         do {
             let m = try await Update.fetchManifest(feed)
+            if feed == Update.feedURL {
+                let newest = UserDefaults.standard.string(forKey: Self.newestOfferedKey) ?? "0"
+                if Update.compareVersions(m.version, newest) < 0 {
+                    throw OatcakeError("The update information looks out of date: it names Oatcake \(m.version), and \(newest) has been offered before. Oatcake will check again later.")
+                }
+                UserDefaults.standard.set(m.version, forKey: Self.newestOfferedKey)
+            }
             lastCheck = Date()
             checkedAt = Date()
             if Update.compareVersions(m.version, current) > 0 {

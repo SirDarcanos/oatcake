@@ -125,10 +125,20 @@ private func hueFor(_ name: String, remember: Bool) -> Double {
  * saving will then claim them. Without this, every new name would show the same least-used colour.
  */
 func provisionalColors(_ names: [String]) -> [String: Color] {
+    provisionalHues(names).mapValues { oklch(0.55, 0.15, $0) }
+}
+
+/// The same colours for those names written as text (the review transcript's speaker names), where
+/// the avatar's own shade is too close to the window behind it to read comfortably.
+func provisionalNameColors(_ names: [String]) -> [String: Color] {
+    provisionalHues(names).mapValues(nameColor)
+}
+
+private func provisionalHues(_ names: [String]) -> [String: Double] {
     let all = (UserDefaults.standard.dictionary(forKey: colorsKey) as? [String: Int]) ?? [:]
     var uses = hues.indices.map { i in all.values.filter { $0 == i }.count }
     var taken: [String: Int] = [:]
-    var out: [String: Color] = [:]
+    var out: [String: Double] = [:]
     for name in names where !name.trimmed.isEmpty && name.range(of: notAPerson, options: .regularExpression) == nil {
         let key = (name.trimmed.split(separator: " ").first.map(String.init) ?? name).lowercased()
         let index: Int
@@ -139,9 +149,22 @@ func provisionalColors(_ names: [String]) -> [String: Color] {
             uses[index] += 1
             taken[key] = index
         }
-        out[name] = oklch(0.55, 0.15, hues[index])
+        out[name] = hues[index]
     }
     return out
+}
+
+/**
+ * A person's hue as a colour for their name in text: darker than the avatar's on a light window and
+ * lighter on a dark one, so that every hue in the palette stands at least 4.5:1 against the window
+ * (worked out for each of the twelve against the window's own background, light and dark).
+ */
+private func nameColor(_ hue: Double) -> Color {
+    Color(nsColor: NSColor(name: nil) { appearance in
+        let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let (r, g, b) = oklchRGB(dark ? 0.78 : 0.47, dark ? 0.12 : 0.15, hue)
+        return NSColor(srgbRed: r, green: g, blue: b, alpha: 1)
+    })
 }
 
 struct Person {
@@ -162,6 +185,11 @@ func person(_ name: String, remember: Bool = true) -> Person {
 
 /// The design's oklch(L C h) colours, in sRGB.
 func oklch(_ l: Double, _ c: Double, _ h: Double) -> Color {
+    let (r, g, b) = oklchRGB(l, c, h)
+    return Color(.sRGB, red: r, green: g, blue: b)
+}
+
+private func oklchRGB(_ l: Double, _ c: Double, _ h: Double) -> (Double, Double, Double) {
     let a = c * cos(h * .pi / 180), b = c * sin(h * .pi / 180)
     let l_ = l + 0.3963377774 * a + 0.2158037573 * b
     let m_ = l - 0.1055613458 * a - 0.0638541728 * b
@@ -174,5 +202,5 @@ func oklch(_ l: Double, _ c: Double, _ h: Double) -> Color {
         let v = max(0, min(1, x))
         return v <= 0.0031308 ? 12.92 * v : 1.055 * pow(v, 1 / 2.4) - 0.055
     }
-    return Color(.sRGB, red: gamma(r), green: gamma(g), blue: gamma(bl))
+    return (gamma(r), gamma(g), gamma(bl))
 }

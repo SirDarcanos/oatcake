@@ -13,6 +13,7 @@ struct AskBar: View {
     let path: String
     @ViewState private var draft = ""
     @FocusState private var focused: Bool
+    @AppStorage(TextScale.key) private var textScale = 1.0
 
     var body: some View {
         let chat = model.ask
@@ -109,7 +110,7 @@ struct AskBar: View {
             Text(turn.question).fontWeight(.semibold)
             if let answer = turn.answer {
                 // One piece of text, so the whole answer (or any stretch of it) can be selected and copied.
-                SelectableMarkdown(markdown: answerMarkdown(answer), fontSize: 13) { model.ask.open = false }
+                SelectableMarkdown(markdown: answerMarkdown(answer), fontSize: 13 * TextScale.clamped(textScale)) { model.ask.open = false }
             } else if let error = turn.error {
                 ModelError(raw: error).foregroundStyle(.red).textSelection(.enabled)
             } else if turn.stopped {

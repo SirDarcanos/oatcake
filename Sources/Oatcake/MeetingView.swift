@@ -40,6 +40,10 @@ struct MeetingView: View {
     @ViewState private var match = 0
     @ViewState private var copied = false
     @FocusState private var findFocused: Bool
+    @AppStorage(TextScale.key) private var textScale = 1.0
+
+    /// View › Bigger Text and Smaller Text: how big the note's own text is drawn.
+    private var scale: CGFloat { TextScale.clamped(textScale) }
 
     private var path: String { node.path }
 
@@ -132,6 +136,24 @@ struct MeetingView: View {
                 try? await Task.sleep(for: .seconds(2))
                 if status == "todo" { status = "" }
             }
+        }
+    }
+
+    /// A tick, or a to-do added, on the Summary tab. What's shown changes at once; the file is changed
+    /// as it is now rather than written over with what's shown, so to-dos that have arrived since
+    /// this was read (the summary's own, say) are kept.
+    private func changeTodos(shown: String, _ change: () throws -> Void) {
+        files?[.todos] = shown
+        do {
+            try change()
+            status = "todo"
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                if status == "todo" { status = "" }
+            }
+        } catch {
+            model.toast(error.localizedDescription, isError: true)
+            load()
         }
     }
 
@@ -340,7 +362,7 @@ struct MeetingView: View {
                             .background(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.line))
                     } else {
                         TextEditor(text: Binding(get: { files[key] ?? "" }, set: { write(key, $0) }))
-                            .font(.system(size: 12.5, design: .monospaced))
+                            .font(.system(size: 12.5 * scale, design: .monospaced))
                             .scrollDisabled(true)
                             .frame(minHeight: key == .todos ? 70 : 300)
                             .padding(8)
@@ -348,7 +370,7 @@ struct MeetingView: View {
                             .overlay(alignment: .topLeading) {
                                 if key == .todos && (files[key] ?? "").isEmpty {
                                     Text("- [ ] What to do — Owner — due Fri, Oct 30 — [12:34]")
-                                        .font(.system(size: 12.5, design: .monospaced)).foregroundStyle(.tertiary)
+                                        .font(.system(size: 12.5 * scale, design: .monospaced)).foregroundStyle(.tertiary)
                                         .padding(.horizontal, 13).padding(.vertical, 8).allowsHitTesting(false)
                                 }
                             }
@@ -373,7 +395,9 @@ struct MeetingView: View {
                 if !todos.isEmpty { SectionLabel(text: "To-dos\(open > 0 ? " · \(open) open" : "")") }
                 ForEach(todos, id: \.line) { t in
                     HStack(alignment: .top, spacing: 10) {
-                        TodoCheckbox(checked: t.done, what: t.text) { write(.todos, toggleTodo(todoText, line: t.line), now: true) }
+                        TodoCheckbox(checked: t.done, what: t.text) {
+                            changeTodos(shown: toggleTodo(todoText, line: t.line)) { try model.toggleTodo(path, line: t.line, text: t.text) }
+                        }
                         VStack(alignment: .leading, spacing: 2) {
                             Text(t.text).strikethrough(t.done).foregroundStyle(t.done ? .secondary : .primary).textSelection(.enabled)
                             let detail = [t.owner.isEmpty ? nil : ownerLabel(t.owner, model.config.myName), t.due.isEmpty ? nil : "due \(t.due)"].compactMap { $0 }
@@ -390,7 +414,8 @@ struct MeetingView: View {
                         .help("Add an owner or due date with dashes: Send the deck - Alex - due Fri, Nov 6")
                         .onSubmit {
                             guard !newTodo.trimmed.isEmpty else { return }
-                            write(.todos, addTodo(todoText, typedTodo(newTodo)), now: true)
+                            let typed = typedTodo(newTodo)
+                            changeTodos(shown: addTodo(todoText, typed)) { try model.addTodo(path, typed) }
                             newTodo = ""
                         }
                 }
@@ -401,7 +426,7 @@ struct MeetingView: View {
             } else if summary.trimmed.isEmpty {
                 Text("No summary for this meeting.").foregroundStyle(.secondary)
             } else {
-                MarkdownView(markdown: summary)
+                MarkdownView(markdown: summary, fontSize: 14 * scale)
             }
         }
     }
@@ -427,7 +452,7 @@ struct MeetingView: View {
                 HStack(spacing: 10) {
                     Button("Write summary") { model.writeSummary(path) }
                     // What stopped it is usually put right in Settings: the model, or its download.
-                    if error != nil { SettingsLink { Text("Open Settings") }.buttonStyle(.link).simultaneousGesture(TapGesture().onEnded { UserDefaults.standard.set("summaries", forKey: "settingsPane") }) }
+                    if error != nil { SettingsPaneLink(pane: "summaries", title: "Open Settings").buttonStyle(.link) }
                 }
                 .padding(.top, 6)
             }
@@ -501,7 +526,10 @@ struct MeetingView: View {
         var from = text.startIndex
         while let range = text.range(of: wanted, options: [.caseInsensitive, .diacriticInsensitive], range: from..<text.endIndex) {
             if let lower = AttributedString.Index(range.lowerBound, within: out), let upper = AttributedString.Index(range.upperBound, within: out) {
-                out[lower..<upper].backgroundColor = Color.yellow.opacity(0.45)
+                // The system's own find highlight, with the dark text it's made for: in a dark window
+                // the usual white text on a see-through yellow couldn't be read.
+                out[lower..<upper].backgroundColor = Color(nsColor: .findHighlightColor)
+                out[lower..<upper].foregroundColor = .black
             }
             from = range.upperBound
         }
@@ -522,10 +550,10 @@ struct MeetingView: View {
                                 Text(row.stamp).foregroundStyle(.tertiary).monospacedDigit()
                             }
                             .font(.callout)
-                            Text(marked(row.text)).font(.system(size: 14)).lineSpacing(3).textSelection(.enabled)
+                            Text(marked(row.text)).font(.system(size: 14 * scale)).lineSpacing(3).textSelection(.enabled)
                         }
                     } else {
-                        Text(marked(row.text)).font(.system(size: 14)).lineSpacing(3).textSelection(.enabled)
+                        Text(marked(row.text)).font(.system(size: 14 * scale)).lineSpacing(3).textSelection(.enabled)
                     }
                 }
                 .padding(.horizontal, 10)
@@ -544,7 +572,7 @@ struct MeetingView: View {
             ForEach(Array(notes.enumerated()), id: \.offset) { _, n in
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Chip(text: n.stamp ?? "Prep", style: n.stamp == nil ? .prep : .normal)
-                    Text(n.text).textSelection(.enabled)
+                    Text(n.text).font(.system(size: 13 * scale)).textSelection(.enabled)
                 }
             }
             if notes.isEmpty {

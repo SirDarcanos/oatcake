@@ -264,8 +264,12 @@ struct SidebarView: View {
     }
 
     private func calendarMessage(_ c: CalendarCache, events: [CalendarEvent]) -> String? {
-        if c.updatedAt == nil { return c.error ?? "Fetching your calendar…" }
-        return events.isEmpty ? "Nothing else today or tomorrow." : nil
+        guard let updated = parseISO(c.updatedAt) else { return c.error ?? "Fetching your calendar…" }
+        let nothing = events.isEmpty ? "Nothing else today or tomorrow." : nil
+        // Said in words, not only by the arrow turning red: what's listed may be out of date.
+        guard c.error != nil else { return nothing }
+        let when = Calendar.current.isDateInToday(updated) ? hhmm(updated) : "\(shortDate(updated)), \(hhmm(updated))"
+        return [nothing, "The calendar couldn’t be updated. This is how it stood at \(when)."].compactMap { $0 }.joined(separator: " ")
     }
 
     private func jobRow(_ job: AppModel.Job) -> some View {
@@ -355,7 +359,7 @@ private struct FolderRow: View {
             Button("New Folder Inside…") { draft = ""; newFolderIn = node.path }
             Button("Show in Finder") { model.reveal(node.path) }
             Divider()
-            Button("Move to Trash") { model.trash([node]) }
+            Button("Move to Trash") { model.trashFolder(node) }
         }
     }
 }
@@ -363,6 +367,7 @@ private struct FolderRow: View {
 /// A newer release: Update installs it and relaunches; Details (when this copy can't update itself) opens Settings.
 private struct UpdateNotice: View {
     @Environment(AppModel.self) private var model
+    @ViewState private var confirming = false
 
     var body: some View {
         let u = model.updater
@@ -379,10 +384,16 @@ private struct UpdateNotice: View {
                     ProgressView().controlSize(.small)
                 } else if u.blocked != nil {
                     // Opens Settings on its Updates pane.
-                    SettingsLink { Text("Details") }
-                        .simultaneousGesture(TapGesture().onEnded { UserDefaults.standard.set("updates", forKey: "settingsPane") })
+                    SettingsPaneLink(pane: "updates", title: "Details")
                 } else {
-                    Button("Update") { Task { await u.install() } }.buttonStyle(.borderedProminent)
+                    // Asked first: it quits Oatcake, and whatever is half done in a window goes with it.
+                    Button("Update…") { confirming = true }.buttonStyle(.borderedProminent)
+                        .alert("Install Oatcake \(available.version)?", isPresented: $confirming) {
+                            Button("Install and Relaunch") { Task { await u.install() } }
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("Oatcake downloads it, quits and reopens on the new version. A Who’s who you haven’t saved yet keeps its recording, but not the names you’ve typed.")
+                        }
                 }
             }
             .padding(.horizontal, 14)
