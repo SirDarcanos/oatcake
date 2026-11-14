@@ -41,6 +41,7 @@ extension FocusedValues {
 struct AppCommands: Commands {
     @Environment(\.openWindow) private var openWindow
     @FocusedValue(\.trashMeetings) private var trashMeetings
+    @AppStorage(TextScale.key) private var textScale = 1.0
     let model: AppModel
 
     var body: some Commands {
@@ -55,6 +56,13 @@ struct AppCommands: Commands {
             Divider()
             // As in Finder. A menu command, because a key handler on the list didn't answer to ⌘⌫.
             Button("Move to Trash") { trashMeetings?() }.keyboardShortcut(.delete, modifiers: .command).disabled(trashMeetings == nil)
+        }
+        // View › the size of reading text: summaries, answers, transcripts, notes and the Markdown editors.
+        CommandGroup(before: .toolbar) {
+            Button("Bigger Text") { textScale = TextScale.bigger(textScale) }.keyboardShortcut("+").disabled(textScale >= TextScale.steps.last!)
+            Button("Smaller Text") { textScale = TextScale.smaller(textScale) }.keyboardShortcut("-").disabled(textScale <= TextScale.steps.first!)
+            Button("Actual Size") { textScale = 1 }.keyboardShortcut("0").disabled(textScale == 1)
+            Divider()
         }
         CommandGroup(after: .pasteboard) {
             Divider()
@@ -146,14 +154,15 @@ struct ContentView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if let text = model.toastText { ToastView(text: text).allowsHitTesting(false) }
+            // Only one that says something went wrong takes clicks (to dismiss it).
+            if let text = model.toastText { ToastView(text: text, isError: model.toastIsError) { model.dismissToast() }.allowsHitTesting(model.toastIsError) }
         }
         .alert(model.confirmation?.title ?? "", isPresented: Binding(get: { model.confirmation != nil }, set: { if !$0 { model.confirmation = nil } }),
                presenting: model.confirmation) { confirmation in
             Button(confirmation.cancel, role: .cancel) {}
             Button(confirmation.ok, role: .destructive) {
                 // A failure (say, the recording had already stopped) is shown rather than lost.
-                Task { do { try await confirmation.action() } catch { model.toast(error.localizedDescription) } }
+                Task { do { try await confirmation.action() } catch { model.toast(error.localizedDescription, isError: true) } }
             }
         } message: { confirmation in
             Text(confirmation.text)

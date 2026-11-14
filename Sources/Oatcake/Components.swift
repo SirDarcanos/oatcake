@@ -145,6 +145,10 @@ struct Meter: View {
                 }
             }
         }
+        // Read out as one thing with a level, rather than as a word and fourteen unnamed bars.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label == "You" ? "Your microphone’s level" : "\(label) audio level")
+        .accessibilityValue(level == nil ? "Nothing yet" : lit == 0 ? "Silent" : "\(lit) of 14")
     }
 }
 
@@ -161,19 +165,63 @@ struct PageTitle: View {
     }
 }
 
-/// One toast at a time, gone after a couple of seconds.
+/// One toast at a time, gone after a couple of seconds. One that says something went wrong is
+/// marked as such, stays longer, runs to several lines if it has to, and goes when it's clicked.
 struct ToastView: View {
     let text: String
+    var isError = false
+    var dismiss: () -> Void = {}
     var body: some View {
-        Text(text)
-            .font(.callout.weight(.medium))
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(.regularMaterial, in: Capsule())
-            .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
-            .padding(.bottom, 80)
-            .transition(.opacity.combined(with: .move(edge: .bottom)))
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if isError { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red) }
+            Text(text).font(.callout.weight(.medium)).fixedSize(horizontal: false, vertical: true)
+            if isError { Image(systemName: "xmark").font(.caption.weight(.semibold)).foregroundStyle(.secondary) }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .frame(maxWidth: isError ? 560 : nil)
+        // As round as a capsule on one line, and still a tidy box on three.
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 17))
+        .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
+        .contentShape(RoundedRectangle(cornerRadius: 17))
+        .onTapGesture { if isError { dismiss() } }
+        .help(isError ? "Click to dismiss" : "")
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isError ? .isButton : [])
+        .accessibilityHint(isError ? "Dismisses this message" : "")
+        .padding(.bottom, 80)
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
+}
+
+/// How big the reading text is: summaries, answers, transcripts, your notes and the Markdown
+/// editors. View › Bigger Text and Smaller Text move it a step; everything else stays the size it is.
+enum TextScale {
+    static let key = "textScale"
+    static let steps: [Double] = [0.85, 1, 1.15, 1.3, 1.45, 1.6]
+
+    static func bigger(_ scale: Double) -> Double { steps.first { $0 > scale + 0.001 } ?? steps.last! }
+    static func smaller(_ scale: Double) -> Double { steps.last { $0 < scale - 0.001 } ?? steps.first! }
+    /// A stored value that isn't one of the steps (edited by hand) is kept within them.
+    static func clamped(_ scale: Double) -> Double { min(steps.last!, max(steps.first!, scale)) }
+}
+
+/// Opens Settings on one of its panes ("summaries", "updates"…), however it's pressed: a click, the
+/// keyboard or VoiceOver.
+struct SettingsPaneLink: View {
+    @Environment(\.openSettings) private var openSettings
+    let pane: String
+    let title: String
+
+    var body: some View {
+        Button(title) { showSettingsPane(pane, openSettings) }
+    }
+}
+
+/// The one place that says which pane Settings opens on.
+@MainActor func showSettingsPane(_ pane: String, _ open: OpenSettingsAction) {
+    UserDefaults.standard.set(pane, forKey: "settingsPane")
+    open()
 }
 
 /// SwiftUI's State property wrapper. In the macOS 27 SDK `@State` is a macro whose plugin ships only

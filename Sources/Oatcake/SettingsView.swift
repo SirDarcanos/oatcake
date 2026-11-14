@@ -1,11 +1,14 @@
 import OatcakeCore
 import SwiftUI
+import UserNotifications
 
 /// The Settings window, in panes. Every change is saved as it's made; there's no Save button.
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @ViewState private var devices: [InputDevice]?
     @ViewState private var jargon = ""
+    /// macOS says notifications are turned off for Oatcake: reminders and call notices can't show.
+    @ViewState private var notificationsOff = false
     @AppStorage("settingsPane") private var pane = "general"
 
     var body: some View {
@@ -20,6 +23,8 @@ struct SettingsView: View {
         }
         .frame(width: 620, height: 600)
         .task { devices = (try? await Recordings.listInputs()) ?? [] }
+        // Looked at again whenever a pane is shown: it may have been changed in System Settings meanwhile.
+        .task(id: pane) { notificationsOff = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .denied }
         .onAppear {
             jargon = model.config.jargon.joined(separator: ", ")
             // The Electron version's names for the two transcription choices read as the new ones.
@@ -52,6 +57,7 @@ struct SettingsView: View {
                 Text("Offer to record when a call starts")
                 Text("A notification with a Start recording button when a calling app or browser starts using your microphone.")
             }
+            if model.config.callNotice { notificationsHint }
             Toggle(isOn: bind(\.autoStop)) {
                 Text("Stop recording when the call ends")
                 Text("Once the calling app has let go of your microphone and the call audio has been quiet for 15 seconds.")
@@ -72,6 +78,7 @@ struct SettingsView: View {
                 Text("Meetings folder")
                 Text(shortPath(model.config.outputDir)).font(.system(.caption, design: .monospaced)).help(model.config.outputDir)
             }
+            Text("Choosing another folder doesn’t move anything: meetings already in the old one stay where they are.").settingsHint()
             Toggle(isOn: bind(\.keepAudio)) {
                 Text("Keep call audio after saving")
                 Text("When off, the audio is deleted once a meeting is saved. The transcript, notes and summary stay.")
@@ -96,6 +103,7 @@ struct SettingsView: View {
                 Text("Remind me before calls")
                 Text("5 minutes before each call, a notification with a button that opens the call and starts recording, ready for notes.")
             }
+            if model.config.callReminders { notificationsHint }
             Toggle(isOn: bind(\.menuBarNextCall)) {
                 Text("Show my next call in the menu bar")
                 Text("The time until it starts, with what’s coming up in its menu. Oatcake then stays in the menu bar when its window is closed.")
@@ -125,6 +133,19 @@ struct SettingsView: View {
             Text("Transcription")
         } footer: {
             Text("Runs on your Mac. Audio never leaves it for transcription.").settingsHint()
+        }
+    }
+
+    /// Shown under a switch that works by notification, when macOS won't show Oatcake's.
+    @ViewBuilder private var notificationsHint: some View {
+        if notificationsOff {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("Notifications are turned off for Oatcake in System Settings, so this can’t be shown.").settingsHint(.amber)
+                Button("Open Notification Settings") {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") { NSWorkspace.shared.open(url) }
+                }
+                .controlSize(.small)
+            }
         }
     }
 
@@ -270,6 +291,7 @@ private struct InstructionsSection: View {
     let applies: String
     let hint: String
     @ViewState private var text = ""
+    @ViewState private var restoring = false
 
     var body: some View {
         Section {
@@ -284,7 +306,14 @@ private struct InstructionsSection: View {
                     if custom != model.config[keyPath: setting] { model.saveConfig(with(model.config) { $0[keyPath: setting] = custom }) }
                 }
             LabeledContent {
-                Button("Restore Default") { text = standard }.disabled(text.trimmed == standard.trimmed)
+                // It only does anything when the instructions have been changed, and then it asks: they're yours.
+                Button("Restore Default…") { restoring = true }.disabled(text.trimmed == standard.trimmed)
+                    .alert("Restore Oatcake’s own \(title.lowercased())?", isPresented: $restoring) {
+                        Button("Restore Default", role: .destructive) { text = standard }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("The instructions you’ve written here are replaced, and can’t be brought back.")
+                    }
             } label: {
                 Text(model.config[keyPath: setting].trimmed.isEmpty ? "Oatcake’s own instructions" : "Your instructions")
                 Text(applies)
@@ -392,7 +421,14 @@ private struct ModelRow: View {
         } else {
             let error = model.modelDownloadErrors[chosen.id]
             LabeledContent {
-                Button(error == nil ? "Download Now" : "Try Again") { model.downloadModel(chosen) }
+                HStack {
+                    // A download that was stopped, or failed, leaves what it had fetched: gigabytes that only this removes.
+                    if LocalModels.hasPartialDownload(chosen) {
+                        Button("Remove Partial Download") { model.removeModel(chosen) }
+                            .help("Deletes the part of \(chosen.title) that has been downloaded so far")
+                    }
+                    Button(error == nil ? "Download Now" : "Try Again") { model.downloadModel(chosen) }
+                }
             } label: {
                 Text("\(chosen.title) isn’t downloaded yet")
                 Text(error ?? "\(chosen.downloadSize), from Hugging Face. It downloads by itself during your first call, or when it’s first needed.")
@@ -407,12 +443,10 @@ private struct ImportRow: View {
     @Environment(AppModel.self) private var model
     let source: String
     let hint: String
-    let pick: (@escaping ImportProgress) async throws -> ImportResult?
+    let pick: (@escaping ImportProgress) async -> Void
     @ViewState private var running = false
     /// Meetings handled and how many there are: set once a file is picked, 0 of 0 until the export has been read.
     @ViewState private var progress: (done: Int, total: Int)?
-    @ViewState private var text: String?
-    @ViewState private var failed = false
 
     var body: some View {
         LabeledContent {
@@ -427,9 +461,14 @@ private struct ImportRow: View {
                 ProgressView(value: Double(progress.done), total: Double(progress.total)) {
                     Text("Importing \(progress.done) of \(progress.total) meetings…").foregroundStyle(.secondary)
                 }
+            } else if model.importing == source {
+                // Settings was closed and opened again while it ran: it's still going, without the count.
+                ProgressView { Text("Importing…").foregroundStyle(.secondary) }.progressViewStyle(.linear)
             } else {
-                Text(text ?? hint)
-                    .foregroundStyle(failed ? Color.red : Color.secondary)
+                // What the last import did is the app's to remember, so it's here whenever Settings is opened.
+                let outcome = model.importOutcomes[source]
+                Text(outcome?.text ?? hint)
+                    .foregroundStyle(outcome?.failed == true ? Color.red : Color.secondary)
             }
         }
     }
@@ -437,18 +476,8 @@ private struct ImportRow: View {
     private func run() async {
         running = true
         defer { running = false; progress = nil }
-        func plural(_ n: Int, _ word: String) -> String { "\(n) \(word)\(n == 1 ? "" : "s")" }
-        do {
-            // On the main queue, in order, as the import reports from its background task.
-            guard let r = try await pick({ done, total in DispatchQueue.main.async { progress = (done, total) } }) else { return }
-            failed = false
-            text = [r.imported > 0 ? "Imported \(plural(r.imported, "meeting")) into the \(r.folder) folder." : "Nothing new to import.",
-                    r.skipped > 0 ? "\(plural(r.skipped, "meeting")) already here." : nil,
-                    r.unreadable > 0 ? "\(plural(r.unreadable, "meeting")) couldn't be read." : nil].compactMap { $0 }.joined(separator: " ")
-        } catch {
-            failed = true
-            text = error.localizedDescription
-        }
+        // On the main queue, in order, as the import reports from its background task.
+        await pick { done, total in DispatchQueue.main.async { progress = (done, total) } }
     }
 }
 
@@ -465,45 +494,62 @@ private struct SecretField: View {
     @ViewState private var shown = false
     @ViewState private var described = (saved: false, hint: "")
     @ViewState private var pause: Task<Void, Never>?
+    /// Why the last save or removal didn't work (the Keychain refused), shown under the field.
+    @ViewState private var problem: String?
+    @ViewState private var removing = false
     @FocusState private var focused: Bool
 
     var body: some View {
-        HStack(spacing: 6) {
-            Group {
-                if shown {
-                    TextField("", text: $draft, prompt: Text(prompt))
-                } else {
-                    SecureField("", text: $draft, prompt: Text(prompt))
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Group {
+                    if shown {
+                        TextField("", text: $draft, prompt: Text(prompt))
+                    } else {
+                        SecureField("", text: $draft, prompt: Text(prompt))
+                    }
+                }
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.body, design: .monospaced))
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity)
+                .focused($focused)
+                // The field has no label of its own beside it for VoiceOver to read.
+                .accessibilityLabel(described.saved ? "Calendar’s private address, saved. Type a new one to replace it" : "Calendar’s private address")
+                .help(described.saved ? "Paste a new one to replace it" : "")
+                .onSubmit { save(done: true) }
+                .onChange(of: draft) {
+                    pause?.cancel()
+                    let value = draft
+                    pause = Task {
+                        try? await Task.sleep(for: .seconds(1.2))
+                        if !Task.isCancelled, value == draft { save(done: false) }
+                    }
+                }
+                .onChange(of: focused) { if !focused { save(done: true) } }
+                // A saved one can't be shown, so the eye only appears while typing a new one.
+                if !draft.isEmpty {
+                    Button { shown.toggle() } label: { Image(systemName: shown ? "eye.slash" : "eye") }
+                        .buttonStyle(.borderless).help("Show or hide what you're typing").accessibilityLabel(shown ? "Hide what you’re typing" : "Show what you’re typing")
+                }
+                if described.saved {
+                    // Asked first: a saved address can't be shown again, only copied afresh from the calendar.
+                    Button("Remove…") { removing = true }
+                        .help("Delete the saved one")
+                        .alert("Remove the calendar’s address?", isPresented: $removing) {
+                            Button("Remove", role: .destructive) {
+                                problem = model.setSecret(name, "")
+                                draft = ""
+                                load()
+                            }
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("Upcoming and call reminders stop. Oatcake can’t show the address again: to connect the calendar later, copy it from your calendar’s settings as you did before.")
+                        }
                 }
             }
-            .textFieldStyle(.roundedBorder)
-            .font(.system(.body, design: .monospaced))
-            .multilineTextAlignment(.leading)
-            .frame(maxWidth: .infinity)
-            .focused($focused)
-            .help(described.saved ? "Paste a new one to replace it" : "")
-            .onSubmit { save(done: true) }
-            .onChange(of: draft) {
-                pause?.cancel()
-                let value = draft
-                pause = Task {
-                    try? await Task.sleep(for: .seconds(1.2))
-                    if !Task.isCancelled, value == draft { save(done: false) }
-                }
-            }
-            .onChange(of: focused) { if !focused { save(done: true) } }
-            // A saved one can't be shown, so the eye only appears while typing a new one.
-            if !draft.isEmpty {
-                Button { shown.toggle() } label: { Image(systemName: shown ? "eye.slash" : "eye") }
-                    .buttonStyle(.borderless).help("Show or hide what you're typing").accessibilityLabel(shown ? "Hide what you’re typing" : "Show what you’re typing")
-            }
-            if described.saved {
-                Button("Remove") {
-                    model.setSecret(name, "")
-                    draft = ""
-                    load()
-                }
-                .help("Delete the saved one")
+            if let problem {
+                Text(problem).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
         }
         .onAppear(perform: load)
@@ -516,8 +562,9 @@ private struct SecretField: View {
     private func save(done: Bool) {
         pause?.cancel()
         guard !draft.trimmed.isEmpty else { return }
-        model.setSecret(name, draft)
-        if done { draft = "" }
+        problem = model.setSecret(name, draft)
+        // What couldn't be saved stays in the field, to try again.
+        if done, problem == nil { draft = "" }
         load()
     }
 }

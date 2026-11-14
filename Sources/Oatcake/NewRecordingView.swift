@@ -37,21 +37,33 @@ struct NewRecordingView: View {
                 if !openTodos.isEmpty { previousTodos }
                 prepNotes
                 if !error.isEmpty { Notice(tone: .red) { Text(error) } }
-                HStack(spacing: 10) {
-                    Button(action: start) {
-                        Label(starting ? "Starting…" : "Start recording", systemImage: "circle.fill")
-                            .padding(.horizontal, 6)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        Button(action: start) {
+                            Label(starting ? "Starting…" : "Start recording", systemImage: "circle.fill")
+                                .padding(.horizontal, 6)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                        .controlSize(.large)
+                        .disabled(starting)
+                        if let link = event?.callLink, let url = URL(string: link) {
+                            Button { NSWorkspace.shared.open(url) } label: { Label("Join the call", systemImage: "video") }
+                                .controlSize(.large)
+                                .help("Opens \(callApp(link) ?? "the call")")
+                        }
+                        Button("Cancel") { model.openFolder(model.folder) }.controlSize(.large).buttonStyle(.borderless)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .controlSize(.large)
-                    .disabled(starting)
-                    if let link = event?.callLink, let url = URL(string: link) {
-                        Button { NSWorkspace.shared.open(url) } label: { Label("Join the call", systemImage: "video") }
-                            .controlSize(.large)
-                            .help("Opens \(callApp(link) ?? "the call")")
+                    VStack(alignment: .leading, spacing: 3) {
+                        // Said before it happens: the first recording brings a download of several gigabytes with it.
+                        let _ = model.modelsVersion
+                        if let chosen = model.chosenModel, !LocalModels.isDownloaded(chosen), model.modelDownloads[chosen.id] == nil {
+                            Text("The language model that writes summaries (\(chosen.downloadSize)) starts downloading when you start recording.")
+                        }
+                        Text("Let the people on the call know you’re recording.")
                     }
-                    Button("Cancel") { model.openFolder(model.folder) }.controlSize(.large).buttonStyle(.borderless)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
             }
             .padding(.horizontal, 40)
@@ -219,7 +231,8 @@ struct NewRecordingView: View {
         let todo = toggleTodo(p.todo, line: t.line)
         previous = (p.path, p.date, todo)
         ticked.insert(t.line)
-        do { try model.writeMeetingFile(p.path, .todo, todo) } catch { model.toast(error.localizedDescription) }
+        // The file is ticked as it is now, not written over with the copy this screen has been holding.
+        do { try model.toggleTodo(p.path, line: t.line, text: t.text) } catch { model.toast(error.localizedDescription, isError: true) }
     }
 
     // MARK: Prep notes
@@ -258,7 +271,7 @@ struct NewRecordingView: View {
     /// Prep notes are saved as they change, so they're still here when you come back to this call.
     private func setPrep(_ notes: [String]) {
         prep = notes
-        do { try PrepNotes.save(event?.id, notes) } catch { model.toast(error.localizedDescription) }
+        do { try PrepNotes.save(event?.id, notes) } catch { model.toast(error.localizedDescription, isError: true) }
     }
 
     private func addPrep(_ text: String) {
