@@ -86,9 +86,9 @@ struct SettingsView: View {
         }
         Section("Import") {
             ImportRow(source: "Granola", hint: "Pick the .zip from Granola’s export. Each note becomes a meeting; ones already here are skipped.",
-                      pick: model.importGranolaExport)
+                      pick: model.library.importGranolaExport)
             ImportRow(source: "Quill", hint: "Pick the .zip from Quill’s backup. Each meeting becomes a meeting, with its recording; ones already here are skipped.",
-                      pick: model.importQuillBackup)
+                      pick: model.library.importQuillBackup)
         }
     }
 
@@ -97,7 +97,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Private iCal address")
                 SecretField(name: .calendar, placeholder: "https://calendar.google.com/calendar/ical/…/basic.ics")
-                Text(calendarStatus).settingsHint(model.calendar?.error != nil ? .red : .secondary)
+                Text(calendarStatus).settingsHint(model.calendar.cache?.error != nil ? .red : .secondary)
             }
             Toggle(isOn: bind(\.callReminders)) {
                 Text("Remind me before calls")
@@ -182,8 +182,8 @@ struct SettingsView: View {
     }
 
     private var calendarStatus: String {
-        guard let calendar = model.calendar else { return "Not set up — Upcoming is hidden." }
-        if model.calendarFetching { return "Fetching…" }
+        guard let calendar = model.calendar.cache else { return "Not set up — Upcoming is hidden." }
+        if model.calendar.fetching { return "Fetching…" }
         if let error = calendar.error {
             return calendar.updatedAt != nil ? "Last fetch failed: \(error.replacingOccurrences(of: "Couldn't update the calendar: ", with: ""))" : error
         }
@@ -263,7 +263,7 @@ struct SettingsView: View {
 
     /// Why Test can't be pressed yet, if it can't.
     private func testBlocker(_ llm: LlmConfig) -> String? {
-        let _ = model.modelsVersion
+        let _ = model.downloads.modelsVersion
         if let chosen = LocalModels.find(llm.model) { return LocalModels.isDownloaded(chosen) ? nil : "Download the model first." }
         if llm.own.baseUrl.trimmed.isEmpty || llm.own.model.trimmed.isEmpty { return "Fill in the endpoint and model first." }
         return isLocalEndpoint(llm.own.baseUrl) ? nil : "The endpoint has to be on this Mac or your own network."
@@ -396,10 +396,10 @@ private struct ModelRow: View {
     @ViewState private var removing = false
 
     var body: some View {
-        let _ = model.modelsVersion
-        if let fraction = model.modelDownloads[chosen.id] {
+        let _ = model.downloads.modelsVersion
+        if let fraction = model.downloads.modelDownloads[chosen.id] {
             LabeledContent {
-                Button("Stop") { model.stopModelDownload(chosen) }
+                Button("Stop") { model.downloads.stopModelDownload(chosen) }
             } label: {
                 Text("Downloading \(chosen.title)")
                 ProgressView(value: fraction).accessibilityLabel("Download progress")
@@ -413,21 +413,21 @@ private struct ModelRow: View {
                 Text("\(chosen.downloadSize), in Oatcake’s own folder.")
             }
             .alert("Remove \(chosen.title)?", isPresented: $removing) {
-                Button("Remove", role: .destructive) { model.removeModel(chosen) }
+                Button("Remove", role: .destructive) { model.downloads.removeModel(chosen) }
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Frees \(chosen.downloadSize). It’s downloaded again the next time it’s needed.")
             }
         } else {
-            let error = model.modelDownloadErrors[chosen.id]
+            let error = model.downloads.modelDownloadErrors[chosen.id]
             LabeledContent {
                 HStack {
                     // A download that was stopped, or failed, leaves what it had fetched: gigabytes that only this removes.
                     if LocalModels.hasPartialDownload(chosen) {
-                        Button("Remove Partial Download") { model.removeModel(chosen) }
+                        Button("Remove Partial Download") { model.downloads.removeModel(chosen) }
                             .help("Deletes the part of \(chosen.title) that has been downloaded so far")
                     }
-                    Button(error == nil ? "Download Now" : "Try Again") { model.downloadModel(chosen) }
+                    Button(error == nil ? "Download Now" : "Try Again") { model.downloads.downloadModel(chosen) }
                 }
             } label: {
                 Text("\(chosen.title) isn’t downloaded yet")
@@ -451,8 +451,8 @@ private struct ImportRow: View {
     var body: some View {
         LabeledContent {
             // One import at a time: the model knows of one that this row, if it was made afresh since, doesn't.
-            Button(running || model.importing == source ? "Importing…" : "Import…") { Task { await run() } }
-                .disabled(running || model.importing != nil)
+            Button(running || model.library.importing == source ? "Importing…" : "Import…") { Task { await run() } }
+                .disabled(running || model.library.importing != nil)
         } label: {
             Text("Import from \(source)")
             if running, let progress, progress.total == 0 {
@@ -461,12 +461,12 @@ private struct ImportRow: View {
                 ProgressView(value: Double(progress.done), total: Double(progress.total)) {
                     Text("Importing \(progress.done) of \(progress.total) meetings…").foregroundStyle(.secondary)
                 }
-            } else if model.importing == source {
+            } else if model.library.importing == source {
                 // Settings was closed and opened again while it ran: it's still going, without the count.
                 ProgressView { Text("Importing…").foregroundStyle(.secondary) }.progressViewStyle(.linear)
             } else {
                 // What the last import did is the app's to remember, so it's here whenever Settings is opened.
-                let outcome = model.importOutcomes[source]
+                let outcome = model.library.importOutcomes[source]
                 Text(outcome?.text ?? hint)
                     .foregroundStyle(outcome?.failed == true ? Color.red : Color.secondary)
             }

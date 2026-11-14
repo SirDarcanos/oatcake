@@ -62,7 +62,7 @@ struct MeetingView: View {
             if let jump { tab = jump.tab }
             load()
         }
-        .onChange(of: model.diskVersion) { load() }
+        .onChange(of: model.library.diskVersion) { load() }
         // ⌘F: Find, on the transcript.
         .onChange(of: model.findRequest) {
             flush()
@@ -75,7 +75,7 @@ struct MeetingView: View {
         .onDisappear {
             flush()
             // Said while you're here; it isn't kept.
-            model.todoProblems.removeValue(forKey: path)
+            model.jobs.todoProblems.removeValue(forKey: path)
         }
         .background {
             // ⌘1–⌘3 switch tabs.
@@ -92,7 +92,7 @@ struct MeetingView: View {
     private func load() {
         guard pending.isEmpty else { return }
         do {
-            let m = try model.readMeeting(path)
+            let m = try model.library.readMeeting(path)
             files = [.summary: m.summary, .transcript: m.transcript, .notes: m.notes, .todos: m.todo]
             meta = m.meta
             loadError = ""
@@ -122,7 +122,7 @@ struct MeetingView: View {
         saveTask?.cancel()
         for (key, content) in pending {
             do {
-                try model.writeMeetingFile(path, key.file, content)
+                try model.library.writeMeetingFile(path, key.file, content)
                 // Typing that arrived during the save stays waiting.
                 if pending[key] == content { pending.removeValue(forKey: key) }
             } catch {
@@ -201,7 +201,7 @@ struct MeetingView: View {
                 .help("Copy the \(what) as Markdown")
             ShareLink(item: shareText, subject: Text(meetingTitle(node))) { Label("Share", systemImage: "square.and.arrow.up") }
                 .help("Send the \(what) with Mail, Messages or another app")
-            Button { model.reveal(path) } label: { Label("Show in Finder", systemImage: "arrow.up.forward.square") }
+            Button { model.library.reveal(path) } label: { Label("Show in Finder", systemImage: "arrow.up.forward.square") }
                 .help("Show this meeting’s folder in Finder")
         }
     }
@@ -354,7 +354,7 @@ struct MeetingView: View {
                     Label("\(folderPath(path)) › \(key.file.rawValue)", systemImage: "doc.text").font(.caption).foregroundStyle(.secondary)
                     // While the model is writing these two files they aren't for typing in: what's typed
                     // and what's written would overwrite each other.
-                    if model.summarising.contains(path), key == .summary || key == .todos {
+                    if model.jobs.summarising.contains(path), key == .summary || key == .todos {
                         Text("The summary is being written. This can be edited once it’s here.")
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, minHeight: key == .todos ? 70 : 120, alignment: .topLeading)
@@ -387,7 +387,7 @@ struct MeetingView: View {
         let summary = forReading(files[.summary] ?? "")
         return VStack(alignment: .leading, spacing: 0) {
             // The summary was written but the to-dos couldn't be read from the model's reply.
-            if let problem = model.todoProblems[path] {
+            if let problem = model.jobs.todoProblems[path] {
                 Notice(tone: .amber) { Text(problem) }.padding(.bottom, 16)
             }
             VStack(alignment: .leading, spacing: 8) {
@@ -396,7 +396,7 @@ struct MeetingView: View {
                 ForEach(todos, id: \.line) { t in
                     HStack(alignment: .top, spacing: 10) {
                         TodoCheckbox(checked: t.done, what: t.text) {
-                            changeTodos(shown: toggleTodo(todoText, line: t.line)) { try model.toggleTodo(path, line: t.line, text: t.text) }
+                            changeTodos(shown: toggleTodo(todoText, line: t.line)) { try model.library.toggleTodo(path, line: t.line, text: t.text) }
                         }
                         VStack(alignment: .leading, spacing: 2) {
                             Text(t.text).strikethrough(t.done).foregroundStyle(t.done ? .secondary : .primary).textSelection(.enabled)
@@ -415,7 +415,7 @@ struct MeetingView: View {
                         .onSubmit {
                             guard !newTodo.trimmed.isEmpty else { return }
                             let typed = typedTodo(newTodo)
-                            changeTodos(shown: addTodo(todoText, typed)) { try model.addTodo(path, typed) }
+                            changeTodos(shown: addTodo(todoText, typed)) { try model.library.addTodo(path, typed) }
                             newTodo = ""
                         }
                 }
@@ -434,14 +434,14 @@ struct MeetingView: View {
     /// A meeting without its summary: it's being written now (after a save), or the model couldn't
     /// be reached and it can be written when it can.
     @ViewBuilder private var summaryLater: some View {
-        if model.summarising.contains(path) {
+        if model.jobs.summarising.contains(path) {
             Notice(tone: .blue) {
                 Text("Writing the summary…").fontWeight(.semibold)
-                Text(model.modelDownloadStatus.map { "\($0). The summary is written as soon as it’s here; the transcript and your notes are already saved." }
+                Text(model.downloads.modelDownloadStatus.map { "\($0). The summary is written as soon as it’s here; the transcript and your notes are already saved." }
                      ?? "The transcript and your notes are already saved.")
             }
         } else {
-            let error = model.summaryErrors[path]
+            let error = model.jobs.summaryErrors[path]
             Notice(tone: error == nil ? .grey : .red) {
                 Text("No summary yet").fontWeight(.semibold)
                 if let error {
@@ -450,7 +450,7 @@ struct MeetingView: View {
                     Text("The transcript and your notes are saved. Oatcake can write the summary and to-dos from them now.")
                 }
                 HStack(spacing: 10) {
-                    Button("Write summary") { model.writeSummary(path) }
+                    Button("Write summary") { model.jobs.writeSummary(path) }
                     // What stopped it is usually put right in Settings: the model, or its download.
                     if error != nil { SettingsPaneLink(pane: "summaries", title: "Open Settings").buttonStyle(.link) }
                 }

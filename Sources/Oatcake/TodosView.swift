@@ -22,7 +22,7 @@ struct TodosView: View {
     var body: some View {
         let myName = model.config.myName
         let today = Calendar.current.startOfDay(for: Date())
-        let items = allTodoItems(model.todoMeetings.map { m in
+        let items = allTodoItems(model.library.todoMeetings.map { m in
             var m = m
             if let text = local[m.path] { m.todo = text }
             return m
@@ -84,8 +84,8 @@ struct TodosView: View {
             .frame(maxWidth: 820, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
-        .onChange(of: model.todoMeetings) {
-            local = local.filter { path, text in model.todoMeetings.first { $0.path == path }?.todo != text }
+        .onChange(of: model.library.todoMeetings) {
+            local = local.filter { path, text in model.library.todoMeetings.first { $0.path == path }?.todo != text }
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -211,7 +211,7 @@ struct TodosView: View {
         let text = draft.trimmed
         guard !text.isEmpty else { return }
         do {
-            try model.addTodo("", typedTodo(text, owner: model.config.myName))
+            try model.library.addTodo("", typedTodo(text, owner: model.config.myName))
             local[""] = onDisk("")
             draft = ""
             model.toast("Added to Meetings › todo.md")
@@ -222,11 +222,11 @@ struct TodosView: View {
 
     /// A list as its file is now. The file is changed as it stands, never written over with what
     /// this page last read, so this is what's shown until the app has read it back too.
-    private func onDisk(_ path: String) -> String? { try? model.readMeeting(path).todo }
+    private func onDisk(_ path: String) -> String? { try? model.library.readMeeting(path).todo }
 
     private func tick(_ item: TodoItem) {
         do {
-            try model.toggleTodo(item.meeting.path, line: item.todo.line, text: item.todo.text)
+            try model.library.toggleTodo(item.meeting.path, line: item.todo.line, text: item.todo.text)
             withAnimation { local[item.meeting.path] = onDisk(item.meeting.path) }
             model.toast("Saved to \(item.meeting.path.isEmpty ? "Meetings" : folderPath(item.meeting.path)) › todo.md")
         } catch {

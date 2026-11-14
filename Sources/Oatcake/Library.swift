@@ -1,0 +1,184 @@
+// The Meetings folder as the window shows it: its folders and meetings, their to-dos, and everything
+// that renames, moves, trashes, reads or writes them. Imports from Granola and Quill land here too.
+
+import AppKit
+import OatcakeCore
+import SwiftUI
+import UniformTypeIdentifiers
+
+@MainActor @Observable
+final class Library {
+    /// What this part asks of the app around it.
+    var app = AppServices()
+    /// A folder or meeting now lives somewhere else: whatever knew it by its old path follows it.
+    var whenMoved: @MainActor (_ from: String, _ to: String) -> Void = { _, _ in }
+    private var config: Config { app.config() }
+    private func toast(_ text: String, isError: Bool = false) { app.toast(text, isError) }
+    private func refresh() { app.refresh() }
+    private func moved(from: String, to: String) { whenMoved(from, to) }
+
+    private(set) var meetings: Meetings
+    var tree: TreeNode?
+    /// Bumps on every change on disk, so open meetings re-read their files.
+    var diskVersion = 0
+    var todoMeetings: [MeetingTodos] = []
+    /// What the last import from Granola or Quill did, in words, and whether it failed. Kept here
+    /// rather than in Settings' row, so it's still there if Settings was closed while it ran.
+    var importOutcomes: [String: (text: String, failed: Bool)] = [:]
+    private var watcher: FolderWatcher?
+
+    init(root: URL) {
+        meetings = Meetings(root: root)
+    }
+
+    /// The Meetings folder is somewhere else from now on.
+    func open(_ root: URL) {
+        meetings = Meetings(root: root)
+        watchMeetings()
+    }
+
+    // Keep the sidebar in step with Finder.
+    func watchMeetings() {
+        try? FileManager.default.createDirectory(at: meetings.root, withIntermediateDirectories: true)
+        watcher = FolderWatcher(meetings.root) { [weak self] in self?.refresh() }
+    }
+
+    func rename(_ path: String, to name: String) {
+        guard !name.trimmed.isEmpty, name.trimmed != baseName(path) else { return }
+        attempt { moved(from: path, to: try meetings.rename(path, to: name)) }
+    }
+
+    /// A meeting's new title, in meeting.json and in its folder's name.
+    func retitle(_ path: String, to title: String) {
+        guard !title.trimmed.isEmpty else { return }
+        attempt { moved(from: path, to: try meetings.retitle(path, to: title)) }
+    }
+
+    func move(_ path: String, into target: String) {
+        guard path != target, !target.hasPrefix(path + "/"), parentOf(path) != target else { return }
+        attempt {
+            moved(from: path, to: try meetings.move(path, into: target))
+            toast("Moved to \(folderPath(target))")
+        }
+    }
+
+    @discardableResult
+    func createFolder(in parent: String, named name: String) -> String? {
+        var made: String?
+        attempt { made = try meetings.createFolder(in: parent, named: name) }
+        refresh()
+        return made
+    }
+
+    /// Moves meetings or folders to the Trash. One that can't be moved stops the rest, and the toast
+    /// says how many went before it and why.
+    func trash(_ nodes: [TreeNode]) {
+        defer { refresh() }
+        var moved = 0
+        do {
+            for node in nodes {
+                try meetings.trash(node.path)
+                moved += 1
+            }
+        } catch {
+            toast(nodes.count == 1 ? error.localizedDescription
+                                   : "Moved \(moved) of \(nodes.count) meetings to the Trash — \(error.localizedDescription)", isError: true)
+            return
+        }
+        if nodes.count == 1, let node = nodes.first {
+            toast("Moved “\(node.kind == .meeting ? meetingTitle(node) : node.name)” to the Trash")
+        } else if !nodes.isEmpty {
+            toast("Moved \(nodes.count) meetings to the Trash")
+        }
+    }
+
+    /// A folder's Move to Trash. One with meetings in it asks first: it takes them all with it.
+    func trashFolder(_ node: TreeNode) {
+        let count = node.allMeetings.count
+        guard count > 0 else { return trash([node]) }
+        app.confirm(Confirmation(title: "Move “\(node.name)” to the Trash?",
+                                    text: "It holds \(count) meeting\(count == 1 ? "" : "s"), which go with it. You can put them back from the Trash in Finder.",
+                                    ok: "Move to Trash", cancel: "Cancel") { [self] in trash([node]) })
+    }
+
+    func reveal(_ path: String) { reveal([path]) }
+
+    func reveal(_ paths: [String]) {
+        let urls = paths.compactMap { try? resolveInside(meetings.root, $0) }
+        guard !urls.isEmpty else { return }
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
+    }
+
+    func readMeeting(_ path: String) throws -> MeetingFiles { try meetings.read(path) }
+
+    func writeMeetingFile(_ path: String, _ file: MeetingFile, _ content: String) throws {
+        try meetings.write(path, file, content)
+    }
+
+    /// Ticks or unticks a to-do in todo.md as it is now, not as a view last read it: a tick never
+    /// writes back over to-dos that have arrived since (the summary's, say). `text` is the to-do's
+    /// task, which finds it if its line has moved. "" is the Meetings folder's own list.
+    func toggleTodo(_ path: String, line: Int, text: String) throws {
+        try meetings.toggleTodo(path, line: line, text: text)
+        refresh()
+    }
+
+    /// Adds a to-do to the end of todo.md as it is now.
+    func addTodo(_ path: String, _ text: String) throws {
+        try meetings.addTodo(path, text)
+        refresh()
+    }
+
+    private func attempt(_ work: () throws -> Void) {
+        do { try work() } catch { toast(error.localizedDescription, isError: true) }
+    }
+
+    /// What's being imported ("Granola", "Quill"), if anything. Kept here rather than in the Settings
+    /// row, which starts afresh if its window is closed and opened again: one import at a time.
+    var importing: String?
+
+    /// Settings › Import from Granola: pick the export, import it, and show the new meetings.
+    func importGranolaExport(progress: @escaping ImportProgress) async {
+        await runImport("Granola", types: [.zip, .commaSeparatedText], progress: progress) { url, root in
+            try importGranola(url, into: root, progress: progress)
+        }
+    }
+
+    /// Settings › Import from Quill: pick Quill's backup, import it, and show the new meetings.
+    func importQuillBackup(progress: @escaping ImportProgress) async {
+        let me = config.myName
+        await runImport("Quill", types: [.zip], progress: progress) { url, root in
+            try importQuill(url, into: root, me: me, progress: progress)
+        }
+    }
+
+    /// Picks the file, imports it off the main thread, and leaves what happened in `importOutcomes`.
+    private func runImport(_ source: String, types: [UTType], progress: @escaping ImportProgress,
+                           _ work: @escaping @Sendable (URL, URL) throws -> ImportResult) async {
+        let panel = NSOpenPanel()
+        panel.title = "Import from \(source)"
+        panel.prompt = "Import"
+        panel.allowedContentTypes = types
+        guard importing == nil, panel.runModal() == .OK, let url = panel.url else { return }
+        importing = source
+        defer { importing = nil }
+        let root = meetings.root
+        progress(0, 0)
+        func plural(_ n: Int, _ word: String) -> String { "\(n) \(word)\(n == 1 ? "" : "s")" }
+        do {
+            let r = try await Task.detached { try work(url, root) }.value
+            let text = [r.imported > 0 ? "Imported \(plural(r.imported, "meeting")) into the \(r.folder) folder." : "Nothing new to import.",
+                        r.skipped > 0 ? "\(plural(r.skipped, "meeting")) already here." : nil,
+                        r.unreadable > 0 ? "\(plural(r.unreadable, "meeting")) couldn't be read." : nil].compactMap { $0 }.joined(separator: " ")
+            importOutcomes[source] = (text, false)
+            refresh()
+        } catch {
+            importOutcomes[source] = (error.localizedDescription, true)
+        }
+    }
+
+    var todoCounts: (open: Int, overdue: Int) {
+        let items = allTodoItems(todoMeetings)
+        return (items.filter { !$0.todo.done }.count, items.filter { $0.isOverdue() }.count)
+    }
+}
