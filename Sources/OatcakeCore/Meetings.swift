@@ -257,7 +257,7 @@ public final class Meetings: @unchecked Sendable {
         let written = try JSONSerialization.data(withJSONObject: meta, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         try writeAtomic(file, written + Data("\n".utf8))
         let name = (rel as NSString).lastPathComponent
-        guard let date = name.range(of: #"^\d{4}-\d{2}-\d{2} \d{4} "#, options: .regularExpression) else { return rel }
+        guard let date = name.range(of: folderDate, options: .regularExpression) else { return rel }
         return (try? rename(rel, to: String(name[date]) + folderSafe(clean))) ?? rel
     }
 
@@ -329,7 +329,7 @@ public func matchingFolder(_ title: String, in tree: TreeNode) -> String? {
 public func latestMeeting(titled title: String, in tree: TreeNode) -> TreeNode? {
     let key = loose(title)
     guard !key.isEmpty else { return nil }
-    let named = { (m: TreeNode) in m.title ?? m.name.replacingOccurrences(of: #"^\d{4}-\d{2}-\d{2} \d{4} "#, with: "", options: .regularExpression) }
+    let named = { (m: TreeNode) in m.title ?? withoutFolderDate(m.name) }
     return tree.allMeetings.filter { loose(named($0)) == key }
         .max { ($0.startedAt ?? .distantPast, $0.name) < ($1.startedAt ?? .distantPast, $1.name) }
 }
@@ -357,7 +357,15 @@ public func safeName(_ name: String) -> String {
 
 /// A meeting's title: the one in meeting.json, or its folder's name without the date it starts with.
 func titleOfMeeting(_ rel: String, _ meta: MeetingMeta) -> String {
-    meta.title ?? (rel as NSString).lastPathComponent.replacingOccurrences(of: #"^\d{4}-\d{2}-\d{2} \d{4} "#, with: "", options: .regularExpression)
+    meta.title ?? withoutFolderDate((rel as NSString).lastPathComponent)
+}
+
+/// The date and time a meeting's folder name starts with: "2026-11-05 1400 ".
+private let folderDate = #"^\d{4}-\d{2}-\d{2} \d{4} "#
+
+/// A meeting folder's name without the date it starts with.
+func withoutFolderDate(_ name: String) -> String {
+    name.replacingOccurrences(of: folderDate, with: "", options: .regularExpression)
 }
 
 /// "Team 51 – Leads sync · Oct 29" for the folder "…/2026-10-29 1630 Team 51 – Leads sync": what a
@@ -382,7 +390,10 @@ public func loose(_ name: String) -> String {
 
 /**
  * Drops the block older meeting files open with: a "# Title" line followed by "- **Date:** …"
- * style metadata lines. The meeting view shows that information from meeting.json instead.
+ * style metadata lines. The meeting view shows that information from meeting.json instead. Only
+ * that block: the lines are the ones older versions and the first Granola import wrote (Date,
+ * Participants, Granola note, Granola folders), and a "# Title" without any of them under it is a
+ * summary's own heading, which stays, as does a bullet of the summary's that happens to start bold.
  */
 public func stripHeader(_ markdown: String) -> String {
     let lines = markdown.components(separatedBy: "\n")
@@ -390,12 +401,16 @@ public func stripHeader(_ markdown: String) -> String {
     while i < lines.count, lines[i].trimmed.isEmpty { i += 1 }
     guard i < lines.count, lines[i].range(of: #"^#\s"#, options: .regularExpression) != nil else { return markdown }
     i += 1
-    while i < lines.count, lines[i].trimmed.isEmpty
-        || lines[i].range(of: #"^\s*[-*]\s+\*\*[^*]+:\*\*"#, options: .regularExpression) != nil
-        || lines[i].trimmed.range(of: #"^-{3,}$"#, options: .regularExpression) != nil {
+    var metadata = 0
+    while i < lines.count {
+        if lines[i].range(of: #"^\s*[-*]\s+\*\*(Date|Participants|Granola note|Granola folders):\*\*"#, options: .regularExpression) != nil {
+            metadata += 1
+        } else if !lines[i].trimmed.isEmpty, lines[i].trimmed.range(of: #"^-{3,}$"#, options: .regularExpression) == nil {
+            break
+        }
         i += 1
     }
-    return lines[i...].joined(separator: "\n")
+    return metadata > 0 ? lines[i...].joined(separator: "\n") : markdown
 }
 
 /// A meeting file's content for reading: older files' title block and Granola's lone "## Summary" heading are dropped.
@@ -422,7 +437,7 @@ func plainLine(_ line: String) -> String {
         // Granola escapes Markdown characters ("Updates \& Welcomes").
         .replacingOccurrences(of: #"\\([\\`*_{}\[\]()#+\-.!~&<>|])"#, with: "$1", options: .regularExpression)
         .replacingOccurrences(of: #"\[([^\]]+)\]\([^)]*\)"#, with: "$1", options: .regularExpression)
-        .replacingOccurrences(of: #"\s*\[\d{1,2}:\d\d(?::\d\d)?\]"#, with: "", options: .regularExpression)
+        .replacingOccurrences(of: "\\s*\\[\(stampForm)\\]", with: "", options: .regularExpression)
         // A to-do that ended with its time ("… — Alex — [12:34]") is left with the dash before it.
         .replacingOccurrences(of: #"\s+[—–-]\s*$"#, with: "", options: .regularExpression)
         .replacingOccurrences(of: "[*_`]", with: "", options: .regularExpression)
@@ -435,7 +450,7 @@ func foldedForSearch(_ text: String) -> String {
 }
 
 /// The time a transcript line starts with: "**[12:34] Alex:** …".
-private let transcriptStamp = try! NSRegularExpression(pattern: #"^\**\[(\d{1,2}:\d\d(?::\d\d)?)\]"#)
+private let transcriptStamp = try! NSRegularExpression(pattern: "^\\**\\[(\(stampForm))\\]")
 
 /// Who is speaking in a transcript line once it's plain text: "Alex Rivers: …".
 private let transcriptSpeaker = try! NSRegularExpression(pattern: #"^([^:]{1,60}):\s+"#)

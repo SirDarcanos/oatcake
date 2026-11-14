@@ -30,7 +30,7 @@ public func loadAnalysis(_ rec: Recording) throws -> Analysis {
 public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: Decision], folder: String, title: String? = nil,
                         voiceprints: URL = Paths.voiceprints) throws -> String {
     let analysis = try loadAnalysis(rec)
-    let notes = Recordings.loadNotes(rec.id)
+    let notes = Recordings.notes(in: rec.dir)
     let title = title.map(\.trimmed).flatMap { $0.isEmpty ? nil : $0 } ?? analysis.title
     // With no name set in Settings, your lines still need one to be read back as yours.
     let myName = config.myName.trimmed.isEmpty ? "Me" : config.myName.trimmed
@@ -328,7 +328,7 @@ func todoLines(_ reply: String) -> [String]? {
     guard let parsed = try? parseJsonObject(Reply.self, reply) else { return nil }
     /// A small model sometimes writes the word instead of leaving the value empty.
     func known(_ value: String?) -> String? {
-        guard let v = value?.trimmed, !v.isEmpty, !["null", "none", "n/a", "unknown", "not stated", "not specified", "tbd"].contains(v.lowercased()) else { return nil }
+        guard let v = value?.trimmed, !v.isEmpty, !wordsForNothing.contains(v.lowercased()) else { return nil }
         return v.replacingOccurrences(of: " — ", with: ", ")
     }
     return parsed.todos.compactMap { item in
@@ -336,7 +336,7 @@ func todoLines(_ reply: String) -> [String]? {
         var line = "- [ ] \(task.prefix(1).uppercased() + task.dropFirst())"
         if let owner = known(item.owner) { line += " — \(owner)" }
         if let due = known(item.due) { line += " — due \(due)" }
-        if let at = known(item.at)?.trimmingCharacters(in: CharacterSet(charactersIn: "[]")), at.range(of: #"^\d{1,2}:\d\d(:\d\d)?$"#, options: .regularExpression) != nil {
+        if let at = known(item.at)?.trimmingCharacters(in: CharacterSet(charactersIn: "[]")), at.range(of: "^\(stampForm)$", options: .regularExpression) != nil {
             line += " — [\(at)]"
         }
         return line

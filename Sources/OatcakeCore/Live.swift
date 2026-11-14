@@ -81,8 +81,7 @@ nonisolated(unsafe) private var lastPlaceholder: String?
  * the recorder has finished (meta.json is there), the recording has been thrown away, or Oatcake
  * itself has gone.
  */
-public func transcribeLive(_ dir: URL, report: @escaping (LiveEvent) -> Void) async throws {
-    let config = Config.load()
+public func transcribeLive(_ dir: URL, config: Config = Config.load(), report: @escaping (LiveEvent) -> Void) async throws {
     report(LiveEvent(status: SpeechModels.needsDownload(config.asrModel) ? "Downloading the speech models (about 500 MB, first time only)" : "Loading the speech models"))
     let transcriber = try await SpeechModels.loadTranscriber(config.asrModel)
     report(LiveEvent(status: "Listening"))
@@ -96,7 +95,8 @@ public func transcribeLive(_ dir: URL, report: @escaping (LiveEvent) -> Void) as
         for i in done.indices {
             let fresh = readPcm(dir.appendingPathComponent(done[i].file), fromSample: done[i].samples)
             guard fresh.count >= sampleRate / 2 else { continue }
-            let (utterances, consumed) = try await transcriber.transcribeFinished(fresh)
+            // Once the recorder has finished, what's left is all there will be: its last words included.
+            let (utterances, consumed) = try await transcriber.transcribeFinished(fresh, last: finished)
             let offset = Double(done[i].samples) / Double(sampleRate)
             for u in utterances {
                 report(LiveEvent(line: LiveTranscriptLine(track: done[i].track, start: u.start + offset, end: u.end + offset, text: u.text)))

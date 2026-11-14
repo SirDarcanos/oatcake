@@ -83,24 +83,31 @@ public enum LocalModels {
 
     /// A rough count of the tokens in a text: English runs at about four characters a token, other
     /// languages at fewer, so this errs on the high side.
-    public static func tokens(in text: String) -> Int { text.utf8.count * 10 / 33 + 1 }
+    public static func tokens(in text: String) -> Int { text.utf8.count * 10 / bytesPerTenTokens + 1 }
 
+    /// About how much text that many tokens is, by the same measure.
+    static func bytes(forTokens tokens: Int) -> Int { tokens * bytesPerTenTokens / 10 }
+
+    /// 3.3 bytes of text to a token.
+    private static let bytesPerTenTokens = 33
+
+    /// Where the models' files are kept. The functions below look there unless told another folder (a test's).
     public static var directory: URL { Paths.models.appendingPathComponent("llm", isDirectory: true) }
-    public static func file(_ model: LocalModel) -> URL { directory.appendingPathComponent(model.file) }
+    public static func file(_ model: LocalModel, in directory: URL = directory) -> URL { directory.appendingPathComponent(model.file) }
 
-    public static func isDownloaded(_ model: LocalModel) -> Bool {
-        ((try? FileManager.default.attributesOfItem(atPath: file(model).path))?[.size] as? Int64) == model.bytes
+    public static func isDownloaded(_ model: LocalModel, in directory: URL = directory) -> Bool {
+        ((try? FileManager.default.attributesOfItem(atPath: file(model, in: directory).path))?[.size] as? Int64) == model.bytes
     }
 
     /// Whether a download of the model was left part-way: its file so far is still on the disk.
-    public static func hasPartialDownload(_ model: LocalModel) -> Bool {
-        FileManager.default.exists(file(model).appendingPathExtension("part"))
+    public static func hasPartialDownload(_ model: LocalModel, in directory: URL = directory) -> Bool {
+        FileManager.default.exists(file(model, in: directory).appendingPathExtension("part"))
     }
 
     /// Removes a model's file (and a download of it that was left part-way).
-    public static func remove(_ model: LocalModel) {
-        try? FileManager.default.removeItem(at: file(model))
-        try? FileManager.default.removeItem(at: file(model).appendingPathExtension("part"))
+    public static func remove(_ model: LocalModel, in directory: URL = directory) {
+        try? FileManager.default.removeItem(at: file(model, in: directory))
+        try? FileManager.default.removeItem(at: file(model, in: directory).appendingPathExtension("part"))
     }
 }
 
@@ -260,8 +267,21 @@ public actor ModelServer {
         return folders.compactMap { $0?.appendingPathComponent("llama-server") }.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 
-    private static var pidFile: URL { Paths.data.appendingPathComponent("model-server.pid") }
-    static var log: URL { Paths.data.appendingPathComponent("model-server.log") }
+    /// Where the note of its process ID and its log go, and where the models' files are: Oatcake's
+    /// own folders, except in tests.
+    private let pidFile: URL
+    let log: URL
+    private let data: URL
+    private let models: URL
+
+    public init(data: URL = Paths.data, models: URL = LocalModels.directory) {
+        self.data = data
+        pidFile = Self.pidFile(in: data)
+        log = data.appendingPathComponent("model-server.log")
+        self.models = models
+    }
+
+    private static func pidFile(in data: URL) -> URL { data.appendingPathComponent("model-server.pid") }
 
     /// The model, loaded with room for at least `context` tokens. It's kept as it is until `release()`.
     func lease(_ model: LocalModel, context: Int) async throws -> LocalChat {
@@ -292,22 +312,22 @@ public actor ModelServer {
 
     private func start(_ model: LocalModel, context: Int) async throws -> LocalChat {
         stop()
-        Self.stopLeftover()
+        Self.stopLeftover(in: data)
         guard let binary = Self.binary else {
             throw OatcakeError("This copy of Oatcake was built without llama.cpp, which runs the language model. Build it with Scripts/bundle.sh.")
         }
-        guard LocalModels.isDownloaded(model) else { throw OatcakeError(modelNotDownloadedMessage) }
+        guard LocalModels.isDownloaded(model, in: models) else { throw OatcakeError(modelNotDownloadedMessage) }
 
         let port = try Self.freePort()
         let key = UUID().uuidString
-        var arguments = ["-m", LocalModels.file(model).path, "--host", "127.0.0.1", "--port", String(port),
+        var arguments = ["-m", LocalModels.file(model, in: models).path, "--host", "127.0.0.1", "--port", String(port),
                          "-c", String(context), "-ngl", "99", "-fa", "on", "--no-context-shift", "--no-webui", "--jinja", "-np", "1",
                          // A long call on a slow Mac can take longer to write up than llama.cpp's ten minutes.
                          "--timeout", "3600"]
         if LocalModels.stretch(context) > 1 {
             arguments += ["--rope-scaling", "yarn", "--rope-scale", String(LocalModels.stretch(context)), "--yarn-orig-ctx", String(LocalModels.nativeContext)]
         }
-        FileManager.default.createFile(atPath: Self.log.path, contents: nil)
+        FileManager.default.createFile(atPath: log.path, contents: nil)
         let server = Process()
         server.executableURL = binary
         server.arguments = arguments
@@ -315,18 +335,18 @@ public actor ModelServer {
         server.environment = ShellEnvironment.childEnvironment().merging(["LLAMA_API_KEY": key]) { $1 }
         server.standardInput = FileHandle.nullDevice
         // What it says as it starts goes in a log, to be quoted if it doesn't.
-        let log = try? FileHandle(forWritingTo: Self.log)
-        server.standardOutput = log ?? FileHandle.nullDevice
-        server.standardError = log ?? FileHandle.nullDevice
+        let output = try? FileHandle(forWritingTo: log)
+        server.standardOutput = output ?? FileHandle.nullDevice
+        server.standardError = output ?? FileHandle.nullDevice
         try server.run()
         process = server
-        try? String(server.processIdentifier).write(to: Self.pidFile, atomically: true, encoding: .utf8)
+        try? String(server.processIdentifier).write(to: pidFile, atomically: true, encoding: .utf8)
 
         let chat = LocalChat(baseUrl: "http://127.0.0.1:\(port)/v1", model: model.id, key: key, qwen: true)
         // Loading takes a few seconds, longer the first time after a restart.
         for _ in 0..<480 {
             guard server.isRunning else {
-                let tail = (try? String(contentsOf: Self.log, encoding: .utf8))?.trimmed.suffix(400) ?? ""
+                let tail = (try? String(contentsOf: log, encoding: .utf8))?.trimmed.suffix(400) ?? ""
                 process = nil
                 throw OatcakeError("The language model couldn’t start. \(tail.isEmpty ? "" : "llama.cpp said: …\(tail)")")
             }
@@ -350,7 +370,7 @@ public actor ModelServer {
         process?.terminate()
         process = nil
         running = nil
-        try? FileManager.default.removeItem(at: Self.pidFile)
+        try? FileManager.default.removeItem(at: pidFile)
     }
 
     /// Frees the model's memory when nothing has used it for a while.
@@ -362,11 +382,10 @@ public actor ModelServer {
 
     /// Stops the server by the note of its process ID: at quit (nothing can be awaited then), and
     /// for one left behind by a copy of Oatcake that didn't get to stop it.
-    public nonisolated static func stopLeftover() {
-        guard let text = try? String(contentsOf: pidFile, encoding: .utf8), let pid = pid_t(text.trimmed), pid > 1 else { return }
-        var path = [CChar](repeating: 0, count: 4096)
-        if proc_pidpath(pid, &path, UInt32(path.count)) > 0, String(cString: path).hasSuffix("/llama-server") { kill(pid, SIGTERM) }
-        try? FileManager.default.removeItem(at: pidFile)
+    public nonisolated static func stopLeftover(in data: URL = Paths.data) {
+        let file = pidFile(in: data)
+        if let pid = runningPid(in: file, program: "llama-server") { kill(pid, SIGTERM) }
+        try? FileManager.default.removeItem(at: file)
     }
 
     /// A port nobody is listening on, from the system.

@@ -96,8 +96,8 @@ struct Voiceprints: Codable {
     }
 }
 
-public func knownPeople() -> [String] {
-    Voiceprints.load().people.keys.sorted()
+public func knownPeople(_ file: URL = Paths.voiceprints) -> [String] {
+    Voiceprints.load(file).people.keys.sorted()
 }
 
 func addVoiceprints(_ entries: [(name: String, embedding: [Float])], call: String, file: URL = Paths.voiceprints) throws {

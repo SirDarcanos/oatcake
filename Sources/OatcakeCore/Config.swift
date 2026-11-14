@@ -81,29 +81,6 @@ public struct LlmConfig: Codable, Equatable, Sendable {
     }
 }
 
-/**
- * Whether a model server's address is on this Mac or your own network: localhost, a name with no
- * dots or ending in .local, or a private or link-local IP address. Oatcake sends transcripts to a
- * local model only at an address like that, so one can't be pointed at somebody else's service.
- */
-public func isLocalEndpoint(_ address: String) -> Bool {
-    guard let url = URL(string: address.trimmed), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
-          let host = url.host(percentEncoded: false)?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]")), !host.isEmpty else { return false }
-    if host.contains(":") {
-        // IPv6: this Mac, link-local, or a unique local address.
-        return host == "::1" || host.hasPrefix("fe8") || host.hasPrefix("fe9") || host.hasPrefix("fea") || host.hasPrefix("feb")
-            || host.hasPrefix("fc") || host.hasPrefix("fd")
-    }
-    let parts = host.split(separator: ".", omittingEmptySubsequences: false)
-    if parts.count == 4, let n = Optional(parts.compactMap { UInt8($0) }), n.count == 4 {
-        return n[0] == 127 || n[0] == 10 || (n[0] == 172 && (16...31).contains(n[1])) || (n[0] == 192 && n[1] == 168) || (n[0] == 169 && n[1] == 254)
-    }
-    // A bare number is an address written another way (134744072 is 8.8.8.8), not a machine's name.
-    if UInt64(host) != nil || host.hasPrefix("0x") { return false }
-    // A name: this Mac, a machine named on your network, or a Bonjour name.
-    return host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local") || !host.contains(".")
-}
-
 public struct Config: Codable, Equatable, Sendable {
     /// Your name: the microphone track is always you.
     public var myName: String
@@ -255,48 +232,4 @@ public struct Config: Codable, Equatable, Sendable {
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try writeAtomic(file, try encodeJSON(self) + "\n")
     }
-}
-
-/// What Oatcake's own helper processes are started with: this process's environment, without the
-/// calendar's private address, which is none of their business.
-public enum ShellEnvironment {
-    public static func childEnvironment() -> [String: String] {
-        var env = ProcessInfo.processInfo.environment
-        env.removeValue(forKey: "OATCAKE_CALENDAR_URL")
-        return env
-    }
-}
-
-/// Runs a command and returns its standard output; throws with its error output when it fails.
-@discardableResult
-public func runCapturing(_ executable: String, _ arguments: [String], timeout: TimeInterval? = nil, environment: [String: String]? = nil) throws -> String {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: executable)
-    process.arguments = arguments
-    if let environment { process.environment = environment }
-    let out = Pipe(), err = Pipe()
-    process.standardOutput = out
-    process.standardError = err
-    process.standardInput = FileHandle.nullDevice
-    try process.run()
-    if let timeout {
-        let deadline = DispatchTime.now() + timeout
-        DispatchQueue.global().asyncAfter(deadline: deadline) { if process.isRunning { process.terminate() } }
-    }
-    // Both pipes are read before waiting (one on another thread), so a full pipe can't stall the process.
-    var errData = Data()
-    let errRead = DispatchGroup()
-    errRead.enter()
-    DispatchQueue.global().async {
-        errData = err.fileHandleForReading.readDataToEndOfFile()
-        errRead.leave()
-    }
-    let outData = out.fileHandleForReading.readDataToEndOfFile()
-    errRead.wait()
-    process.waitUntilExit()
-    guard process.terminationStatus == 0 else {
-        let message = String(decoding: errData, as: UTF8.self).trimmed
-        throw OatcakeError(message.isEmpty ? "\(URL(fileURLWithPath: executable).lastPathComponent) exited \(process.terminationStatus)" : message)
-    }
-    return String(decoding: outData, as: UTF8.self)
 }

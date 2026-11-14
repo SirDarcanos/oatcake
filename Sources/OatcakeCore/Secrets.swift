@@ -85,8 +85,7 @@ public enum Secrets {
     /// The Electron version kept secrets in secrets.json, encrypted with Chromium's OSCrypt under a
     /// key in the Keychain ("Oatcake Safe Storage"). They move into the Keychain once, and the file
     /// goes. A secret that can't be read, or can't be saved, is left in the file for the next launch.
-    public static func migrateFromElectron() {
-        let file = Paths.data.appendingPathComponent("secrets.json")
+    public static func migrateFromElectron(_ file: URL = Paths.data.appendingPathComponent("secrets.json")) {
         guard let stored = tryJSON([String: String].self, file), !stored.isEmpty else { return }
         guard let password = keychainRead(account: "Oatcake Key", service: "Oatcake Safe Storage") else { return }
         var remaining = stored

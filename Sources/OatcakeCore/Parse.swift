@@ -29,7 +29,9 @@ public struct TranscriptLine: Equatable, Sendable {
     public var text: String
 }
 
-private let stampPattern = #"(\d{1,2}:\d\d(?::\d\d)?)"#
+/// A time into a call as it's written, "12:34" or "1:02:03": the one pattern for it, used wherever one is looked for.
+let stampForm = #"\d{1,2}:\d\d(?::\d\d)?"#
+private let stampPattern = "(\(stampForm))"
 private let transcriptFormats: [NSRegularExpression] = [
     // **[12:34] Name:** text   (Oatcake)
     #"^\*\*\[\#(stampPattern)\]\s+(.+?):\*\*\s*(.*)$"#,
@@ -136,7 +138,7 @@ public func typedTodo(_ text: String, owner: String? = nil) -> String {
     var parts = text.trimmed.replacingOccurrences(of: #"\s+(?:—|--|-)\s+"#, with: "\u{0}", options: .regularExpression).components(separatedBy: "\u{0}")
     let isField = { (p: String) in
         p.range(of: #"^due\s"#, options: [.regularExpression, .caseInsensitive]) != nil
-            || p.range(of: #"^\[\d{1,2}:\d\d(?::\d\d)?\]$"#, options: .regularExpression) != nil
+            || p.range(of: "^\\[\(stampForm)\\]$", options: .regularExpression) != nil
     }
     let named = parts.dropFirst().contains { !isField($0) }
     if let owner, !owner.isEmpty, !named { parts.insert(owner, at: 1) }

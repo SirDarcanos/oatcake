@@ -31,6 +31,13 @@ public struct CalendarEvent: Codable, Identifiable, Equatable, Hashable, Sendabl
     public var attendees: [Attendee]
     public var meetUrl: String?
 
+    /// The same event, down to how each person answered (two attendees are the same person whatever they answered).
+    public static func == (a: CalendarEvent, b: CalendarEvent) -> Bool {
+        let replies = { (e: CalendarEvent) in e.attendees.map { [$0.declined ?? false, $0.resource ?? false] } }
+        return a.id == b.id && a.seriesId == b.seriesId && a.title == b.title && a.start == b.start && a.end == b.end
+            && a.allDay == b.allDay && a.attendees == b.attendees && replies(a) == replies(b) && a.meetUrl == b.meetUrl
+    }
+
     public var startDate: Date { parseISO(start) ?? .distantPast }
     public var endDate: Date { parseISO(end) ?? .distantPast }
     /// The call link, if it's a real Meet, Zoom or Teams address (checked again: the cache may predate the check).
@@ -45,11 +52,11 @@ public struct CalendarCache: Codable, Equatable, Sendable {
     public var error: String?
     public var events: [CalendarEvent] = []
 
-    public static func load() -> CalendarCache { tryJSON(CalendarCache.self, Paths.calendar) ?? CalendarCache() }
+    public static func load(_ file: URL = Paths.calendar) -> CalendarCache { tryJSON(CalendarCache.self, file) ?? CalendarCache() }
 
-    public func save() throws {
-        try FileManager.default.createDirectory(at: Paths.data, withIntermediateDirectories: true)
-        try writeAtomic(Paths.calendar, try encodeJSON(self))
+    public func save(to file: URL = Paths.calendar) throws {
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try writeAtomic(file, try encodeJSON(self))
     }
 
     /// Fresh for an hour; the refresh button fetches regardless.
@@ -90,8 +97,8 @@ public func findCallLink(_ text: String) -> String? {
  * Downloads the calendar and keeps the events from a day ago to two weeks ahead. A failed fetch keeps
  * the previous events and records the error. The address is a secret, so it never appears in errors.
  */
-public func fetchCalendar(_ address: String) async -> CalendarCache {
-    let previous = CalendarCache.load()
+public func fetchCalendar(_ address: String, cache: URL = Paths.calendar) async -> CalendarCache {
+    let previous = CalendarCache.load(cache)
     let checkedAt = isoString(Date())
     let https = address.trimmed.replacingOccurrences(of: "^webcal:", with: "https:", options: [.regularExpression, .caseInsensitive])
     do {
@@ -404,9 +411,24 @@ public func parseCalendar(_ text: String, from: Date, to: Date) -> [CalendarEven
             }
             continue
         }
-        let excluded = Set(extraDates(event.component, "EXDATE", aliases: aliases))
+        var excluded = Set(extraDates(event.component, "EXDATE", aliases: aliases))
+        // An EXDATE given as a day, on an event that has a time, takes out that day's occurrence: the
+        // day in the event's own zone, not whichever moment midnight is on this Mac.
+        var excludedDays = Set<String>()
+        if !event.start.isDate {
+            let days = event.component.all("EXDATE").flatMap { $0.value.split(separator: ",") }.map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { $0.count == 8 && $0.allSatisfy(\.isNumber) }
+            excluded.subtract(days.compactMap { parseICalTime($0, tzid: nil, valueType: "DATE", aliases: aliases)?.date })
+            excludedDays = Set(days)
+        }
+        var eventCalendar = Calendar(identifier: .gregorian)
+        eventCalendar.timeZone = event.start.zone
+        let day = { (instant: Date) -> String in
+            let c = eventCalendar.dateComponents([.year, .month, .day], from: instant)
+            return String(format: "%04d%02d%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+        }
         let instants = Set(rule.occurrences(start: event.start, until: to) + rdates.filter { $0 < to })
-        for instant in instants.sorted() where !excluded.contains(instant) {
+        for instant in instants.sorted() where !excluded.contains(instant) && (excludedDays.isEmpty || !excludedDays.contains(day(instant))) {
             emit(instant)
         }
         // An occurrence from beyond the window that was moved into it: its own time wasn't reached above.
@@ -440,6 +462,8 @@ struct RecurrenceRule {
     var interval = 1
     var count: Int?
     var until: Date?
+    /// UNTIL given as a day rather than a time: that whole day counts, in the event's own zone.
+    var untilDay: DateComponents?
     /// (ordinal or 0, weekday 1 = Sunday … 7 = Saturday)
     var byDay: [(Int, Int)] = []
     var byMonthDay: [Int] = []
@@ -460,7 +484,11 @@ struct RecurrenceRule {
         // Kept to what a calendar would write: a feed can say anything, and the sums below mustn't overflow.
         interval = min(1000, max(1, Int(parts["INTERVAL"] ?? "") ?? 1))
         count = parts["COUNT"].flatMap { Int($0) }
-        until = parts["UNTIL"].flatMap { parseICalTime($0, tzid: nil, valueType: nil, aliases: aliases)?.date }
+        if let value = parts["UNTIL"]?.trimmed, value.count == 8, value.allSatisfy(\.isNumber) {
+            untilDay = DateComponents(year: Int(value.prefix(4)), month: Int(value.dropFirst(4).prefix(2)), day: Int(value.suffix(2)), hour: 23, minute: 59, second: 59)
+        } else {
+            until = parts["UNTIL"].flatMap { parseICalTime($0, tzid: nil, valueType: nil, aliases: aliases)?.date }
+        }
         byDay = (parts["BYDAY"] ?? "").split(separator: ",").compactMap { item in
             let s = String(item).uppercased()
             guard let day = Self.weekdays[String(s.suffix(2))], let ordinal = Optional(Int(s.dropLast(2)) ?? 0), (-53...53).contains(ordinal) else { return nil }
@@ -477,6 +505,7 @@ struct RecurrenceRule {
     func occurrences(start: ICalTime, until limit: Date) -> [Date] {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = start.zone
+        let until = until ?? untilDay.flatMap { calendar.date(from: $0) }
         calendar.firstWeekday = weekStart
         let wall = calendar.dateComponents([.hour, .minute, .second], from: start.date)
         let startDay = calendar.dateComponents([.year, .month, .day, .weekday], from: start.date)
