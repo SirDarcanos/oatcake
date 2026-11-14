@@ -26,7 +26,7 @@ struct ProcessingView: View {
     @ViewState private var details = false
 
     var body: some View {
-        let progress = model.progress[rec.id]
+        let progress = model.jobs.progress[rec.id]
         let step = progress?.step ?? "Starting"
         let n = stepNumber(step)
         let within = progress?.fraction ?? (analysisSteps.contains(step) ? 0.5 : 0.1)
@@ -48,8 +48,8 @@ struct ProcessingView: View {
                     if details { Text(error).font(.system(.caption, design: .monospaced)).textSelection(.enabled).padding(.top, 4) }
                 }
                 HStack {
-                    Button("Try again") { model.retry(rec) }.buttonStyle(.borderedProminent)
-                    Button("Discard…") { model.discard(rec) }
+                    Button("Try again") { model.jobs.retry(rec) }.buttonStyle(.borderedProminent)
+                    Button("Discard…") { model.jobs.discard(rec) }
                 }
             } else {
                 VStack(alignment: .leading, spacing: 6) {
@@ -79,7 +79,7 @@ struct ProcessingView: View {
                 (Text(progress?.error != nil ? "Couldn’t finish" : "Processing").fontWeight(.semibold) + Text(" · \(rec.title)").foregroundStyle(.secondary)).lineLimit(1)
             }
             if progress?.error == nil {
-                ToolbarItem(placement: .automatic) { Button("Discard…") { model.discard(rec) } }
+                ToolbarItem(placement: .automatic) { Button("Discard…") { model.jobs.discard(rec) } }
             }
         }
     }
@@ -145,8 +145,8 @@ struct ReviewView: View {
 
     /// What's been set so far lives with the app, so leaving this screen and coming back keeps it.
     private var draft: ReviewDraft {
-        get { model.reviewDrafts[rec.id] ?? ReviewDraft(title: rec.title, folder: rec.folder ?? "", voices: [:]) }
-        nonmutating set { model.reviewDrafts[rec.id] = newValue }
+        get { model.jobs.reviewDrafts[rec.id] ?? ReviewDraft(title: rec.title, folder: rec.folder ?? "", voices: [:]) }
+        nonmutating set { model.jobs.reviewDrafts[rec.id] = newValue }
     }
     private var voices: [String: Voice] {
         get { draft.voices }
@@ -178,7 +178,7 @@ struct ReviewView: View {
             let a = try loadAnalysis(rec)
             analysis = a
             people = knownPeople()
-            if model.reviewDrafts[rec.id] == nil {
+            if model.jobs.reviewDrafts[rec.id] == nil {
                 draft = ReviewDraft(title: rec.title, folder: rec.folder ?? "",
                                     voices: Dictionary(uniqueKeysWithValues: a.speakers.map { ($0.id, Voice(name: $0.suggestion?.name ?? "")) }))
             }
@@ -217,7 +217,7 @@ struct ReviewView: View {
         }
         ToolbarItemGroup(placement: .automatic) {
             Toggle(isOn: $showTranscript) { Text("Transcript") }.toggleStyle(.button)
-            Button("Discard…") { model.discard(rec) }.disabled(saved)
+            Button("Discard…") { model.jobs.discard(rec) }.disabled(saved)
             if unnamed > 0 {
                 Text("\(unnamed) voice\(unnamed == 1 ? "" : "s") unnamed").font(.callout).foregroundStyle(.secondary)
                     .help("Unnamed voices are saved as “Voice 1”, “Voice 2”…")
@@ -233,7 +233,7 @@ struct ReviewView: View {
         let visible = analysis.speakers.filter { voices[$0.id]?.into == nil }
         let meTalk = analysis.me?.seconds ?? analysis.lines.filter { $0.speaker == me }.reduce(0) { $0 + $1.end - $1.start }
         let colors = provisionalColors(names(analysis))
-        let folders = (model.tree?.allFolders ?? []).map(\.path)
+        let folders = (model.library.tree?.allFolders ?? []).map(\.path)
         return VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Picker("Folder", selection: Binding(get: { draft.folder }, set: { draft.folder = $0 })) {
@@ -448,7 +448,7 @@ struct ReviewView: View {
         let folder = draft.folder
         let everyone = names(analysis)
         do {
-            let path = try model.saveRecording(rec, decisions: decisions, folder: folder, title: title)
+            let path = try model.jobs.saveRecording(rec, decisions: decisions, folder: folder, title: title)
             saved = true
             // Colours are claimed in the order this screen showed them, so nobody changes colour on saving.
             for name in everyone { _ = person(name) }
@@ -457,7 +457,7 @@ struct ReviewView: View {
             model.toast("Saved to \(folderPath(folder))")
             Task {
                 // The tree reloads in the background; open the meeting once it's there, unless you've moved on.
-                for _ in 0..<40 where model.tree?.find(path) == nil {
+                for _ in 0..<40 where model.library.tree?.find(path) == nil {
                     try? await Task.sleep(for: .milliseconds(50))
                 }
                 // On its summary, whichever tab you last read another meeting on: that's where the summary arrives.

@@ -83,17 +83,17 @@ struct MeetingListView: View {
                     let nodes = rows.filter { paths.contains($0.path) }
                     if nodes.count == 1, let m = nodes.first {
                         Button("Rename…") { draft = meetingTitle(m); renaming = m }
-                        Button("Show in Finder") { model.reveal(m.path) }
+                        Button("Show in Finder") { model.library.reveal(m.path) }
                         Divider()
-                        Button("Move to Trash") { model.trash([m]) }
+                        Button("Move to Trash") { model.library.trash([m]) }
                     } else if nodes.count > 1 {
-                        Button("Show in Finder") { model.reveal(nodes.map(\.path)) }
+                        Button("Show in Finder") { model.library.reveal(nodes.map(\.path)) }
                         Divider()
-                        Button("Move \(nodes.count) Meetings to Trash") { model.trash(nodes) }
+                        Button("Move \(nodes.count) Meetings to Trash") { model.library.trash(nodes) }
                     }
                 }
                 // File › Move to Trash (⌘⌫, as in Finder) acts on the selection while the list has the keyboard.
-                .focusedValue(\.trashMeetings, chosen.isEmpty ? nil : { model.trash(chosen) })
+                .focusedValue(\.trashMeetings, chosen.isEmpty ? nil : { model.library.trash(chosen) })
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
@@ -101,10 +101,10 @@ struct MeetingListView: View {
         // A meeting opened from elsewhere (the sidebar, a search, a reminder) ends a selection of several.
         .onChange(of: selectedPath) { picked = [] }
         // Searched again when the words change, and when a meeting does.
-        .task(id: "\(model.diskVersion) \(search)") { await searchText(search) }
+        .task(id: "\(model.library.diskVersion) \(search)") { await searchText(search) }
         .alert("Rename meeting", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Title", text: $draft)
-            Button("Rename") { if let node = renaming { model.retitle(node.path, to: draft) } }
+            Button("Rename") { if let node = renaming { model.library.retitle(node.path, to: draft) } }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Changes the meeting’s title and its folder’s name.")
@@ -141,7 +141,7 @@ struct MeetingListView: View {
         try? await Task.sleep(for: .milliseconds(150))
         guard !Task.isCancelled else { return }
         let all = listedIn(root).map { (path: $0.path, label: label($0)) }
-        let meetings = model.meetings
+        let meetings = model.library.meetings
         let hits = await Task.detached { meetings.search(search, in: all) }.value
         if !Task.isCancelled { found = (search, hits) }
     }

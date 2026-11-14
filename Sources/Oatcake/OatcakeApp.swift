@@ -52,7 +52,7 @@ struct AppCommands: Commands {
             Button("New Recording") { model.newRecording() }.keyboardShortcut("n")
             // The sidebar's own buttons for these sit in section headers, out of reach of the keyboard and VoiceOver.
             Button("New Folder") { model.wantsNewFolder = true; model.showWindow() }.keyboardShortcut("n", modifiers: [.command, .shift])
-            Button("Refresh Calendar") { model.refreshCalendar(force: true) }.keyboardShortcut("r").disabled(model.calendar == nil)
+            Button("Refresh Calendar") { model.calendar.refresh(force: true) }.keyboardShortcut("r").disabled(model.calendar.cache == nil)
             Divider()
             // As in Finder. A menu command, because a key handler on the list didn't answer to ⌘⌫.
             Button("Move to Trash") { trashMeetings?() }.keyboardShortcut(.delete, modifiers: .command).disabled(trashMeetings == nil)
@@ -100,7 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// does it quit under work that's still going: a call being analysed, a summary being written,
     /// an import, or a model on its way down. The Dock icon brings the window back.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        MainActor.assumeIsolated { !model.isRecording && !model.showsNextCallInMenuBar && !model.hasWorkInFlight }
+        MainActor.assumeIsolated { !model.recording.isRecording && !model.recording.showsNextCallInMenuBar && !model.hasWorkInFlight }
     }
 
     /// Quitting asks first when it would end a recording or interrupt work that's under way.
@@ -124,7 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        MainActor.assumeIsolated { model.stopAllRecorders() }
+        MainActor.assumeIsolated { model.recording.stopAllRecorders() }
     }
 
     /// Reminders show even while Oatcake is in front.
@@ -137,9 +137,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if response.notification.request.content.categoryIdentifier == Reminders.callCategory {
             await MainActor.run {
                 if response.actionIdentifier == Reminders.recordAction {
-                    model.recordCall()
+                    model.recording.recordCall()
                 } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
-                    model.newRecording(model.currentEvent)
+                    model.newRecording(model.calendar.currentEvent)
                 }
             }
             return
@@ -148,10 +148,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if response.notification.request.content.categoryIdentifier == Reminders.stopCategory {
             await MainActor.run {
                 if response.actionIdentifier == Reminders.keepAction {
-                    model.keepRecording()
+                    model.recording.keepRecording()
                 } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
                     model.showWindow()
-                    if model.live != nil { model.selection = .live }
+                    if model.recording.live != nil { model.selection = .live }
                 }
             }
             return
@@ -163,7 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         await MainActor.run {
             if response.actionIdentifier == Reminders.startAction {
-                model.startFromEvent(event)
+                model.recording.startFromEvent(event)
             } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
                 model.openEvent(event)
             }
@@ -182,7 +182,7 @@ struct ContentView: View {
         } detail: {
             if showsList {
                 HSplitView {
-                    MeetingListView(folder: model.tree?.find(model.folder) ?? model.tree, root: model.tree)
+                    MeetingListView(folder: model.library.tree?.find(model.folder) ?? model.library.tree, root: model.library.tree)
                         .frame(minWidth: 220, idealWidth: 300, maxWidth: 560)
                     DetailView()
                         .frame(minWidth: 420, maxWidth: .infinity)
@@ -224,7 +224,7 @@ struct DetailView: View {
         Group {
             switch model.selection {
             case .meeting(let path, let jump):
-                if let node = model.tree?.find(path), node.kind == .meeting {
+                if let node = model.library.tree?.find(path), node.kind == .meeting {
                     MeetingView(node: node, jump: jump)
                         .id(path + (jump.map { $0.nonce.uuidString } ?? ""))
                         .overlay(alignment: .bottom) { AskBar(path: path) }
@@ -236,10 +236,10 @@ struct DetailView: View {
             case .new(let event, let key):
                 NewRecordingView(event: event).id(key)
             case .live:
-                if let rec = model.live { LiveView(rec: rec) } else { blank }
+                if let rec = model.recording.live { LiveView(rec: rec) } else { blank }
             case .job(let id):
-                if let rec = model.pending.first(where: { $0.id == id }) {
-                    if rec.state == .processed, !model.isAnalysing(rec.id) {
+                if let rec = model.jobs.pending.first(where: { $0.id == id }) {
+                    if rec.state == .processed, !model.jobs.isAnalysing(rec.id) {
                         ReviewView(rec: rec).id(rec.id)
                     } else {
                         ProcessingView(rec: rec).id(rec.id)
@@ -256,7 +256,7 @@ struct DetailView: View {
 
     /// An empty folder says so (with Record here) in the middle column; this pane stays blank.
     private var blank: some View {
-        Text(listedIn(model.tree?.find(model.folder) ?? model.tree).isEmpty ? "" : "Select a meeting")
+        Text(listedIn(model.library.tree?.find(model.folder) ?? model.library.tree).isEmpty ? "" : "Select a meeting")
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

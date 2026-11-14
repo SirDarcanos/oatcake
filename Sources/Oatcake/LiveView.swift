@@ -10,10 +10,10 @@ struct LiveView: View {
     @ViewState private var devices: [InputDevice] = []
     @ViewState private var showTranscript = UserDefaults.standard.object(forKey: "liveTranscriptShown") as? Bool ?? true
 
-    private var status: RecorderStatus { model.status }
-    private var started: Bool { status.state == .recording && model.recorderFailure == nil }
+    private var status: RecorderStatus { model.recording.status }
+    private var started: Bool { status.state == .recording && model.recording.recorderFailure == nil }
     private var elapsed: Double { status.elapsed ?? 0 }
-    private var lines: [LiveLine] { model.liveNotes[rec.id] ?? [] }
+    private var lines: [LiveLine] { model.recording.liveNotes[rec.id] ?? [] }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,7 +23,7 @@ struct LiveView: View {
                     Text(pathAbove(rec.folder ?? "", rec.title)).foregroundStyle(.secondary)
                     PageTitle(text: rec.title).padding(.top, 4)
                     // Recording often starts before joining: the event's call link stays to hand.
-                    if let link = model.liveCallLink {
+                    if let link = model.recording.liveCallLink {
                         Button { NSWorkspace.shared.open(link) } label: { Label("Join the call", systemImage: "video") }
                             .help("Opens \(callApp(link.absoluteString) ?? "the call")")
                             .padding(.top, 10)
@@ -51,7 +51,7 @@ struct LiveView: View {
         }
         .toolbar { toolbar }
         .onAppear(perform: loadNotes)
-        .onDisappear { model.saveLiveNotes(rec.id) }
+        .onDisappear { model.recording.saveLiveNotes(rec.id) }
         .task { devices = (try? await Recordings.listInputs()) ?? [] }
     }
 
@@ -66,7 +66,7 @@ struct LiveView: View {
                     Text(clock(elapsed)).foregroundStyle(.red).monospacedDigit()
                 } else {
                     Circle().fill(.secondary).frame(width: 7, height: 7)
-                    Text(model.recorderFailure != nil ? "Couldn’t record" : status.state == .starting ? "Starting…" : "Recording stopped").foregroundStyle(.secondary)
+                    Text(model.recording.recorderFailure != nil ? "Couldn’t record" : status.state == .starting ? "Starting…" : "Recording stopped").foregroundStyle(.secondary)
                 }
             }
         }
@@ -82,14 +82,14 @@ struct LiveView: View {
         ToolbarItem(placement: .automatic) {
             // Nothing has been recorded until audio arrives, so until then it's Cancel, not Stop. A
             // recorder that never started has nothing to stop either: Close throws the recording away.
-            if model.recorderFailure != nil {
-                Button("Close") { model.cancelRecording(hasNotes: lines.contains { !$0.text.trimmed.isEmpty }) }
+            if model.recording.recorderFailure != nil {
+                Button("Close") { model.recording.cancelRecording(hasNotes: lines.contains { !$0.text.trimmed.isEmpty }) }
                     .help("Close this recording: nothing was recorded")
             } else if status.state == .starting {
-                Button("Cancel") { model.cancelRecording(hasNotes: lines.contains { !$0.text.trimmed.isEmpty }) }
+                Button("Cancel") { model.recording.cancelRecording(hasNotes: lines.contains { !$0.text.trimmed.isEmpty }) }
                     .help("Cancel this recording")
             } else {
-                Button { model.confirmStop() } label: { Label("Stop", systemImage: "stop.fill").labelStyle(.titleAndIcon) }
+                Button { model.recording.confirmStop() } label: { Label("Stop", systemImage: "stop.fill").labelStyle(.titleAndIcon) }
                     .tint(.red)
                     .buttonStyle(.borderedProminent)
                     .help("Stop recording")
@@ -105,7 +105,7 @@ struct LiveView: View {
             }
             .padding(.top, 16)
         }
-        if let failure = model.recorderFailure {
+        if let failure = model.recording.recorderFailure {
             Notice(tone: .red) {
                 Text("This call isn’t being recorded").fontWeight(.semibold)
                 Text(failure)
@@ -114,20 +114,20 @@ struct LiveView: View {
         } else if status.state == .error {
             Notice(tone: .red) { Text(status.error ?? "The recorder stopped.") }.padding(.top, 16)
         }
-        if let error = model.liveNotesError {
+        if let error = model.recording.liveNotesError {
             Notice(tone: .red) { Text(error) }.padding(.top, 16)
         }
         // The recording is about to stop by itself (Settings › General): say so, with the way to stop it stopping.
-        if let stoppingAt = model.stoppingAt {
+        if let stoppingAt = model.recording.stoppingAt {
             Notice(tone: .amber) {
                 Text("The call seems to have ended").fontWeight(.semibold)
                 Text("Recording stops in \(max(0, Int(stoppingAt.timeIntervalSinceNow.rounded(.up)))) seconds.")
-                Button("Keep recording") { model.keepRecording() }.padding(.top, 4)
+                Button("Keep recording") { model.recording.keepRecording() }.padding(.top, 4)
             }
             .padding(.top, 16)
         }
         // The language model starts downloading with the first call, to be there when it ends.
-        if let downloading = model.modelDownloadStatus {
+        if let downloading = model.downloads.modelDownloadStatus {
             HStack(spacing: 6) {
                 Text("\(downloading). It writes the summary once the call is over.")
                 SettingsLink { Text("Settings") }.buttonStyle(.link)
@@ -136,14 +136,14 @@ struct LiveView: View {
             .font(.callout).foregroundStyle(.secondary).padding(.top, 14)
         }
         let now = Date()
-        if let since = model.micQuietSince, now.timeIntervalSince(since) >= 30 {
+        if let since = model.recording.micQuietSince, now.timeIntervalSince(since) >= 30 {
             Notice(tone: .amber) {
                 Text("Your microphone has been silent for \(Int(now.timeIntervalSince(since))) seconds").fontWeight(.semibold)
                 Text("Check it isn’t muted, or switch to another microphone using the button below.")
             }
             .padding(.top, 16)
         }
-        if let since = model.callQuietSince, now.timeIntervalSince(since) >= 30 {
+        if let since = model.recording.callQuietSince, now.timeIntervalSince(since) >= 30 {
             Notice(tone: .amber) {
                 Text("No call audio for \(Int(now.timeIntervalSince(since))) seconds").fontWeight(.semibold)
                 Text("If people are talking, allow OatcakeRecorder in System Settings › Privacy & Security › Screen & System Audio Recording.")
@@ -157,11 +157,11 @@ struct LiveView: View {
     /// What's been said so far, a moment after each pause. Your microphone is you; each line from the
     /// call side gets an obviously made-up name of its own until the call is over and the voices are told apart.
     private var transcript: some View {
-        let lines = liveTranscript(model.liveLines)
+        let lines = liveTranscript(model.recording.liveLines)
         let myName = model.config.myName.isEmpty ? "You" : model.config.myName
         // Your name as text, in the shade that reads against the window (the avatar's own is too close to it).
         let mine = provisionalNameColors([myName])[myName] ?? .primary
-        let stopped = model.liveStatus.hasPrefix("The live transcript stopped")
+        let stopped = model.recording.liveStatus.hasPrefix("The live transcript stopped")
         return ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
@@ -171,7 +171,7 @@ struct LiveView: View {
                         Text("Names come after the call").font(.caption).foregroundStyle(.secondary)
                     }
                     if lines.isEmpty && !stopped {
-                        Text(["", "Listening"].contains(model.liveStatus) ? "Listening. What’s said appears here a moment after each pause." : "\(model.liveStatus)…")
+                        Text(["", "Listening"].contains(model.recording.liveStatus) ? "Listening. What’s said appears here a moment after each pause." : "\(model.recording.liveStatus)…")
                             .font(.callout).foregroundStyle(.secondary)
                     }
                     ForEach(lines) { line in
@@ -185,13 +185,13 @@ struct LiveView: View {
                             Text(line.text).font(.callout).textSelection(.enabled)
                         }
                     }
-                    if stopped { Text(model.liveStatus).font(.callout).foregroundStyle(.red) }
+                    if stopped { Text(model.recording.liveStatus).font(.callout).foregroundStyle(.red) }
                     Color.clear.frame(height: 1).id("end")
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .onChange(of: model.liveLines.count) { withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
+            .onChange(of: model.recording.liveLines.count) { withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
         }
         .background(Color(nsColor: .windowBackgroundColor))
     }
@@ -200,16 +200,16 @@ struct LiveView: View {
 
     /// What's saved (prep notes, or notes from before the window reopened), then a blank line.
     private func loadNotes() {
-        if model.liveNotes[rec.id] == nil {
+        if model.recording.liveNotes[rec.id] == nil {
             let saved = Recordings.loadNotes(rec.id).map { LiveLine(at: $0.at, prep: $0.at == nil, text: $0.text) }
-            model.liveNotes[rec.id] = saved + [LiveLine(at: nil, prep: false, text: "")]
+            model.recording.liveNotes[rec.id] = saved + [LiveLine(at: nil, prep: false, text: "")]
         }
         focused = lines.last?.id
     }
 
     private func update(_ next: [LiveLine], focus: UUID? = nil) {
-        model.liveNotes[rec.id] = next
-        model.liveNotesChanged(rec.id)
+        model.recording.liveNotes[rec.id] = next
+        model.recording.liveNotesChanged(rec.id)
         if let focus { DispatchQueue.main.async { focused = focus } }
     }
 
@@ -272,7 +272,7 @@ struct LiveView: View {
     // MARK: Bottom bar
 
     private var micStatus: (text: String, color: Color, warn: Bool) {
-        guard started else { return (model.recorderFailure != nil ? "Not recording." : status.state == .starting ? "Starting…" : "Recording stopped.", .secondary, false) }
+        guard started else { return (model.recording.recorderFailure != nil ? "Not recording." : status.state == .starting ? "Starting…" : "Recording stopped.", .secondary, false) }
         guard let device = status.micDevice else { return ("No microphone found. Connect one to record your side of the call.", .red, true) }
         if let mic = model.config.mic, device.uid != mic.uid {
             return ("\(mic.name) isn’t connected, so this is recording from \(device.name).", .amber, true)
