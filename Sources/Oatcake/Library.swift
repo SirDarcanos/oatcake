@@ -103,7 +103,7 @@ final class Library {
         let count = node.allMeetings.count
         guard count > 0 else { return trash([node]) }
         app.confirm(Confirmation(title: "Move “\(node.name)” to the Trash?",
-                                    text: "It holds \(count) meeting\(count == 1 ? "" : "s"), which go with it. You can put them back from the Trash in Finder.",
+                                    text: "It holds \(count == 1 ? "1 meeting, which goes" : "\(count) meetings, which go") with it. You can put \(count == 1 ? "it" : "them") back from the Trash in Finder.",
                                     ok: "Move to Trash", cancel: "Cancel") { [self] in trash([node]) })
     }
 

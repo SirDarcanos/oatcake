@@ -337,7 +337,7 @@ final class RecordingController {
         guard status.state == .recording, recorderFailure == nil else { return }
         let now = Date()
         let micQuiet = status.micDevice != nil && (status.micLevel ?? 0) < 0.001
-        let callQuiet = (status.systemLevel ?? 0) < 0.001
+        let callQuiet = callAudioQuiet
         let mic = micQuiet ? (micQuietSince ?? now) : nil
         let call = callQuiet ? (callQuietSince ?? now) : nil
         if mic != micQuietSince { micQuietSince = mic }
@@ -354,6 +354,14 @@ final class RecordingController {
             Reminders.say("No call audio for 30 seconds",
                           "If people are talking, allow OatcakeRecorder in System Settings › Privacy & Security › Screen & System Audio Recording.", id: "call-quiet")
         }
+    }
+
+    /// No call audio right now. Oatcake's own notification sounds come out of the Mac like any other
+    /// sound and are recorded as call audio, so for a few seconds after one, what's heard isn't taken
+    /// for the call: otherwise the warning that recording is about to stop would call itself off,
+    /// and the notice that the call is silent would end the silence it reports.
+    private var callAudioQuiet: Bool {
+        (status.systemLevel ?? 0) < 0.001 || Date().timeIntervalSince(Reminders.lastSound) < 6
     }
 
     func confirmStop() {
@@ -466,7 +474,7 @@ final class RecordingController {
         guard !apps.isEmpty else {
             callSince = nil
             guard live != nil, callSeen, config.autoStop, !keepsRecording, recorderFailure == nil,
-                  status.state == .recording, (status.systemLevel ?? 0) < 0.001 else {
+                  status.state == .recording, callAudioQuiet else {
                 callOverSince = nil
                 withdrawStopWarning()
                 return

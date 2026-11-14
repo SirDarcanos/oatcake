@@ -13,6 +13,10 @@ enum Reminders {
     static let stopCategory = "call-ending"
     static let keepAction = "keep"
 
+    /// When Oatcake last posted a notification with a sound. The sound comes out of the Mac like any
+    /// other, so a recording in progress hears it as call audio (see RecordingController.callAudioQuiet).
+    @MainActor private(set) static var lastSound = Date.distantPast
+
     static func register() {
         let center = UNUserNotificationCenter.current()
         let start = UNNotificationAction(identifier: startAction, title: "Open call and start note taking", options: [.foreground])
@@ -26,7 +30,7 @@ enum Reminders {
 
     /// Something about the recording you'd want to know while looking at the call, not at Oatcake.
     /// One with the same `id` replaces the one before it.
-    static func say(_ title: String, _ body: String, id: String) {
+    @MainActor static func say(_ title: String, _ body: String, id: String) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
@@ -35,7 +39,7 @@ enum Reminders {
     }
 
     /// The call seems to be over: recording stops in half a minute unless Keep recording is chosen.
-    static func warnOfStop() {
+    @MainActor static func warnOfStop() {
         let content = UNMutableNotificationContent()
         content.title = "The call seems to have ended"
         content.body = "Recording stops in 30 seconds."
@@ -55,7 +59,8 @@ enum Reminders {
         (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])) == true
     }
 
-    private static func post(_ content: sending UNMutableNotificationContent, id: String) {
+    @MainActor private static func post(_ content: sending UNMutableNotificationContent, id: String) {
+        if content.sound != nil { lastSound = Date() }
         Task {
             guard await allowed() else { return }
             try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
@@ -63,7 +68,7 @@ enum Reminders {
     }
 
     /// A calling app has started using the microphone and nothing is being recorded.
-    static func offerRecording(app: String, event: CalendarEvent?) {
+    @MainActor static func offerRecording(app: String, event: CalendarEvent?) {
         let content = UNMutableNotificationContent()
         content.title = "On a call?"
         content.body = "\(app) is using your microphone\(event.map { " (\($0.title))" } ?? ""). Oatcake isn’t recording."
@@ -73,14 +78,15 @@ enum Reminders {
     }
 
     /// A recording stopped by itself because its call ended.
-    static func stopped(_ title: String) {
+    @MainActor static func stopped(_ title: String) {
         let content = UNMutableNotificationContent()
         content.title = "Recording stopped"
         content.body = "The call ended, so Oatcake stopped recording “\(title)” and is transcribing it."
         post(content, id: "call-ended")
     }
 
-    static func show(_ event: CalendarEvent) {
+    @MainActor static func show(_ event: CalendarEvent) {
+        lastSound = Date()
         Task {
             guard await allowed() else { return }
             let minutes = Int((event.startDate.timeIntervalSinceNow / 60).rounded())
