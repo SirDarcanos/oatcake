@@ -162,11 +162,7 @@ final class AppModel {
             }
         })
         recording.startChecks()
-        // Stop asks first, as the window's Stop does: the window comes forward with the question.
-        recording.menuBar.stop = { [weak self] in
-            self?.showWindow()
-            self?.recording.confirmStop()
-        }
+        recording.menuBar.stop = { [weak self] in self?.stopFromMenuBar() }
         recording.menuBar.open = { [weak self] in self?.showWindow() }
         recording.menuBar.record = { [weak self] in self?.newRecording() }
         recording.menuBar.openEvent = { [weak self] event in self?.openEvent(event) }
@@ -357,6 +353,28 @@ final class AppModel {
             window.makeKeyAndOrderFront(nil)
         } else {
             openMainWindow?()
+        }
+    }
+
+    private var mainWindowIsUp: Bool { NSApp.windows.contains { $0.identifier?.rawValue == "main" && $0.isVisible } }
+
+    /// Menu bar › Stop Recording…: asks first, as the window's Stop does, and the question is asked in
+    /// the window, which comes forward. A window that was closed has to be there before anything can
+    /// be asked in it, so the question waits for it. If no window comes, the recording is stopped:
+    /// that's what was chosen, and it mustn't carry on with you thinking it had ended.
+    private func stopFromMenuBar() {
+        let wasUp = mainWindowIsUp
+        showWindow()
+        if wasUp { return recording.confirmStop() }
+        Task {
+            for _ in 0..<30 where !mainWindowIsUp { try? await Task.sleep(for: .milliseconds(100)) }
+            guard mainWindowIsUp else {
+                await recording.stopLive()
+                return
+            }
+            // The window is there a moment before what's in it is.
+            try? await Task.sleep(for: .milliseconds(300))
+            recording.confirmStop()
         }
     }
 

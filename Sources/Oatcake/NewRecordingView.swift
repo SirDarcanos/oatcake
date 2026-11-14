@@ -228,11 +228,19 @@ struct NewRecordingView: View {
 
     private func tick(_ t: Todo) {
         guard let p = previous else { return }
-        let todo = toggleTodo(p.todo, line: t.line)
-        previous = (p.path, p.date, todo)
-        ticked.insert(t.line)
         // The file is ticked as it is now, not written over with the copy this screen has been holding.
-        do { try model.library.toggleTodo(p.path, line: t.line, text: t.text) } catch { model.toast(error.localizedDescription, isError: true) }
+        do {
+            guard try model.library.toggleTodo(p.path, line: t.line, text: t.text) else {
+                // It isn't in the file as it's shown here: nothing was ticked, and the list is read again.
+                model.toast(todoChangedMessage)
+                Task { await loadPrevious() }
+                return
+            }
+            previous = (p.path, p.date, toggleTodo(p.todo, line: t.line))
+            ticked.insert(t.line)
+        } catch {
+            model.toast(error.localizedDescription, isError: true)
+        }
     }
 
     // MARK: Prep notes

@@ -233,7 +233,11 @@ struct TodosView: View {
 
     private func tick(_ item: TodoItem) {
         do {
-            try model.library.toggleTodo(item.meeting.path, line: item.todo.line, text: item.todo.text)
+            guard try model.library.toggleTodo(item.meeting.path, line: item.todo.line, text: item.todo.text) else {
+                // It isn't in the file as it's shown here: nothing was ticked, and the list is read again.
+                withAnimation { local[item.meeting.path] = nil }
+                return model.toast(todoChangedMessage)
+            }
             withAnimation { local[item.meeting.path] = onDisk(item.meeting.path) }
             model.toast("Saved to \(item.meeting.path.isEmpty ? "Meetings" : folderPath(item.meeting.path)) › todo.md")
         } catch {

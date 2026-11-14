@@ -174,10 +174,14 @@ struct MeetingView: View {
     /// A tick, or a to-do added, on the Summary tab. What's shown changes at once; the file is changed
     /// as it is now rather than written over with what's shown, so to-dos that have arrived since
     /// this was read (the summary's own, say) are kept.
-    private func changeTodos(shown: String, _ change: () throws -> Void) {
+    private func changeTodos(shown: String, _ change: () throws -> Bool) {
         files?[.todos] = shown
         do {
-            try change()
+            guard try change() else {
+                // It isn't in the file as it's shown here: nothing was ticked, and the file is read again.
+                model.toast(todoChangedMessage)
+                return load()
+            }
             status = .todo
             Task {
                 try? await Task.sleep(for: .seconds(2))
@@ -451,7 +455,7 @@ struct MeetingView: View {
                         .onSubmit {
                             guard !newTodo.trimmed.isEmpty else { return }
                             let typed = typedTodo(newTodo)
-                            changeTodos(shown: addTodo(todoText, typed)) { try model.library.addTodo(path, typed) }
+                            changeTodos(shown: addTodo(todoText, typed)) { try model.library.addTodo(path, typed); return true }
                             newTodo = ""
                         }
                 }

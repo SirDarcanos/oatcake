@@ -91,7 +91,16 @@ final class Updater {
             if feed == Update.feedURL {
                 let newest = UserDefaults.standard.string(forKey: Self.newestOfferedKey) ?? "0"
                 if Update.compareVersions(m.version, newest) < 0 {
-                    throw OatcakeError("The update information looks out of date: it names Oatcake \(m.version), and \(newest) has been offered before. Oatcake will check again later.")
+                    // Not taken to mean "up to date", and not a fault either: it's what a withdrawn
+                    // release looks like. It counts as a check, so the next look is tomorrow, not in
+                    // an hour, and a release that's no longer there isn't still offered.
+                    lastCheck = Date()
+                    manifest = nil
+                    available = nil
+                    (blocked, command) = (nil, nil)
+                    error = "The newest release is Oatcake \(m.version), older than \(newest), which this copy was offered before. That happens when a release is withdrawn. Oatcake will look again tomorrow."
+                    checking = false
+                    return
                 }
                 UserDefaults.standard.set(m.version, forKey: Self.newestOfferedKey)
             }

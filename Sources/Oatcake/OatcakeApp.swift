@@ -75,6 +75,8 @@ struct AppCommands: Commands {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     lazy var model = AppModel()
+    /// Looks every couple of seconds for the end of the work that kept Oatcake open with no window.
+    private var waitingToQuit: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
@@ -101,7 +103,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// does it quit under work that's still going: a call being analysed, a summary being written,
     /// an import, or a model on its way down. The Dock icon brings the window back.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        MainActor.assumeIsolated { !model.recording.isRecording && !model.recording.showsNextCallInMenuBar && !model.hasWorkInFlight }
+        MainActor.assumeIsolated {
+            let staysInMenuBar = model.recording.isRecording || model.recording.showsNextCallInMenuBar
+            if !staysInMenuBar, model.hasWorkInFlight { quitWhenWorkEnds() }
+            return !staysInMenuBar && !model.hasWorkInFlight
+        }
+    }
+
+    /// The window was closed while work was going on, which kept Oatcake open. Once that work has
+    /// ended, with still no window and nothing in the menu bar, Oatcake quits, as closing the window
+    /// would have. Opening a window again calls it off.
+    private func quitWhenWorkEnds() {
+        waitingToQuit?.invalidate()
+        waitingToQuit = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let hasWindow = NSApp.windows.contains { $0.isVisible && $0.canBecomeMain }
+                if hasWindow || self.model.recording.isRecording || self.model.recording.showsNextCallInMenuBar {
+                    self.waitingToQuit?.invalidate()
+                } else if !self.model.hasWorkInFlight {
+                    self.waitingToQuit?.invalidate()
+                    NSApp.terminate(nil)
+                }
+            }
+        }
     }
 
     /// Quitting asks first when it would end a recording or interrupt work that's under way.

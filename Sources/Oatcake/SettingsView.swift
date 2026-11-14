@@ -22,6 +22,11 @@ struct SettingsView: View {
             Form { UpdatesSection() }.formStyle(.grouped).tabItem { Label("Updates", systemImage: "arrow.down.circle") }.tag("updates")
         }
         .frame(width: 620, height: 600)
+        // Something that went wrong while this window is in front (a setting that couldn't be saved)
+        // is said here too: the main window's own note is behind this one, or closed.
+        .overlay(alignment: .bottom) {
+            if let text = model.toastText, model.toastIsError { ToastView(text: text, isError: true) { model.dismissToast() } }
+        }
         .task { devices = (try? await Recordings.listInputs()) ?? [] }
         // Looked at again whenever a pane is shown: it may have been changed in System Settings meanwhile.
         .task(id: pane) { notificationsOff = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .denied }

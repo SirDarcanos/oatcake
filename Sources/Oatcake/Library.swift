@@ -124,9 +124,12 @@ final class Library {
     /// Ticks or unticks a to-do in todo.md as it is now, not as a view last read it: a tick never
     /// writes back over to-dos that have arrived since (the summary's, say). `text` is the to-do's
     /// task, which finds it if its line has moved. "" is the Meetings folder's own list.
-    func toggleTodo(_ path: String, line: Int, text: String) throws {
-        try meetings.toggleTodo(path, line: line, text: text)
+    /// False when the to-do isn't in the file any more (it was reworded or removed there): nothing was written.
+    @discardableResult
+    func toggleTodo(_ path: String, line: Int, text: String) throws -> Bool {
+        let ticked = try meetings.toggleTodo(path, line: line, text: text)
         refresh()
+        return ticked
     }
 
     /// Adds a to-do to the end of todo.md as it is now.

@@ -98,7 +98,7 @@ struct LiveView: View {
     }
 
     @ViewBuilder private var notices: some View {
-        if status.state == .starting && Date().timeIntervalSince(rec.startedAt) > 6 {
+        if status.state == .starting && model.recording.recorderFailure == nil && Date().timeIntervalSince(rec.startedAt) > 6 {
             Notice(tone: .amber) {
                 Text("The recorder hasn’t started yet").fontWeight(.semibold)
                 Text("If macOS is asking whether OatcakeRecorder can use the microphone or record system audio, click Allow.")

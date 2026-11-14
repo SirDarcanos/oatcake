@@ -55,6 +55,9 @@ final class RecordingController {
     /// Why the call that's "live" isn't being recorded at all: the recorder never started. The live
     /// screen stays, saying so, until it's closed.
     var recorderFailure: String?
+    /// The recorder said so itself (it couldn't use the microphone, say). Otherwise the failure is
+    /// only that nothing has been heard from it, which a recorder that's slow to start can still put right.
+    private var failureIsFinal = false
     /// Since when the microphone, and the call audio, have had nothing in them; nil while there's sound.
     var micQuietSince: Date?
     var callQuietSince: Date?
@@ -110,7 +113,8 @@ final class RecordingController {
     func settingsChanged(_ saved: Config) {
         for rec in active.values { try? Recordings.setMic(rec.dir, uid: saved.mic?.uid) }
         // The live transcript follows its switch straight away, mid-call too.
-        if let live {
+        // (Not for a call that couldn't be recorded: there's nothing for it to transcribe.)
+        if let live, recorderFailure == nil {
             if !saved.liveTranscript { stopLiveTranscript() } else if liveHelper == nil { startLiveTranscript(live) }
         }
         updateMenuBar()
@@ -205,8 +209,20 @@ final class RecordingController {
     /// had already stopped. A recorder that hasn't finished within five seconds (stuck on an audio
     /// device, say) is stopped outright, so the recording always goes on to be processed.
     private func stopRecorder(_ rec: Recording) async {
-        Recordings.stop(rec)
         let finished = { FileManager.default.fileExists(atPath: rec.dir.appendingPathComponent(RecorderFile.meta).path) }
+        // A recorder that's only just coming up has no process to stop yet. Left alone it would start
+        // afterwards and record with nobody watching, so from now on it's told no when it asks (it
+        // asks before it records). One that has already asked is given a moment to appear, so that
+        // it can be stopped like any other. A recorder that has been and gone isn't waited for.
+        if !finished(), !Recordings.isRunning(rec) {
+            Recordings.cancelStart(rec)
+            if Recordings.status(rec).state == .starting {
+                for _ in 0..<30 where !finished() && !Recordings.isRunning(rec) {
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+            }
+        }
+        Recordings.stop(rec)
         for _ in 0..<50 where !finished() && Recordings.isRunning(rec) {
             try? await Task.sleep(for: .milliseconds(100))
         }
@@ -233,6 +249,7 @@ final class RecordingController {
     /// What's only true of one recording: a new one starts without it, and it goes when one ends.
     private func resetLiveState() {
         recorderFailure = nil
+        failureIsFinal = false
         liveNotesError = nil
         micQuietSince = nil
         callQuietSince = nil
@@ -258,7 +275,26 @@ final class RecordingController {
      * you're probably looking at the call and not at Oatcake.
      */
     private func checkRecorder() {
-        guard let rec = live, !endingLive, recorderFailure == nil, !Recordings.isRunning(rec) else { return }
+        guard let rec = live, !endingLive else { return }
+        if recorderFailure != nil {
+            // "It didn't start" was only that nothing had been heard from it. A recorder that turns up
+            // late is recording after all: the call goes back to being a recording like any other.
+            // One that then says why it failed has had the last word.
+            guard !failureIsFinal else { return }
+            let status = Recordings.status(rec)
+            if Recordings.isRunning(rec) {
+                recorderFailure = nil
+                startLiveTranscript(rec)
+                updateMenuBar()
+                // In place of the notification that said it couldn't.
+                Reminders.say("Oatcake is recording after all", "The recorder was slow to start. “\(rec.title)” is being recorded.", id: "recorder-failed")
+            } else if status.state == .error {
+                recorderFailure = status.error ?? "The recorder stopped."
+                failureIsFinal = true
+            }
+            return
+        }
+        guard !Recordings.isRunning(rec) else { return }
         let status = Recordings.status(rec)
         let finished = FileManager.default.fileExists(atPath: rec.dir.appendingPathComponent(RecorderFile.meta).path)
         if finished || Recordings.hasAudio(rec) {
@@ -284,6 +320,7 @@ final class RecordingController {
         guard status.state != .starting || Date().timeIntervalSince(rec.startedAt) > 15 else { return }
         let why = status.state == .error ? status.error ?? "The recorder stopped." : "The recorder didn’t start."
         recorderFailure = why
+        failureIsFinal = status.state != .starting
         stopLiveTranscript()
         updateMenuBar()
         Reminders.say("Oatcake couldn’t start recording", why, id: "recorder-failed")
@@ -323,15 +360,18 @@ final class RecordingController {
     }
 
     /// Stops the call being recorded and starts processing it. If you're on its notes you go to its
-    /// progress; anywhere else, you stay there.
-    func stopLive() async {
-        guard let rec = live, !endingLive else { return }
+    /// progress; anywhere else, you stay there. False when there was nothing for it to stop: no call,
+    /// or one that something else is already ending.
+    @discardableResult
+    func stopLive() async -> Bool {
+        guard let rec = live, !endingLive else { return false }
         endingLive = true
         defer { endingLive = false }
         let watching = selection == .live
         saveLiveNotes(rec.id)
         await stopRecorder(rec)
         liveEnded(rec, watching: watching)
+        return true
     }
 
     /// Cancel before any audio arrived (or Close, when the recorder never started): stop the recorder
@@ -342,12 +382,15 @@ final class RecordingController {
             endingLive = true
             defer { endingLive = false }
             await stopRecorder(rec)
-            try Recordings.discard(rec.id)
+            // The call is over here whether or not its folder could be deleted: left "live" with its
+            // recorder gone, it would be announced a moment later as a recording that had stopped.
+            let discarded = Result { try Recordings.discard(rec.id) }
             liveNotes.removeValue(forKey: rec.id)
             endLive()
             app.showFolder()
-            toast("Recording cancelled")
             refresh()
+            try discarded.get()
+            toast("Recording cancelled")
         }
         if !hasNotes {
             Task { do { try await cancel() } catch { toast(error.localizedDescription, isError: true) } }
@@ -362,11 +405,19 @@ final class RecordingController {
     func stopAllRecorders() {
         if let live { saveLiveNotes(live.id) }
         stopLiveTranscript()
-        for rec in active.values { Recordings.stop(rec) }
+        for rec in active.values {
+            // One that hasn't got going yet is told no when it asks, rather than left to start after Oatcake has gone.
+            if !Recordings.isRunning(rec) { Recordings.cancelStart(rec) }
+            Recordings.stop(rec)
+            // A call that couldn't be recorded is thrown away, as Close would: left behind, its empty
+            // folder would come back at the next launch as a recording to process.
+            if rec.id == live?.id, recorderFailure != nil { try? Recordings.discard(rec.id) }
+        }
         ModelServer.stopLeftover()
     }
 
-    var isRecording: Bool { !active.isEmpty }
+    /// A call that couldn't be recorded isn't one that's being recorded: it holds up nothing.
+    var isRecording: Bool { !active.isEmpty && recorderFailure == nil }
 
     func saveLiveNotes(_ id: String) {
         guard let lines = liveNotes[id] else { return }
@@ -426,6 +477,8 @@ final class RecordingController {
         }
         if live != nil {
             callSeen = true
+            // Stop recording part-way through a call and there's no offer to record it again.
+            callOffered = true
         } else if config.callNotice, !callOffered, now.timeIntervalSince(callSince!) >= 4 {
             callOffered = true
             Reminders.offerRecording(app: apps[0], event: calendar.currentEvent)
@@ -451,7 +504,8 @@ final class RecordingController {
         callOverSince = nil
         withdrawStopWarning()
         Task {
-            await stopLive()
+            // Not if something else got there first (your own Stop, or the recorder going by itself).
+            guard await stopLive() else { return }
             Reminders.stopped(rec.title)
             toast("The call ended, so recording stopped")
         }

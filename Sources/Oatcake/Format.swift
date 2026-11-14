@@ -49,6 +49,11 @@ func isMe(_ owner: String?, _ myName: String) -> Bool {
 /// An owner as shown: "You" for you.
 func ownerLabel(_ owner: String, _ myName: String) -> String { isMe(owner, myName) ? "You" : owner }
 
+/// Said when a to-do that was ticked turns out to be worded differently in its file now (it was
+/// edited there since this was read): nothing is ticked, and what's shown is read again.
+let todoChangedMessage = "That to-do has changed in todo.md, so it wasn’t ticked. The list has been read again."
+
+
 /// When a meeting happened: meeting.json, or the "2026-10-02 1400 Title" folder name.
 func meetingDate(_ node: TreeNode) -> Date? {
     if let d = node.startedAt { return d }
