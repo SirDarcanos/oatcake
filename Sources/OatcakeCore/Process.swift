@@ -27,19 +27,19 @@ public func runCapturing(_ executable: String, _ arguments: [String], timeout: T
     process.standardError = err
     process.standardInput = FileHandle.nullDevice
     try process.run()
-    let stopped = Stopped()
+    let stopped = Locked(false)
     DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
         if process.isRunning {
-            stopped.set()
+            stopped.value = true
             process.terminate()
         }
     }
     // Both pipes are read before waiting (one on another thread), so a full pipe can't stall the process.
-    var errData = Data()
+    let errData = Locked(Data())
     let errRead = DispatchGroup()
     errRead.enter()
     DispatchQueue.global().async {
-        errData = err.fileHandleForReading.readDataToEndOfFile()
+        errData.value = err.fileHandleForReading.readDataToEndOfFile()
         errRead.leave()
     }
     let outData = out.fileHandleForReading.readDataToEndOfFile()
@@ -48,18 +48,21 @@ public func runCapturing(_ executable: String, _ arguments: [String], timeout: T
     let name = URL(fileURLWithPath: executable).lastPathComponent
     if stopped.value { throw OatcakeError("\(name) took too long and was stopped.") }
     guard process.terminationStatus == 0 else {
-        let message = String(decoding: errData, as: UTF8.self).trimmed
+        let message = String(decoding: errData.value, as: UTF8.self).trimmed
         throw OatcakeError(message.isEmpty ? "\(name) exited \(process.terminationStatus)" : message)
     }
     return String(decoding: outData, as: UTF8.self)
 }
 
-/// Whether a command was stopped for taking too long: set on one thread, read on another.
-private final class Stopped: @unchecked Sendable {
+/// A value set on one thread and read on another, behind a lock.
+final class Locked<Value: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
-    private var stopped = false
-    var value: Bool { lock.withLock { stopped } }
-    func set() { lock.withLock { stopped = true } }
+    private var stored: Value
+    init(_ value: Value) { stored = value }
+    var value: Value {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
+    }
 }
 
 /// Whether a process ID is a running copy of the program whose path ends with `name`: a pid file
@@ -67,7 +70,8 @@ private final class Stopped: @unchecked Sendable {
 func isRunning(_ pid: pid_t, program name: String) -> Bool {
     guard pid > 1 else { return false }
     var path = [CChar](repeating: 0, count: 4096)
-    return proc_pidpath(pid, &path, UInt32(path.count)) > 0 && String(cString: path).hasSuffix("/" + name)
+    guard proc_pidpath(pid, &path, UInt32(path.count)) > 0 else { return false }
+    return path.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }.hasSuffix("/" + name)
 }
 
 /// The process ID a file holds, when that process is still running and is `name`.
@@ -93,8 +97,15 @@ public enum ChildProcess {
         public var stderr: String
     }
 
+    /// A helper that's running, for whoever started it to stop. Only stopping is offered, which is
+    /// safe from any thread (it sends the process a signal, and does nothing once it has gone).
+    public struct Handle: @unchecked Sendable {
+        let process: Process
+        public func terminate() { process.terminate() }
+    }
+
     public static func run(_ executable: URL, _ arguments: [String],
-                           onStart: ((Process) -> Void)? = nil, onLine: (@Sendable (String) -> Void)? = nil) async throws -> Result {
+                           onStart: (@Sendable (Handle) -> Void)? = nil, onLine: (@Sendable (String) -> Void)? = nil) async throws -> Result {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
@@ -131,10 +142,11 @@ public enum ChildProcess {
                 continuation.resume(throwing: error)
                 return
             }
-            onStart?(process)
+            onStart?(Handle(process: process))
         }
     }
 
+    // Sendable by its lock: output arrives on the pipes' own threads and is read from the caller's.
     private final class Collected: @unchecked Sendable {
         private let lock = NSLock()
         private var outData = Data()

@@ -124,18 +124,29 @@ public var gregorian: Calendar {
     return calendar
 }
 
-let isoFormatter: ISO8601DateFormatter = {
-    let f = ISO8601DateFormatter()
-    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return f
-}()
-private let isoPlain = ISO8601DateFormatter()
+/// The ISO 8601 formatters, for use from any thread: ISO8601DateFormatter isn't marked as safe to
+/// share, so they're used one call at a time, behind a lock. (Date's own ISO 8601 format style
+/// would need no lock, but it cuts the milliseconds short where this rounds them, so times already
+/// written would read back a millisecond out.)
+private final class ISOFormatters: @unchecked Sendable {
+    private let lock = NSLock()
+    private let withFraction: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private let plain = ISO8601DateFormatter()
+
+    func string(from date: Date) -> String { lock.withLock { withFraction.string(from: date) } }
+    func date(from string: String) -> Date? { lock.withLock { withFraction.date(from: string) ?? plain.date(from: string) } }
+}
+private let isoFormatters = ISOFormatters()
 
 /// "2026-11-05T14:00:02.682Z", the way the Electron version wrote times.
-public func isoString(_ date: Date) -> String { isoFormatter.string(from: date) }
+public func isoString(_ date: Date) -> String { isoFormatters.string(from: date) }
 
 /// Reads ISO 8601 times with or without fractional seconds.
 public func parseISO(_ string: String?) -> Date? {
     guard let string, !string.isEmpty else { return nil }
-    return isoFormatter.date(from: string) ?? isoPlain.date(from: string)
+    return isoFormatters.date(from: string)
 }

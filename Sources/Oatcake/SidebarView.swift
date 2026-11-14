@@ -258,13 +258,13 @@ struct SidebarView: View {
 
     private func calendarTip(_ c: CalendarCache) -> String {
         if model.calendar.fetching { return "Fetching…" }
-        if let error = c.error { return error }
+        if let failure = c.failure { return failure }
         if let updated = parseISO(c.updatedAt) { return "Updated \(hhmm(updated))" }
         return "Not fetched yet"
     }
 
     private func calendarMessage(_ c: CalendarCache, events: [CalendarEvent]) -> String? {
-        guard let updated = parseISO(c.updatedAt) else { return c.error ?? "Fetching your calendar…" }
+        guard let updated = parseISO(c.updatedAt) else { return c.failure ?? "Fetching your calendar…" }
         let nothing = events.isEmpty ? "Nothing else today or tomorrow." : nil
         // Said in words, not only by the arrow turning red: what's listed may be out of date.
         guard c.error != nil else { return nothing }

@@ -15,6 +15,17 @@ struct LiveLine: Identifiable, Equatable {
     var text: String
 }
 
+/// What the live transcript's helper is doing.
+enum LiveTranscriptState: Equatable {
+    /// No helper: the live transcript is off, or there's no call.
+    case idle
+    /// The helper is on its way up and hasn't said anything yet.
+    case starting
+    case at(LiveStage)
+    /// It stopped, and why.
+    case stopped(String)
+}
+
 @MainActor @Observable
 final class RecordingController {
     /// What this part asks of the app around it.
@@ -39,7 +50,7 @@ final class RecordingController {
     var live: Recording?
     /// The call being recorded, as it's heard: lines from the live helper, and what the helper is doing.
     var liveLines: [LiveTranscriptLine] = []
-    var liveStatus = ""
+    var liveState = LiveTranscriptState.idle
     var status = RecorderStatus(state: .starting)
     /// Why the call that's "live" isn't being recorded at all: the recorder never started. The live
     /// screen stays, saying so, until it's closed.
@@ -56,7 +67,7 @@ final class RecordingController {
 
     /// Recorders running now, by recording ID.
     private var active: [String: Recording] = [:]
-    private var liveHelper: Process?
+    private var liveHelper: ChildProcess.Handle?
     /// The recording whose live transcript helper is running or on its way up. A second helper for the
     /// same recording would say every line again.
     private var liveTranscriptFor: String?
@@ -469,12 +480,12 @@ final class RecordingController {
         // started, say): one is enough.
         guard liveTranscriptFor != rec.id else { return }
         liveLines = []
-        liveStatus = ""
+        liveState = .idle
         guard config.liveTranscript, liveHelper == nil else { return }
         liveTranscriptFor = rec.id
-        liveStatus = "Starting"
+        liveState = .starting
         Task {
-            _ = try? await ChildProcess.run(Bundle.main.executableURL!, ["--live", rec.dir.path], onStart: { process in
+            _ = try? await ChildProcess.run(Bundle.main.executableURL!, [HelperMode.live, rec.dir.path], onStart: { process in
                 Task { @MainActor in
                     // The call may have ended (or the switch been turned off) before the helper got going.
                     if self.live?.id == rec.id, self.liveTranscriptFor == rec.id, self.config.liveTranscript { self.liveHelper = process } else { process.terminate() }
@@ -484,8 +495,8 @@ final class RecordingController {
                 Task { @MainActor in
                     guard self.live?.id == rec.id else { return }
                     if let line = event.line { self.liveLines.append(line) }
-                    if let status = event.status { self.liveStatus = status }
-                    if let error = event.error { self.liveStatus = "The live transcript stopped: \(error)" }
+                    if let stage = event.stage { self.liveState = .at(stage) }
+                    if let error = event.error { self.liveState = .stopped(error) }
                 }
             })
         }

@@ -50,11 +50,15 @@ enum Reminders {
         center.removePendingNotificationRequests(withIdentifiers: [stopCategory])
     }
 
-    private static func post(_ content: UNMutableNotificationContent, id: String) {
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            guard granted else { return }
-            center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+    /// Whether Oatcake may show notifications, asking the first time.
+    private static func allowed() async -> Bool {
+        (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])) == true
+    }
+
+    private static func post(_ content: sending UNMutableNotificationContent, id: String) {
+        Task {
+            guard await allowed() else { return }
+            try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
         }
     }
 
@@ -77,9 +81,8 @@ enum Reminders {
     }
 
     static func show(_ event: CalendarEvent) {
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            guard granted else { return }
+        Task {
+            guard await allowed() else { return }
             let minutes = Int((event.startDate.timeIntervalSinceNow / 60).rounded())
             let content = UNMutableNotificationContent()
             content.title = event.title
@@ -88,7 +91,7 @@ enum Reminders {
             content.categoryIdentifier = category
             content.userInfo = ["event": (try? encodeJSON(event)) ?? ""]
             content.sound = .default
-            center.add(UNNotificationRequest(identifier: event.id, content: content, trigger: nil))
+            try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: event.id, content: content, trigger: nil))
         }
     }
 

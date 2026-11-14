@@ -58,51 +58,134 @@ public struct Analysis: Codable, Sendable {
     /// The model the embeddings came from. Missing from analyses made by the Electron version, whose
     /// fingerprints can't be saved as voiceprints any more.
     public var embeddingModel: String?
+    /// Why the language model's name suggestions were skipped, when they were.
+    public var nameSuggestionError: String? = nil
+}
+
+extension Analysis {
+    /// How earlier versions noted skipped name suggestions: as one of the warnings.
+    private static let skippedNames = "Name suggestions skipped: "
+
+    // Read field by field so that an analysis.json written by an earlier version still opens: it
+    // has no nameSuggestionError, and says the same thing as a warning, which is moved across.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        title = try c.decode(String.self, forKey: .title)
+        startedAt = try c.decode(String.self, forKey: .startedAt)
+        endedAt = try c.decode(String.self, forKey: .endedAt)
+        lines = try c.decode([Line].self, forKey: .lines)
+        speakers = try c.decode([SpeakerInfo].self, forKey: .speakers)
+        echoLinesRemoved = try c.decode(Int.self, forKey: .echoLinesRemoved)
+        me = try c.decodeIfPresent(Me.self, forKey: .me)
+        warnings = try c.decode([String].self, forKey: .warnings)
+        embeddingModel = try c.decodeIfPresent(String.self, forKey: .embeddingModel)
+        nameSuggestionError = try c.decodeIfPresent(String.self, forKey: .nameSuggestionError)
+        if nameSuggestionError == nil, let old = warnings.firstIndex(where: { $0.hasPrefix(Self.skippedNames) }) {
+            nameSuggestionError = String(warnings.remove(at: old).dropFirst(Self.skippedNames.count))
+        }
+    }
+}
+
+/// Where an analysis has got to. The helper does everything up to matching voices; the app does
+/// the last, once the helper has finished.
+public enum AnalysisStage: String, Codable, CaseIterable, Sendable {
+    case downloadingModels, loadingModels
+    case transcribingMic, transcribingCall, tellingVoicesApart, matchingVoices, suggestingNames
+
+    /// The five steps shown as "step N of 5".
+    public static let steps: [AnalysisStage] = [.transcribingMic, .transcribingCall, .tellingVoicesApart, .matchingVoices, .suggestingNames]
+
+    /// Whether this is one of the five counted steps, rather than getting the speech models ready.
+    public var isStep: Bool { Self.steps.contains(self) }
+
+    /// 1 to 5; downloads and model loading count as step 1.
+    public var number: Int { (Self.steps.firstIndex(of: self) ?? 0) + 1 }
+
+    /// What the screen says while it's going on.
+    public var title: String {
+        switch self {
+        case .downloadingModels: "Downloading speech models (about 500 MB, first run only)"
+        case .loadingModels: "Loading speech models"
+        case .transcribingMic: "Transcribing your microphone"
+        case .transcribingCall: "Transcribing the call audio"
+        case .tellingVoicesApart: "Telling voices apart"
+        case .matchingVoices: "Matching voices"
+        case .suggestingNames: "Suggesting names from the conversation"
+        }
+    }
+}
+
+/// What kind of thing stopped an analysis, for saying it in plain words. The raw message goes with it.
+public enum AnalysisFailure: String, Codable, Sendable {
+    /// call.json or meta.json couldn't be read.
+    case unreadableRecording
+    /// A file the analysis needed wasn't there.
+    case missingAudio
+    /// The speech models couldn't be downloaded or loaded.
+    case speechModels
+    /// The helper process went without saying why (the app's own finding, not the helper's).
+    case helperStopped
+    case other
+}
+
+/// An analysis failure that knows what kind it is.
+struct AnalysisError: LocalizedError {
+    var failure: AnalysisFailure
+    var underlying: Error
+    var errorDescription: String? { underlying.localizedDescription }
+}
+
+/// What kind of failure an error from `analyse` is.
+public func analysisFailure(_ error: Error) -> AnalysisFailure {
+    if let known = error as? AnalysisError { return known.failure }
+    let missing: [CocoaError.Code] = [.fileNoSuchFile, .fileReadNoSuchFile]
+    if let cocoa = error as? CocoaError, missing.contains(cocoa.code) { return .missingAudio }
+    return .other
+}
+
+/// Runs one part of the analysis, marking whatever it throws as that kind of failure.
+private func during<T>(_ failure: AnalysisFailure, _ work: () async throws -> T) async throws -> T {
+    do { return try await work() } catch { throw AnalysisError(failure: failure, underlying: error) }
 }
 
 /// One progress message from the analysis helper (a JSON line on its standard output).
 public struct AnalysisProgress: Codable, Equatable, Sendable {
-    public var step: String?
+    public var stage: AnalysisStage?
     public var fraction: Double?
     public var done: Bool?
     public var error: String?
-    public init(step: String? = nil, fraction: Double? = nil, done: Bool? = nil, error: String? = nil) {
-        self.step = step
+    /// What kind of failure `error` is.
+    public var failure: AnalysisFailure?
+    public init(stage: AnalysisStage? = nil, fraction: Double? = nil, done: Bool? = nil, error: String? = nil, failure: AnalysisFailure? = nil) {
+        self.stage = stage
         self.fraction = fraction
         self.done = done
         self.error = error
+        self.failure = failure
     }
 }
 
-/// The five steps shown as "step N of 5"; downloads and model loading count as step 1. The helper
-/// does the first four; the app does the fifth once the helper has finished.
-public let analysisSteps = [
-    "Transcribing your microphone",
-    "Transcribing the call audio",
-    "Telling voices apart",
-    "Matching voices",
-    "Suggesting names from the conversation",
-]
-
 public func analyse(_ dir: URL, config: Config = Config.load(), voiceprints file: URL = Paths.voiceprints,
                     report: @escaping (AnalysisProgress) -> Void) async throws {
-    let call = try readJSON(CallInfo.self, dir.appendingPathComponent("call.json"))
-    let meta = try readJSON(RecorderMeta.self, dir.appendingPathComponent("meta.json"))
+    let (call, meta) = try await during(.unreadableRecording) {
+        (try readJSON(CallInfo.self, dir.appendingPathComponent("call.json")), try readJSON(RecorderMeta.self, dir.appendingPathComponent("meta.json")))
+    }
 
-    report(.init(step: SpeechModels.needsDownload(config.asrModel) ? "Downloading speech models (about 500 MB, first run only)" : "Loading speech models"))
-    let transcriber = try await SpeechModels.loadTranscriber(config.asrModel)
-    let diarizer = try await SpeechModels.loadDiarizer()
+    report(.init(stage: SpeechModels.needsDownload(config.asrModel) ? .downloadingModels : .loadingModels))
+    let (transcriber, diarizer) = try await during(.speechModels) {
+        (try await SpeechModels.loadTranscriber(config.asrModel), try await SpeechModels.loadDiarizer())
+    }
 
-    report(.init(step: analysisSteps[0], fraction: 0))
+    report(.init(stage: .transcribingMic, fraction: 0))
     let mic = readPcm(dir.appendingPathComponent("mic.pcm"))
-    let micLines = try await transcriber.transcribe(mic) { report(.init(step: analysisSteps[0], fraction: $0)) }
+    let micLines = try await transcriber.transcribe(mic) { report(.init(stage: .transcribingMic, fraction: $0)) }
         .map { Line(speaker: me, start: $0.start + meta.micOffset, end: $0.end + meta.micOffset, text: $0.text) }
 
-    report(.init(step: analysisSteps[1], fraction: 0))
+    report(.init(stage: .transcribingCall, fraction: 0))
     let system = readPcm(dir.appendingPathComponent("system.pcm"))
-    let systemUtterances = try await transcriber.transcribe(system) { report(.init(step: analysisSteps[1], fraction: $0)) }
+    let systemUtterances = try await transcriber.transcribe(system) { report(.init(stage: .transcribingCall, fraction: $0)) }
 
-    report(.init(step: analysisSteps[2]))
+    report(.init(stage: .tellingVoicesApart))
     let (turns, prints) = systemUtterances.isEmpty ? ([], [:]) : try await diarize(system, diarizer: diarizer)
     let letters = speakerLetters(turns)
     let systemLines = systemUtterances
@@ -113,7 +196,7 @@ public func analyse(_ dir: URL, config: Config = Config.load(), voiceprints file
     let keptMic = micLines.filter { !isEcho($0, systemLines) }
     let lines = (keptMic + systemLines).sorted { $0.start < $1.start }
 
-    report(.init(step: analysisSteps[3]))
+    report(.init(stage: .matchingVoices))
     let clips = dir.appendingPathComponent("clips", isDirectory: true)
     try FileManager.default.createDirectory(at: clips, withIntermediateDirectories: true)
     let voiceprints = Voiceprints.load(file)
@@ -253,7 +336,7 @@ public func suggestNames(_ dir: URL, config: Config) async {
     } catch let error as URLError where error.code == .cancelled {
         return
     } catch {
-        analysis.warnings.append("Name suggestions skipped: \(error.localizedDescription)")
+        analysis.nameSuggestionError = error.localizedDescription
     }
     // The recording may have been discarded meanwhile.
     guard FileManager.default.exists(file), let text = try? encodeJSON(analysis) else { return }

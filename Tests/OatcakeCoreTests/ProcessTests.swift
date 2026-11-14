@@ -33,7 +33,7 @@ import Testing
         defer { try? FileManager.default.removeItem(at: file) }
         var path = [CChar](repeating: 0, count: 4096)
         proc_pidpath(getpid(), &path, UInt32(path.count))
-        let mine = URL(fileURLWithPath: String(cString: path)).lastPathComponent
+        let mine = URL(fileURLWithPath: path.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }).lastPathComponent
         #expect(isRunning(getpid(), program: mine) && !isRunning(getpid(), program: "oatcake-recorder") && !isRunning(1, program: mine) && !isRunning(-5, program: mine))
         #expect(runningPid(in: file, program: mine) == nil)
         try "\(getpid())\n".write(to: file, atomically: true, encoding: .utf8)

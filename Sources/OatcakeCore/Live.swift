@@ -22,13 +22,26 @@ public struct LiveTranscriptLine: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+/// What the live helper is doing before there are any lines to show.
+public enum LiveStage: String, Codable, Sendable {
+    case downloadingModels, loadingModels, listening
+
+    public var title: String {
+        switch self {
+        case .downloadingModels: "Downloading the speech models (about 500 MB, first time only)"
+        case .loadingModels: "Loading the speech models"
+        case .listening: "Listening"
+        }
+    }
+}
+
 /// What the live helper prints: what it's doing, a line, or why it stopped.
-public struct LiveEvent: Codable, Sendable {
-    public var status: String?
+public struct LiveEvent: Codable, Equatable, Sendable {
+    public var stage: LiveStage?
     public var line: LiveTranscriptLine?
     public var error: String?
-    public init(status: String? = nil, line: LiveTranscriptLine? = nil, error: String? = nil) {
-        self.status = status
+    public init(stage: LiveStage? = nil, line: LiveTranscriptLine? = nil, error: String? = nil) {
+        self.stage = stage
         self.line = line
         self.error = error
     }
@@ -71,6 +84,7 @@ public func callPlaceholder(for recording: String, lineAt start: Double) -> Stri
         return chosen
     }
 }
+// These three are only read and written inside `placeholderLock`.
 private let placeholderLock = NSLock()
 nonisolated(unsafe) private var chosenFor = ""
 nonisolated(unsafe) private var chosenPlaceholders: [Int: String] = [:]
@@ -82,9 +96,9 @@ nonisolated(unsafe) private var lastPlaceholder: String?
  * itself has gone.
  */
 public func transcribeLive(_ dir: URL, config: Config = Config.load(), report: @escaping (LiveEvent) -> Void) async throws {
-    report(LiveEvent(status: SpeechModels.needsDownload(config.asrModel) ? "Downloading the speech models (about 500 MB, first time only)" : "Loading the speech models"))
+    report(LiveEvent(stage: SpeechModels.needsDownload(config.asrModel) ? .downloadingModels : .loadingModels))
     let transcriber = try await SpeechModels.loadTranscriber(config.asrModel)
-    report(LiveEvent(status: "Listening"))
+    report(LiveEvent(stage: .listening))
     // Samples of each track already dealt with. The call audio first, so a line of yours that only
     // echoes it is recognised as an echo straight away.
     var done: [(track: LiveTranscriptLine.Track, file: String, samples: Int)] = [(.system, "system.pcm", 0), (.mic, "mic.pcm", 0)]

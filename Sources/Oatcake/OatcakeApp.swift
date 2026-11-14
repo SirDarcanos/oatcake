@@ -72,8 +72,9 @@ struct AppCommands: Commands {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
-    @MainActor lazy var model = AppModel()
+    lazy var model = AppModel()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
@@ -128,45 +129,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     /// Reminders show even while Oatcake is in front.
-    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner, .list, .sound]
     }
 
-    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        // What was pressed, read here: the response itself doesn't cross to the main actor.
+        let category = response.notification.request.content.categoryIdentifier
+        let action = response.actionIdentifier
+        let event = Reminders.event(from: response)
+        await MainActor.run { pressed(category: category, action: action, event: event) }
+    }
+
+    private func pressed(category: String, action: String, event: CalendarEvent?) {
         // "On a call?": its button starts recording; clicking it opens New recording.
-        if response.notification.request.content.categoryIdentifier == Reminders.callCategory {
-            await MainActor.run {
-                if response.actionIdentifier == Reminders.recordAction {
-                    model.recording.recordCall()
-                } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
-                    model.newRecording(model.calendar.currentEvent)
-                }
+        if category == Reminders.callCategory {
+            if action == Reminders.recordAction {
+                model.recording.recordCall()
+            } else if action == UNNotificationDefaultActionIdentifier {
+                model.newRecording(model.calendar.currentEvent)
             }
             return
         }
         // "The call seems to have ended": its button keeps the recording going; clicking it shows the call's notes.
-        if response.notification.request.content.categoryIdentifier == Reminders.stopCategory {
-            await MainActor.run {
-                if response.actionIdentifier == Reminders.keepAction {
-                    model.recording.keepRecording()
-                } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
-                    model.showWindow()
-                    if model.recording.live != nil { model.selection = .live }
-                }
+        if category == Reminders.stopCategory {
+            if action == Reminders.keepAction {
+                model.recording.keepRecording()
+            } else if action == UNNotificationDefaultActionIdentifier {
+                model.showWindow()
+                if model.recording.live != nil { model.selection = .live }
             }
             return
         }
-        guard let event = Reminders.event(from: response) else {
+        guard let event else {
             // Anything else Oatcake says about a recording: clicking it opens Oatcake.
-            if response.actionIdentifier == UNNotificationDefaultActionIdentifier { await MainActor.run { model.showWindow() } }
+            if action == UNNotificationDefaultActionIdentifier { model.showWindow() }
             return
         }
-        await MainActor.run {
-            if response.actionIdentifier == Reminders.startAction {
-                model.recording.startFromEvent(event)
-            } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
-                model.openEvent(event)
-            }
+        if action == Reminders.startAction {
+            model.recording.startFromEvent(event)
+        } else if action == UNNotificationDefaultActionIdentifier {
+            model.openEvent(event)
         }
     }
 }

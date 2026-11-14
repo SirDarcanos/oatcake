@@ -9,15 +9,14 @@ func recordingMeta(_ rec: Recording) -> String {
 }
 
 /// The failure in plain words; the raw message stays behind "Details".
-private func explain(_ error: String) -> String {
-    let e = error.lowercased()
-    if e.contains("json") || e.contains("couldn’t be read") || e.contains("data couldn") { return "Its recording details couldn’t be read. The files may be damaged or incomplete." }
-    if e.contains("no such file") || e.contains("doesn’t exist") { return "Some of its audio files are missing." }
-    if e.contains("model") || e.contains("download") || e.contains("network") || e.contains("internet") {
-        return "The speech models couldn’t be loaded. Check your internet connection, then try again."
+private func explain(_ failure: AnalysisFailure?) -> String {
+    switch failure {
+    case .unreadableRecording: "Its recording details couldn’t be read. The files may be damaged or incomplete."
+    case .missingAudio: "Some of its audio files are missing."
+    case .speechModels: "The speech models couldn’t be loaded. Check your internet connection, then try again."
+    case .helperStopped: "The processing helper stopped unexpectedly. Trying again usually works."
+    case .other, nil: "Something went wrong while processing this recording. Trying again usually works."
     }
-    if e.contains("code ") { return "The processing helper stopped unexpectedly. Trying again usually works." }
-    return "Something went wrong while processing this recording. Trying again usually works."
 }
 
 struct ProcessingView: View {
@@ -27,11 +26,12 @@ struct ProcessingView: View {
 
     var body: some View {
         let progress = model.jobs.progress[rec.id]
-        let step = progress?.step ?? "Starting"
-        let n = stepNumber(step)
-        let within = progress?.fraction ?? (analysisSteps.contains(step) ? 0.5 : 0.1)
+        let stage = progress?.stage
+        let step = stage?.title ?? "Starting"
+        let n = stage?.number ?? 1
+        let within = progress?.fraction ?? (stage?.isStep == true ? 0.5 : 0.1)
         // The first recording on a Mac fetches the speech models before anything can be transcribed.
-        let downloading = step.hasPrefix("Downloading")
+        let downloading = stage == .downloadingModels
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(pathAbove(rec.folder ?? "", rec.title)).font(.callout).foregroundStyle(.secondary)
@@ -40,9 +40,9 @@ struct ProcessingView: View {
             }
             if let error = progress?.error {
                 Notice(tone: .red) {
-                    Text("Couldn’t finish “\(analysisSteps.contains(step) ? step : "Getting the recording ready")”").fontWeight(.semibold)
+                    Text("Couldn’t finish “\(stage?.isStep == true ? step : "Getting the recording ready")”").fontWeight(.semibold)
                     HStack(spacing: 4) {
-                        Text(explain(error))
+                        Text(explain(progress?.failure))
                         Button(details ? "Hide details" : "Details") { details.toggle() }.buttonStyle(.link)
                     }
                     if details { Text(error).font(.system(.caption, design: .monospaced)).textSelection(.enabled).padding(.top, 4) }
@@ -261,15 +261,12 @@ struct ReviewView: View {
                     Text("Only your microphone picked anything up. If people were talking on the call, check that OatcakeRecorder is allowed in System Settings › Privacy & Security › Screen & System Audio Recording.")
                 }
             }
+            // Why the model's name suggestions were skipped, in plain words.
+            if let error = analysis.nameSuggestionError {
+                Notice(tone: .amber) { ModelError(raw: error, prefix: "Names weren’t suggested for this call. ") }
+            }
             ForEach(analysis.warnings, id: \.self) { w in
-                Notice(tone: .amber) {
-                    // "Name suggestions skipped: <what the model said>", in plain words.
-                    if let colon = w.range(of: "skipped: ") {
-                        ModelError(raw: String(w[colon.upperBound...]), prefix: "Names weren’t suggested for this call. ")
-                    } else {
-                        Text(w)
-                    }
-                }
+                Notice(tone: .amber) { Text(w) }
             }
 
             card {

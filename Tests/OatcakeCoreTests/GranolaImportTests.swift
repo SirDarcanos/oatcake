@@ -72,11 +72,17 @@ import Testing
         try Meetings(root: root).move("Granola/Weekly sync", into: "")
         let zip = work.appendingPathComponent("export.zip")
         try runCapturing("/usr/bin/ditto", ["-c", "-k", exportFolder.path, zip.path])
-        var seen: [Int] = []
-        let lock = NSLock()
-        let again = try importGranola(zip, into: root) { done, total in lock.withLock { seen.append(done * 100 + total) } }
+        // Progress is reported from wherever the import runs, so what it says is collected behind a lock.
+        final class Seen: @unchecked Sendable {
+            private let lock = NSLock()
+            private var values: [Int] = []
+            func add(_ value: Int) { lock.withLock { values.append(value) } }
+            var all: [Int] { lock.withLock { values } }
+        }
+        let seen = Seen()
+        let again = try importGranola(zip, into: root) { done, total in seen.add(done * 100 + total) }
         #expect(again.imported == 0 && again.skipped == 3 && again.unreadable == 2)
-        #expect(seen == [5, 105, 205, 305, 405, 505])
+        #expect(seen.all == [5, 105, 205, 305, 405, 505])
 
         // Something that isn't an export says so.
         let other = work.appendingPathComponent("other.csv")

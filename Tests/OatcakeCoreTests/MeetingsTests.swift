@@ -53,6 +53,29 @@ import Testing
         #expect(parseTodos(readText(file)).count == 1 && readText(file).contains("One"))
     }
 
+    /// The To-dos page's lists are read from a tree that has just been read, without walking the folder again.
+    @Test func todosFromATreeAlreadyRead() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-alltodos-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        func meeting(_ rel: String, todo: String?) throws {
+            let dir = root.appendingPathComponent(rel)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try "{}".write(to: dir.appendingPathComponent("meeting.json"), atomically: true, encoding: .utf8)
+            try todo?.write(to: dir.appendingPathComponent("todo.md"), atomically: true, encoding: .utf8)
+        }
+        try meeting("Team/2026-11-09 1000 Weekly sync", todo: "- [ ] One\n")
+        try meeting("2026-11-10 0900 One-off", todo: nil)
+        try "- [ ] Mine\n".write(to: root.appendingPathComponent("todo.md"), atomically: true, encoding: .utf8)
+        let meetings = Meetings(root: root)
+        let tree = meetings.tree()
+        // A meeting that arrives after the tree was read isn't in it, and isn't looked for.
+        try meeting("2026-11-11 0900 Later", todo: "- [ ] Two\n")
+        let fromTree = meetings.allTodos(in: tree)
+        // Your own list first, then the meetings that have one.
+        #expect(fromTree.map(\.path) == ["", "Team/2026-11-09 1000 Weekly sync"] && fromTree.map(\.todo) == ["- [ ] Mine\n", "- [ ] One\n"])
+        #expect(Set(meetings.allTodos().map(\.path)) == ["", "Team/2026-11-09 1000 Weekly sync", "2026-11-11 0900 Later"])
+    }
+
     @Test func fileOperations() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-test-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }

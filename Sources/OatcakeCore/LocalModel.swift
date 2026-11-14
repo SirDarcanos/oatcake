@@ -115,6 +115,8 @@ public let modelNotDownloadedMessage = "The language model isn’t downloaded ye
 
 /// Downloads a model's file, carrying on from where an earlier attempt stopped, and checks it's the
 /// file that was expected before putting it in place.
+// Sendable by arrangement: its state is set up before the download is resumed and after that is only
+// touched from the session's own delegate queue, which runs one callback at a time.
 public final class ModelDownload: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     private let model: LocalModel
     private let part: URL

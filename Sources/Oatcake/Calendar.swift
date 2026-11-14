@@ -87,13 +87,6 @@ final class CalendarController {
         }
     }
 
-    /// Shows a reminder for the next timed event straight away, for checking notifications work.
-    func testReminder() -> String? {
-        guard let next = cache?.events.first(where: { !$0.allDay && $0.endDate > Date() }) else { return nil }
-        Reminders.show(next)
-        return next.title
-    }
-
     /// The calendar event happening now (or starting within ten minutes), if any.
     var currentEvent: CalendarEvent? {
         let now = Date()

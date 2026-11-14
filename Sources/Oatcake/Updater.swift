@@ -30,6 +30,7 @@ final class Updater {
     private var manifest: Update.Manifest?
     private var lastCheck: Date?
     private var busy: () -> String? = { nil }
+    private var autoCheck: () -> Bool = { false }
     private var timer: Timer?
     // OATCAKE_UPDATE_FEED points at another latest.json, for trying a release before it's published.
     private let feed = ProcessInfo.processInfo.environment["OATCAKE_UPDATE_FEED"].flatMap(URL.init(string:)) ?? Update.feedURL
@@ -45,16 +46,17 @@ final class Updater {
 
     func start(autoCheck: @escaping () -> Bool, busy: @escaping () -> String?) {
         self.busy = busy
+        self.autoCheck = autoCheck
         // Development copies check only when asked, unless pointed at a test feed.
         if bundle == nil && feed == Update.feedURL { return }
-        let tick = { [weak self] in
-            Task { @MainActor in
-                guard let self, autoCheck(), self.lastCheck.map({ Date().timeIntervalSince($0) > 86_400 }) ?? true else { return }
-                await self.check()
-            }
-        }
-        Timer.scheduledTimer(withTimeInterval: 20, repeats: false) { _ in _ = tick() }
-        timer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in _ = tick() }
+        Timer.scheduledTimer(withTimeInterval: 20, repeats: false) { [weak self] _ in Task { @MainActor in await self?.tick() } }
+        timer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in Task { @MainActor in await self?.tick() } }
+    }
+
+    /// A check, if they're on and the last one was more than a day ago.
+    private func tick() async {
+        guard autoCheck(), lastCheck.map({ Date().timeIntervalSince($0) > 86_400 }) ?? true else { return }
+        await check()
     }
 
     /// Why this copy can't replace itself with the release, if it can't, and whether the install command would.

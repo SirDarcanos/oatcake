@@ -451,10 +451,10 @@ func requestMicAccess() -> Bool {
     case .authorized: return true
     case .notDetermined:
         let done = DispatchSemaphore(value: 0)
-        var granted = false
-        AVCaptureDevice.requestAccess(for: .audio) { granted = $0; done.signal() }
+        AVCaptureDevice.requestAccess(for: .audio) { _ in done.signal() }
         done.wait()
-        return granted
+        // Asked again rather than carried across from the answer's own thread.
+        return AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
     default: return false
     }
 }
@@ -541,7 +541,7 @@ do {
 mic.wanted = wantedMic()
 mic.check()
 
-func offset(_ track: Track) -> Double {
+@MainActor func offset(_ track: Track) -> Double {
     track.firstBufferAt.map { $0.timeIntervalSince(startedAt) } ?? 0
 }
 
@@ -549,7 +549,8 @@ let iso = ISO8601DateFormatter()
 var ownerGoneSince: Date?
 let statusTimer = DispatchSource.makeTimerSource(queue: .main)
 statusTimer.schedule(deadline: .now() + 1, repeating: 1)
-statusTimer.setEventHandler {
+// The timer and the signals below are all handled on the main queue, which is where this program's state lives.
+statusTimer.setEventHandler { MainActor.assumeIsolated {
     // The recording was cancelled or discarded: there's nothing left to record into.
     guard folderExists() else {
         mic.stop()
@@ -574,12 +575,12 @@ statusTimer.setEventHandler {
     writeJSON(RecorderStatus(state: .recording, elapsed: Date().timeIntervalSince(startedAt),
                              micLevel: Double(micTrack.takePeak()), systemLevel: Double(systemTrack.takePeak()),
                              micDevice: mic.device.map { MicChoice(uid: $0.uid, name: $0.name) }), to: statusPath)
-}
+} }
 statusTimer.resume()
 
 /// Finishes the recording: meta.json, then a last status. `because` is why it stopped when it
 /// wasn't asked to; Oatcake shows it.
-func finish(because reason: String? = nil) -> Never {
+@MainActor func finish(because reason: String? = nil) -> Never {
     statusTimer.cancel()
     mic.stop()
     system.stop()
@@ -597,7 +598,7 @@ var signalSources: [DispatchSourceSignal] = []
 for sig in [SIGINT, SIGTERM] {
     signal(sig, SIG_IGN)
     let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
-    source.setEventHandler { finish() }
+    source.setEventHandler { MainActor.assumeIsolated { finish() } }
     source.resume()
     signalSources.append(source)
 }

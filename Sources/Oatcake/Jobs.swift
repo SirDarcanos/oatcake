@@ -6,9 +6,12 @@ import OatcakeCore
 import SwiftUI
 
 struct JobProgress: Equatable {
-    var step: String
+    /// Where the analysis has got to; nil before it has said ("Starting").
+    var stage: AnalysisStage?
     var fraction: Double?
     var error: String?
+    /// What kind of failure `error` is.
+    var failure: AnalysisFailure?
 }
 
 /// What you've set on a Who's who screen, kept by the app so looking at something else and coming
@@ -27,9 +30,6 @@ struct ReviewDraft: Equatable {
     var folder: String
     var voices: [String: Voice]
 }
-
-/// Step 1–5 for a progress message; downloads and model loading count as step 1.
-func stepNumber(_ step: String) -> Int { max(1, (analysisSteps.firstIndex(of: step) ?? -1) + 1) }
 
 @MainActor @Observable
 final class Jobs {
@@ -54,7 +54,7 @@ final class Jobs {
     private var analysing = Set<String>()
     /// The analysis helper running for each recording, and the work around it (which goes on to
     /// suggest names), so discarding a recording stops both.
-    private var helpers: [String: Process] = [:]
+    private var helpers: [String: ChildProcess.Handle] = [:]
     private var analyses: [String: Task<Void, Never>] = [:]
     private var autoStarted = Set<String>()
     /// One at a time: two clear-ups at once could both be writing the same meeting's audio.
@@ -82,18 +82,20 @@ final class Jobs {
         summaryJobs = summaryJobs.mapValues(remap)
         summaryErrors = Dictionary(summaryErrors.map { (remap($0.key), $0.value) }, uniquingKeysWith: { a, _ in a })
         todoProblems = Dictionary(todoProblems.map { (remap($0.key), $0.value) }, uniquingKeysWith: { a, _ in a })
+        // A recording waiting in Who's who is still saved into the folder it was set to, wherever that is now.
+        reviewDrafts = reviewDrafts.mapValues { draft in with(draft) { $0.folder = remap($0.folder) } }
     }
 
     func analyse(_ id: String) {
         guard let rec = Recordings.get(id), !analysing.contains(id) else { return }
         analysing.insert(id)
-        progress[id] = JobProgress(step: progress[id]?.step ?? "Starting")
+        progress[id] = JobProgress(stage: progress[id]?.stage)
         analyses[id] = Task {
             // Steps arrive as they happen; the outcome is read from the full output once it exits.
-            let result = try? await ChildProcess.run(Bundle.main.executableURL!, ["--analyse", rec.dir.path], onStart: { process in
+            let result = try? await ChildProcess.run(Bundle.main.executableURL!, [HelperMode.analyse, rec.dir.path], onStart: { process in
                 Task { @MainActor in self.helpers[id] = process }
             }, onLine: { line in
-                guard let p = try? JSONDecoder().decode(AnalysisProgress.self, from: Data(line.utf8)), p.step != nil else { return }
+                guard let p = try? JSONDecoder().decode(AnalysisProgress.self, from: Data(line.utf8)), p.stage != nil else { return }
                 Task { @MainActor in self.apply(id, p) }
             })
             helpers.removeValue(forKey: id)
@@ -105,13 +107,13 @@ final class Jobs {
                     outcome = AnalysisProgress(done: true)
                 } else {
                     let detail = result.map { $0.stderr.trimmed.isEmpty ? "" : ": " + String($0.stderr.trimmed.suffix(300)) } ?? ""
-                    outcome = AnalysisProgress(error: "Analysis stopped (code \(result?.status ?? -1))\(detail)")
+                    outcome = AnalysisProgress(error: "Analysis stopped (code \(result?.status ?? -1))\(detail)", failure: .helperStopped)
                 }
             }
             // Step 5, here rather than in the helper: the language model is the app's to run. A model
             // that's still downloading isn't waited for; the names can be typed.
             if outcome?.done == true, Recordings.get(id) != nil, !Task.isCancelled, hasUnnamedVoices(rec.dir) {
-                progress[id] = JobProgress(step: analysisSteps[4])
+                progress[id] = JobProgress(stage: .suggestingNames)
                 if let chosenModel = downloads.chosenModel, !LocalModels.isDownloaded(chosenModel) { downloads.downloadModel(chosenModel) }
                 await suggestNames(rec.dir, config: config)
             }
@@ -134,15 +136,15 @@ final class Jobs {
             progress.removeValue(forKey: id)
             refresh()
         } else if let error = p.error {
-            progress[id] = JobProgress(step: progress[id]?.step ?? "Starting", error: error)
-        } else if let step = p.step {
-            progress[id] = JobProgress(step: step, fraction: p.fraction)
+            progress[id] = JobProgress(stage: progress[id]?.stage, error: error, failure: p.failure ?? .other)
+        } else if let stage = p.stage {
+            progress[id] = JobProgress(stage: stage, fraction: p.fraction)
         }
         updateBadge()
     }
 
     func retry(_ rec: Recording) {
-        progress[rec.id] = JobProgress(step: "Starting")
+        progress[rec.id] = JobProgress()
         analyse(rec.id)
     }
 
@@ -218,7 +220,7 @@ final class Jobs {
         pending.sorted { $0.startedAt > $1.startedAt }.map { rec in
             let p = progress[rec.id]
             return Job(rec: rec, status: p?.error != nil ? .failed : rec.state == .processed && !analysing.contains(rec.id) ? .review : .processing,
-                       step: stepNumber(p?.step ?? ""))
+                       step: p?.stage?.number ?? 1)
         }
     }
 

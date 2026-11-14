@@ -7,6 +7,25 @@ import SwiftUI
     static var markdown = false
 }
 
+/// How saving what's typed is going, for the toolbar.
+private enum SaveStatus {
+    /// Nothing typed since the view was opened or switched.
+    case quiet
+    case saving, saved, failed
+    /// A to-do was ticked or added.
+    case todo
+
+    var text: String {
+        switch self {
+        case .quiet: "Saves as you type"
+        case .saving: "Saving…"
+        case .saved: "Saved"
+        case .failed: "Couldn’t save"
+        case .todo: "Saved to todo.md"
+        }
+    }
+}
+
 private enum FileKey: Hashable {
     case summary, transcript, notes, todos
     var file: MeetingFile {
@@ -29,7 +48,13 @@ struct MeetingView: View {
     @ViewState private var loadError = ""
     @ViewState private var tab = Remembered.tab
     @ViewState private var markdown = Remembered.markdown
-    @ViewState private var status = ""
+    @ViewState private var status = SaveStatus.quiet
+    /// The transcript as parsed lines, and as the rows drawn: worked out when the file is read or
+    /// edited, not each time the view is redrawn.
+    @ViewState private var transcriptLines: [TranscriptLine] = []
+    @ViewState private var rows: [Row] = []
+    /// The transcript's Markdown has been typed in since it was last parsed.
+    @ViewState private var transcriptEdited = false
     @ViewState private var flash = -1
     @ViewState private var newTodo = ""
     @ViewState private var pending: [FileKey: String] = [:]
@@ -94,6 +119,7 @@ struct MeetingView: View {
         do {
             let m = try model.library.readMeeting(path)
             files = [.summary: m.summary, .transcript: m.transcript, .notes: m.notes, .todos: m.todo]
+            readTranscript(m.transcript)
             meta = m.meta
             loadError = ""
             if let stamp = jump?.stamp, !arrived {
@@ -110,7 +136,8 @@ struct MeetingView: View {
     private func write(_ key: FileKey, _ content: String, now: Bool = false) {
         files?[key] = content
         pending[key] = content
-        status = now ? "todo" : "saving"
+        if key == .transcript { transcriptEdited = true }
+        status = now ? .todo : .saving
         saveTask?.cancel()
         saveTask = Task {
             if !now { try? await Task.sleep(for: .milliseconds(600)) }
@@ -120,21 +147,26 @@ struct MeetingView: View {
 
     private func flush() {
         saveTask?.cancel()
+        // Every way out of the Markdown editor comes through here, so the rows are right when they're next shown.
+        if transcriptEdited {
+            transcriptEdited = false
+            readTranscript(files?[.transcript] ?? "")
+        }
         for (key, content) in pending {
             do {
                 try model.library.writeMeetingFile(path, key.file, content)
                 // Typing that arrived during the save stays waiting.
                 if pending[key] == content { pending.removeValue(forKey: key) }
             } catch {
-                status = "failed"
+                status = .failed
                 return
             }
         }
-        if pending.isEmpty && status != "todo" && !status.isEmpty { status = "saved" }
-        if status == "todo" {
+        if pending.isEmpty && status != .todo && status != .quiet { status = .saved }
+        if status == .todo {
             Task {
                 try? await Task.sleep(for: .seconds(2))
-                if status == "todo" { status = "" }
+                if status == .todo { status = .quiet }
             }
         }
     }
@@ -146,10 +178,10 @@ struct MeetingView: View {
         files?[.todos] = shown
         do {
             try change()
-            status = "todo"
+            status = .todo
             Task {
                 try? await Task.sleep(for: .seconds(2))
-                if status == "todo" { status = "" }
+                if status == .todo { status = .quiet }
             }
         } catch {
             model.toast(error.localizedDescription, isError: true)
@@ -188,11 +220,11 @@ struct MeetingView: View {
         }
         ToolbarItemGroup(placement: .automatic) {
             // How saving is going stays up here, in sight wherever the note is scrolled to.
-            if markdown || status == "todo" || status == "failed" {
+            if markdown || status == .todo || status == .failed {
                 HStack(spacing: 6) {
-                    Text(["saving": "Saving…", "saved": "Saved", "failed": "Couldn’t save", "todo": "Saved to todo.md"][status] ?? "Saves as you type")
-                        .foregroundStyle(status == "failed" ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
-                    if status == "failed" { Button("Try again") { flush() }.buttonStyle(.link) }
+                    Text(status.text)
+                        .foregroundStyle(status == .failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                    if status == .failed { Button("Try again") { flush() }.buttonStyle(.link) }
                 }
                 .font(.callout)
             }
@@ -208,7 +240,7 @@ struct MeetingView: View {
 
     /// Rendered or Markdown: how the note below is shown. It sits at the top right of the note, beside its title.
     private var viewSwitch: some View {
-        Picker("View", selection: Binding(get: { markdown }, set: { flush(); markdown = $0; Remembered.markdown = $0; status = "" })) {
+        Picker("View", selection: Binding(get: { markdown }, set: { flush(); markdown = $0; Remembered.markdown = $0; status = .quiet })) {
             Text("Rendered").tag(false)
             Text("Markdown").tag(true)
         }
@@ -247,17 +279,21 @@ struct MeetingView: View {
 
     private var granola: Bool { meta.source == "granola" || node.granola }
 
-    /// Granola labels your track "Microphone"; the call side carries Granola's own guesses at names.
-    private var transcriptLines: [TranscriptLine] {
-        parseTranscript(files?[.transcript] ?? "").map { l in
+    /// Parses the transcript for showing. Granola labels your track "Microphone"; the call side carries
+    /// Granola's own guesses at names. Its CSV export has transcripts without times or names: those
+    /// are plain paragraphs, with no speaker.
+    private func readTranscript(_ text: String) {
+        let lines = parseTranscript(text).map { l in
             var l = l
             if l.speaker == "Microphone" { l.speaker = model.config.myName } else if l.speaker == "System audio" { l.speaker = "Call audio" }
             return l
         }
+        transcriptLines = lines
+        rows = lines.isEmpty ? text.components(separatedBy: "\n").map(\.trimmed).filter { !$0.isEmpty }.map { Row(text: $0) }
+            : lines.map { Row(speaker: $0.speaker, stamp: $0.stamp, text: $0.text) }
     }
 
     private func content(_ files: [FileKey: String]) -> some View {
-        let rows = transcriptRows(files)
         let found = finding && tab == .transcript && !markdown ? matches(in: rows) : []
         return VStack(spacing: 0) {
             if finding && tab == .transcript && !markdown {
@@ -461,18 +497,11 @@ struct MeetingView: View {
 
     // MARK: Transcript
 
-    /// A line of the transcript as shown. Granola's CSV export has transcripts without times or
-    /// names: those are plain paragraphs, with no speaker.
+    /// A line of the transcript as shown; one without a speaker is a plain paragraph.
     private struct Row {
         var speaker: String?
         var stamp = ""
         var text: String
-    }
-
-    private func transcriptRows(_ files: [FileKey: String]) -> [Row] {
-        let lines = transcriptLines
-        if !lines.isEmpty { return lines.map { Row(speaker: $0.speaker, stamp: $0.stamp, text: $0.text) } }
-        return (files[.transcript] ?? "").components(separatedBy: "\n").map(\.trimmed).filter { !$0.isEmpty }.map { Row(text: $0) }
     }
 
     /// The rows that have what's being looked for.

@@ -13,6 +13,7 @@ func fixture(_ name: String) throws -> URL {
 
 /// A small HTTP server on this Mac's own address, standing in for the language model's server (and
 /// for the site a model is downloaded from). It answers each request with what `handler` returns.
+// Sendable by its lock: the requests it has seen are added from the listener's threads.
 final class StandIn: @unchecked Sendable {
     struct Request: Sendable {
         var path: String
@@ -87,11 +88,12 @@ final class StandIn: @unchecked Sendable {
 
     private func serve(_ connection: NWConnection) {
         connection.start(queue: .global())
-        var buffer = Data()
-        func read() {
+        // What has arrived so far: added to from whichever thread the connection calls back on.
+        let buffer = Locked(Data())
+        @Sendable func read() {
             connection.receive(minimumIncompleteLength: 1, maximumLength: 1 << 20) { data, _, done, error in
-                if let data { buffer.append(data) }
-                if let request = Self.parse(buffer) {
+                if let data { buffer.value += data }
+                if let request = Self.parse(buffer.value) {
                     self.lock.withLock { self.seen.append(request) }
                     let response = self.handler(request)
                     var head = "HTTP/1.1 \(response.status) OK\r\nContent-Length: \(response.body.count)\r\nConnection: close\r\n"

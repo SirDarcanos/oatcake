@@ -76,11 +76,13 @@ final class AppModel {
     var toastIsError = false
     let updater = Updater()
     let ask = AskChat()
-    var pendingEvent: CalendarEvent?
     /// Why the settings couldn't be read at launch, until it has been shown.
     private var configProblem: String?
     private var timers: [Timer] = []
     private var toastTask: Task<Void, Never>?
+    /// A read of the Meetings folder is under way, and another has been asked for since it began.
+    private var refreshing = false
+    private var refreshWanted = false
     var openMainWindow: (() -> Void)?
 
     init() {
@@ -113,7 +115,7 @@ final class AppModel {
         library.whenMoved = { [unowned self] from, to in self.moved(from: from, to: to) }
         calendar.changed = { [unowned self] in self.recording.updateMenuBar() }
         recording.folderForEvent = { [unowned self] title, recurring in try self.library.meetings.folderForEvent(title: title, recurring: recurring) }
-        recording.ended = { [unowned self] rec in self.jobs.progress[rec.id] = JobProgress(step: "Starting") }
+        recording.ended = { [unowned self] rec in self.jobs.progress[rec.id] = JobProgress() }
     }
 
     /// Why the settings couldn't be read at launch, once: Oatcake is on its defaults, and should say so.
@@ -144,7 +146,7 @@ final class AppModel {
         // The first load happens before the window shows, so it opens on your last meeting rather
         // than on whatever the sidebar selects by itself.
         library.tree = library.meetings.tree()
-        library.todoMeetings = library.meetings.allTodos()
+        if let tree = library.tree { library.setTodos(library.meetings.allTodos(in: tree)) }
         jobs.pending = Recordings.list().filter { $0.state == .recorded || $0.state == .processed }
         openLastMeeting()
         refresh()
@@ -152,6 +154,7 @@ final class AppModel {
         timers.append(Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
             Task { @MainActor in
                 self.calendar.now = Date()
+                self.library.countTodosIfNewDay()
                 self.calendar.checkReminders()
                 self.recording.updateMenuBar()
                 // The language model gives its memory back after ten minutes with nothing to write.
@@ -176,11 +179,29 @@ final class AppModel {
 
     /// Reads the Meetings folder and the recordings again, for every part that shows them.
     func refresh() {
+        // One read at a time. However many more are asked for while it runs, there's one more after
+        // it: that one sees everything that changed, and no earlier read can land on top of a later one.
+        if refreshing {
+            refreshWanted = true
+            return
+        }
+        refreshing = true
         let meetings = library.meetings
         Task {
             let (tree, pending, todos) = await Task.detached {
-                (meetings.tree(), Recordings.list().filter { $0.state == .recorded || $0.state == .processed }, meetings.allTodos())
+                // The folder is walked once: the to-dos are read from the tree just built.
+                let tree = meetings.tree()
+                return (tree, Recordings.list().filter { $0.state == .recorded || $0.state == .processed }, meetings.allTodos(in: tree))
             }.value
+            refreshing = false
+            defer {
+                if refreshWanted {
+                    refreshWanted = false
+                    refresh()
+                }
+            }
+            // Another Meetings folder was chosen while this one was being read: its read is on its way.
+            guard library.meetings === meetings else { return }
             // Without animation: the sidebar's outline animates rows in when a section (Needs review)
             // appears, and leaves a stray copy of an expanded folder's selected row behind.
             var quiet = Transaction()
@@ -188,7 +209,7 @@ final class AppModel {
             withTransaction(quiet) {
                 self.library.tree = tree
                 self.jobs.pending = pending
-                self.library.todoMeetings = todos
+                self.library.setTodos(todos)
                 self.library.diskVersion += 1
             }
             jobs.startWaiting()

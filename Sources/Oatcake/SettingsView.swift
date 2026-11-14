@@ -172,7 +172,8 @@ struct SettingsView: View {
     }
 
     private func bindLlm<T>(_ path: WritableKeyPath<LlmConfig, T>) -> Binding<T> {
-        bind((\Config.llm).appending(path: path))
+        let llm: WritableKeyPath<Config, LlmConfig> = \.llm
+        return bind(llm.appending(path: path))
     }
 
     /// "~/Documents/…/Meetings": long paths lose their middle; hover shows the full path.
@@ -184,8 +185,8 @@ struct SettingsView: View {
     private var calendarStatus: String {
         guard let calendar = model.calendar.cache else { return "Not set up — Upcoming is hidden." }
         if model.calendar.fetching { return "Fetching…" }
-        if let error = calendar.error {
-            return calendar.updatedAt != nil ? "Last fetch failed: \(error.replacingOccurrences(of: "Couldn't update the calendar: ", with: ""))" : error
+        if let error = calendar.error, let failure = calendar.failure {
+            return calendar.updatedAt != nil ? "Last fetch failed: \(error)" : failure
         }
         if let updated = parseISO(calendar.updatedAt) {
             let upcoming = calendar.events.filter { $0.endDate > Date() }.count

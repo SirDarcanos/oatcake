@@ -90,7 +90,7 @@ public enum Update {
     }
 
     /// Downloads the release zip into dir, checking its size and SHA-256 against the manifest.
-    public static func downloadZip(_ manifest: Manifest, into dir: URL, progress: @escaping (Double) -> Void) async throws -> URL {
+    public static func downloadZip(_ manifest: Manifest, into dir: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         guard let url = URL(string: manifest.zip.url) else { throw OatcakeError("The update's address isn't valid.") }
         let bytes: URLSession.AsyncBytes, response: URLResponse
         do {

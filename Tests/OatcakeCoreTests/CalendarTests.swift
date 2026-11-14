@@ -237,4 +237,17 @@ import Testing
         #expect(accepted != declined)
         #expect(CalendarCache(events: [accepted]) != CalendarCache(events: [declined]))
     }
+
+    /// Why a fetch failed is kept as the reason alone, and said as a sentence where it's shown. A
+    /// cache written by an earlier version kept the whole sentence: its reason is taken back out.
+    @Test func failedFetches() throws {
+        let failed = CalendarCache(checkedAt: "2026-11-10T11:30:00Z", error: "the calendar took too long to answer")
+        #expect(failed.failure == "Couldn't update the calendar: the calendar took too long to answer")
+        #expect(CalendarCache().failure == nil)
+        let older = #"{"checkedAt":"2026-11-10T11:30:00.000Z","error":"Couldn't update the calendar: the calendar address returned 404 not found","events":[]}"#
+        let read = try JSONDecoder().decode(CalendarCache.self, from: Data(older.utf8))
+        #expect(read.error == "the calendar address returned 404 not found" && read.failure == "Couldn't update the calendar: the calendar address returned 404 not found")
+        // As it's written now, it reads back as it was.
+        #expect(try JSONDecoder().decode(CalendarCache.self, from: Data(try encodeJSON(failed).utf8)) == failed)
+    }
 }

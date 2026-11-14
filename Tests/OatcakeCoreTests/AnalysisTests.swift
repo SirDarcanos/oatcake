@@ -70,15 +70,60 @@ import Testing
         let broken = try await StandIn { _ in StandIn.Response(status: 500, body: Data("no".utf8)) }
         await suggestNames(dir, config: broken.config)
         let skipped = try readJSON(Analysis.self, dir.appendingPathComponent("analysis.json"))
-        #expect(skipped.speakers[0].suggestion == nil && skipped.warnings.first?.hasPrefix("Name suggestions skipped: ") == true)
+        #expect(skipped.speakers[0].suggestion == nil && skipped.warnings.isEmpty && skipped.nameSuggestionError?.isEmpty == false)
+    }
+
+    /// The steps the processing screen counts, and what it calls each. Getting the speech models
+    /// ready comes before the first of them and counts as step 1.
+    @Test func stages() {
+        #expect(AnalysisStage.steps.map(\.number) == [1, 2, 3, 4, 5])
+        #expect(AnalysisStage.steps.map(\.title) == ["Transcribing your microphone", "Transcribing the call audio", "Telling voices apart",
+                                                     "Matching voices", "Suggesting names from the conversation"])
+        #expect(AnalysisStage.allCases.filter { !$0.isStep } == [.downloadingModels, .loadingModels])
+        #expect(AnalysisStage.downloadingModels.number == 1 && AnalysisStage.loadingModels.number == 1)
+        #expect(AnalysisStage.downloadingModels.title == "Downloading speech models (about 500 MB, first run only)")
+        #expect(LiveStage.listening.title == "Listening" && LiveStage.loadingModels.title == "Loading the speech models")
+    }
+
+    /// What stopped an analysis is said by kind, so the screen doesn't have to guess from the message.
+    @Test func failuresByKind() async throws {
+        // No call.json or meta.json: the recording's own details can't be read.
+        let empty = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-analysis-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: empty) }
+        do {
+            try await analyse(empty, config: Config.defaults(), voiceprints: empty.appendingPathComponent("voiceprints.json")) { _ in }
+            Issue.record("An analysis with nothing to read should fail")
+        } catch {
+            #expect(analysisFailure(error) == .unreadableRecording && !error.localizedDescription.isEmpty)
+        }
+        #expect(analysisFailure(CocoaError(.fileReadNoSuchFile)) == .missingAudio)
+        #expect(analysisFailure(OatcakeError("anything else")) == .other)
+    }
+
+    /// An analysis.json written by 0.4.1 has no nameSuggestionError; it said the same as a warning.
+    /// (The JSON is in the shape 0.4.1's encoder wrote, made up here.)
+    @Test func olderAnalysisFiles() throws {
+        let older = #"""
+            {"echoLinesRemoved":0,"embeddingModel":"wespeaker-v2","endedAt":"2026-11-05T15:00:00.000Z","lines":[],
+             "speakers":[],"startedAt":"2026-11-05T14:00:00.000Z","title":"Weekly sync",
+             "warnings":["Name suggestions skipped: The model couldn’t be reached.","Something else"]}
+            """#
+        let read = try JSONDecoder().decode(Analysis.self, from: Data(older.utf8))
+        #expect(read.nameSuggestionError == "The model couldn’t be reached." && read.warnings == ["Something else"])
+        // Written again, it reads back the same.
+        let again = try JSONDecoder().decode(Analysis.self, from: Data(try encodeJSON(read).utf8))
+        #expect(again.nameSuggestionError == read.nameSuggestionError && again.warnings == read.warnings && again.title == "Weekly sync")
     }
 
     /// What the helpers print for the app, a line at a time: each survives the trip, and a line that
     /// says only some of it reads with the rest left out.
     @Test func linesFromTheHelpers() throws {
         func line(_ value: some Encodable) throws -> String { String(decoding: try JSONEncoder().encode(value), as: UTF8.self) }
-        let step = try JSONDecoder().decode(AnalysisProgress.self, from: Data(try line(AnalysisProgress(step: analysisSteps[1], fraction: 0.5)).utf8))
-        #expect(step == AnalysisProgress(step: "Transcribing the call audio", fraction: 0.5))
+        let step = try JSONDecoder().decode(AnalysisProgress.self, from: Data(try line(AnalysisProgress(stage: .transcribingCall, fraction: 0.5)).utf8))
+        #expect(step == AnalysisProgress(stage: .transcribingCall, fraction: 0.5))
+        let failed = try JSONDecoder().decode(AnalysisProgress.self, from: Data(try line(AnalysisProgress(error: "No models", failure: .speechModels)).utf8))
+        #expect(failed.failure == .speechModels && failed.error == "No models")
         #expect(!(try line(AnalysisProgress(done: true))).contains("\n"))
         #expect(try JSONDecoder().decode(AnalysisProgress.self, from: Data(#"{"done":true}"#.utf8)) == AnalysisProgress(done: true))
         #expect(try JSONDecoder().decode(AnalysisProgress.self, from: Data(#"{"error":"No such file"}"#.utf8)).error == "No such file")
@@ -86,8 +131,8 @@ import Testing
 
         let said = LiveTranscriptLine(track: .system, start: 12.5, end: 14, text: "Shall we start?")
         let event = try JSONDecoder().decode(LiveEvent.self, from: Data(try line(LiveEvent(line: said)).utf8))
-        #expect(event.line == said && event.status == nil && event.error == nil)
-        #expect(try JSONDecoder().decode(LiveEvent.self, from: Data(#"{"status":"Listening"}"#.utf8)).status == "Listening")
+        #expect(event.line == said && event.stage == nil && event.error == nil)
+        #expect(try JSONDecoder().decode(LiveEvent.self, from: Data(try line(LiveEvent(stage: .listening)).utf8)) == LiveEvent(stage: .listening))
         #expect(try JSONDecoder().decode(LiveEvent.self, from: Data(#"{"error":"The speech models couldn’t be loaded"}"#.utf8)).error != nil)
     }
 

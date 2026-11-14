@@ -161,7 +161,8 @@ struct LiveView: View {
         let myName = model.config.myName.isEmpty ? "You" : model.config.myName
         // Your name as text, in the shade that reads against the window (the avatar's own is too close to it).
         let mine = provisionalNameColors([myName])[myName] ?? .primary
-        let stopped = model.recording.liveStatus.hasPrefix("The live transcript stopped")
+        let state = model.recording.liveState
+        let stopped: String? = if case .stopped(let why) = state { "The live transcript stopped: \(why)" } else { nil }
         return ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
@@ -170,8 +171,8 @@ struct LiveView: View {
                         Spacer()
                         Text("Names come after the call").font(.caption).foregroundStyle(.secondary)
                     }
-                    if lines.isEmpty && !stopped {
-                        Text(["", "Listening"].contains(model.recording.liveStatus) ? "Listening. What’s said appears here a moment after each pause." : "\(model.recording.liveStatus)…")
+                    if lines.isEmpty && stopped == nil {
+                        Text(waiting(state))
                             .font(.callout).foregroundStyle(.secondary)
                     }
                     ForEach(lines) { line in
@@ -185,7 +186,7 @@ struct LiveView: View {
                             Text(line.text).font(.callout).textSelection(.enabled)
                         }
                     }
-                    if stopped { Text(model.recording.liveStatus).font(.callout).foregroundStyle(.red) }
+                    if let stopped { Text(stopped).font(.callout).foregroundStyle(.red) }
                     Color.clear.frame(height: 1).id("end")
                 }
                 .padding(16)
@@ -194,6 +195,16 @@ struct LiveView: View {
             .onChange(of: model.recording.liveLines.count) { withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
         }
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    /// What the transcript pane says before there are any lines to show.
+    private func waiting(_ state: LiveTranscriptState) -> String {
+        switch state {
+        case .idle, .at(.listening): "Listening. What’s said appears here a moment after each pause."
+        case .starting: "Starting…"
+        case .at(let stage): "\(stage.title)…"
+        case .stopped: ""
+        }
     }
 
     // MARK: Notes

@@ -73,6 +73,7 @@ public enum MeetingFile: String, CaseIterable, Sendable {
     case summary = "summary.md", transcript = "transcript.md", notes = "notes.md", todo = "todo.md"
 }
 
+// Sendable by its lock: `root` never changes, and the two caches below are only touched inside `lock`.
 public final class Meetings: @unchecked Sendable {
     public let root: URL
     private let lock = NSLock()
@@ -293,9 +294,12 @@ public final class Meetings: @unchecked Sendable {
     }
 
     /// Every meeting's todo.md, for the combined To-dos page. Meetings without one are left out.
-    public func allTodos() -> [MeetingTodos] {
+    public func allTodos() -> [MeetingTodos] { allTodos(in: tree()) }
+
+    /// The same, for a tree that has just been read: the Meetings folder isn't walked a second time.
+    public func allTodos(in tree: TreeNode) -> [MeetingTodos] {
         var out: [MeetingTodos] = []
-        for meeting in tree().allMeetings {
+        for meeting in tree.allMeetings {
             guard let file = try? resolveInside(root, meeting.path).appendingPathComponent("todo.md"),
                   FileManager.default.exists(file) else { continue }
             out.append(MeetingTodos(path: meeting.path, title: meeting.title ?? meeting.name, startedAt: meeting.startedAt, todo: readText(file)))

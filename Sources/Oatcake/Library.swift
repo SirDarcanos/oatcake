@@ -21,7 +21,13 @@ final class Library {
     var tree: TreeNode?
     /// Bumps on every change on disk, so open meetings re-read their files.
     var diskVersion = 0
-    var todoMeetings: [MeetingTodos] = []
+    /// Every meeting's to-dos as last read, and what's worked out from them when they're read (not
+    /// each time something that shows them is redrawn): each to-do as an item, and the sidebar's counts.
+    private(set) var todoMeetings: [MeetingTodos] = []
+    private(set) var todoItems: [TodoItem] = []
+    private(set) var todoCounts: (open: Int, overdue: Int) = (0, 0)
+    /// The day the counts were made on: what's overdue changes at midnight.
+    private var countedOn = Date.distantPast
     /// What the last import from Granola or Quill did, in words, and whether it failed. Kept here
     /// rather than in Settings' row, so it's still there if Settings was closed while it ran.
     var importOutcomes: [String: (text: String, failed: Bool)] = [:]
@@ -177,8 +183,22 @@ final class Library {
         }
     }
 
-    var todoCounts: (open: Int, overdue: Int) {
-        let items = allTodoItems(todoMeetings)
-        return (items.filter { !$0.todo.done }.count, items.filter { $0.isOverdue() }.count)
+    /// The to-dos as just read from the Meetings folder.
+    func setTodos(_ todos: [MeetingTodos]) {
+        // Unchanged, on the same day: what was worked out still stands.
+        if todos == todoMeetings, Calendar.current.isDateInToday(countedOn) { return }
+        todoMeetings = todos
+        todoItems = allTodoItems(todos)
+        countTodos()
+    }
+
+    /// Counted again when the day has changed since, so yesterday's "due today" becomes overdue.
+    func countTodosIfNewDay() {
+        if !Calendar.current.isDateInToday(countedOn) { countTodos() }
+    }
+
+    private func countTodos() {
+        todoCounts = (todoItems.filter { !$0.todo.done }.count, todoItems.filter { $0.isOverdue() }.count)
+        countedOn = Date()
     }
 }

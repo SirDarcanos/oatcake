@@ -6,10 +6,12 @@ struct TodosView: View {
     @Environment(AppModel.self) private var model
     enum Status: Hashable { case open, done, all }
     enum Grouping: Hashable { case due, folder, owner }
+    /// Whose to-dos are listed.
+    enum Owner: Hashable { case everyone, mine, named(String) }
 
     @ViewState private var status = Status.open
     @ViewState private var grouping = Grouping.due
-    @ViewState private var owner = "all"
+    @ViewState private var owner = Owner.everyone
     @ViewState private var adding = false
     @ViewState private var draft = ""
     /// A list's text straight after a tick or an add here, until the app has read it back from disk,
@@ -22,16 +24,21 @@ struct TodosView: View {
     var body: some View {
         let myName = model.config.myName
         let today = Calendar.current.startOfDay(for: Date())
-        let items = allTodoItems(model.library.todoMeetings.map { m in
-            var m = m
-            if let text = local[m.path] { m.todo = text }
-            return m
-        })
+        // The items were worked out when the to-dos were read. Only a list just ticked or added to
+        // here is read afresh, from its text as it is now.
+        let items = local.isEmpty ? model.library.todoItems
+            : model.library.todoItems.filter { local[$0.meeting.path] == nil } + allTodoItems(model.library.todoMeetings.compactMap { m in
+                local[m.path].map { text in with(m) { $0.todo = text } }
+            })
         let open = items.filter { !$0.todo.done }
         let overdue = items.filter { $0.isOverdue(today: today) }
         // One ticked in Open leaves the list at once. It's under Done, where a mis-tick can be undone.
         var list = items.filter { status == .open ? !$0.todo.done : status == .done ? $0.todo.done : true }
-        if owner == "mine" { list = list.filter { isMe($0.todo.owner, myName) } } else if owner != "all" { list = list.filter { $0.todo.owner == owner } }
+        switch owner {
+        case .everyone: break
+        case .mine: list = list.filter { isMe($0.todo.owner, myName) }
+        case .named(let name): list = list.filter { $0.todo.owner == name }
+        }
         list.sort { a, b in
             let da = a.dueDate ?? .distantFuture, db = b.dueDate ?? .distantFuture
             return da != db ? da < db : (a.meeting.startedAt ?? .distantPast) > (b.meeting.startedAt ?? .distantPast)
@@ -75,7 +82,7 @@ struct TodosView: View {
                     ForEach(group.items) { item in row(item, today: today, myName: myName) }
                 }
                 if groups.isEmpty {
-                    Text(status == .done ? "Nothing ticked off yet." : owner == "all" ? "No open to-dos." : "No open to-dos for this person.")
+                    Text(status == .done ? "Nothing ticked off yet." : owner == .everyone ? "No open to-dos." : "No open to-dos for this person.")
                         .foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 40)
                 }
             }
@@ -105,9 +112,9 @@ struct TodosView: View {
                 }
                 .fixedSize()
                 Picker("Owner", selection: $owner) {
-                    Text("Everyone").tag("all")
-                    Text("Mine").tag("mine")
-                    ForEach(owners, id: \.self) { Text($0).tag($0) }
+                    Text("Everyone").tag(Owner.everyone)
+                    Text("Mine").tag(Owner.mine)
+                    ForEach(owners, id: \.self) { Text($0).tag(Owner.named($0)) }
                 }
                 .fixedSize()
             }

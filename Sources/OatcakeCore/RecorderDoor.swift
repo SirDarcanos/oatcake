@@ -6,6 +6,7 @@
 import Foundation
 import RecorderContract
 
+// Sendable by its lock: recorders are answered on a thread of the door's own.
 public final class RecorderDoor: @unchecked Sendable {
     private let lock = NSLock()
     private var wanted = Set<String>()

@@ -49,8 +49,13 @@ public struct CalendarCache: Codable, Equatable, Sendable {
     public var checkedAt: String?
     /// Last successful fetch.
     public var updatedAt: String?
+    /// Why the last fetch failed, if it did: the reason alone ("the calendar took too long to answer").
     public var error: String?
     public var events: [CalendarEvent] = []
+
+    /// The failed fetch as a sentence to show.
+    public var failure: String? { error.map { Self.failurePrefix + $0 } }
+    static let failurePrefix = "Couldn't update the calendar: "
 
     public static func load(_ file: URL = Paths.calendar) -> CalendarCache { tryJSON(CalendarCache.self, file) ?? CalendarCache() }
 
@@ -63,6 +68,18 @@ public struct CalendarCache: Codable, Equatable, Sendable {
     public func isStale(now: Date = Date()) -> Bool {
         guard let checked = parseISO(checkedAt) else { return true }
         return now.timeIntervalSince(checked) >= 3600
+    }
+}
+
+extension CalendarCache {
+    // Read field by field for one reason: a cache written by an earlier version kept the whole
+    // sentence in `error`, and the reason is taken back out of it.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        checkedAt = try c.decodeIfPresent(String.self, forKey: .checkedAt)
+        updatedAt = try c.decodeIfPresent(String.self, forKey: .updatedAt)
+        events = try c.decodeIfPresent([CalendarEvent].self, forKey: .events) ?? []
+        error = try c.decodeIfPresent(String.self, forKey: .error).map { $0.hasPrefix(Self.failurePrefix) ? String($0.dropFirst(Self.failurePrefix.count)) : $0 }
     }
 }
 
@@ -119,7 +136,7 @@ public func fetchCalendar(_ address: String, cache: URL = Paths.calendar) async 
         let message = (error as? URLError)?.code == .timedOut ? "the calendar took too long to answer" : error.localizedDescription
         var cache = previous
         cache.checkedAt = checkedAt
-        cache.error = "Couldn't update the calendar: \(message)"
+        cache.error = message
         return cache
     }
 }
