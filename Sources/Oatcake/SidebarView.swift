@@ -188,7 +188,7 @@ struct SidebarView: View {
             Color.clear.frame(width: 12, height: 16)
             Label(meetingTitle(m), systemImage: "doc.text").lineLimit(1)
             Spacer()
-            if let date = m.startedAt { Text("\(shortMonth(date)) \(gregorian.component(.day, from: date))").foregroundStyle(.secondary).monospacedDigit() }
+            if let date = meetingDate(m) { Text("\(shortMonth(date)) \(gregorian.component(.day, from: date))").foregroundStyle(.secondary).monospacedDigit() }
         }
         .draggable(dragPrefix + m.path)
     }

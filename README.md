@@ -107,7 +107,8 @@ your own, on your Mac or your network, instead.
 The window has three columns: the sidebar (a recording in progress, Upcoming from your
 calendar, Needs review, and your folders, then any meetings at the top level, listed by their
 call's title), the meetings in the selected folder, and the meeting itself. A one-off call with
-no folder of its own is saved at the top level; drag it onto a folder to file it. Settings (⌘,) is its own window, in panes; changes apply as you make them.
+no folder of its own is saved at the top level; drag it onto a folder to file it. Settings (⌘,)
+is its own window, in panes; changes apply as you make them.
 ⌘N starts a new recording, ⌥⌘F searches every meeting from the box above the meeting list (its
 title, folder, summary, to-dos, notes and transcript; a meeting found by its text shows the line
 with the words and opens there), and ⌘F finds words in the transcript you're reading. ⇧⌘N makes a
