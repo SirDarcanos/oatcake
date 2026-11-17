@@ -45,6 +45,31 @@ import Testing
         #expect(old == event.attendees[0] && old.declined == nil)
     }
 
+    /// Events that aren't calls are left out by title, from the list in Settings › Calendar: at the
+    /// start of the title as whole words, or "Oatcake ignore" anywhere. The feed itself keeps them all,
+    /// so a change to the list counts straight away.
+    @Test func eventsThatArentCalls() throws {
+        let ignored = Config.defaultIgnoredEvents
+        for title in ["Focus time", "Out of office", "Task", "Working location", "  FOCUS TIME  ", "out OF office", " task ",
+                      "Focus time: read emails", "Out of office — holiday", "Task planning", "Working location: home",
+                      "Oatcake ignore", "Lunch — Oatcake ignore", "Before OATCAKE IGNORE after"] {
+            #expect(ignoredEvent(title, ignored), "\(title) should be left out")
+        }
+        for title in ["Sync", "Review focus time", "Discuss out of office coverage", "Weekly task review", "Taskforce sync",
+                      "Tasks review", "Focus timeline", "Oatcake planning", "Ignore this reminder"] {
+            #expect(!ignoredEvent(title, ignored), "\(title) should be kept")
+        }
+        #expect(!ignoredEvent("Focus time", []) && ignoredEvent("1:1 prep", ["1:1 prep", " "]) && !ignoredEvent("Sync", [" ", ""]))
+        let from = parseISO("2026-11-01T00:00:00Z")!, to = parseISO("2026-12-01T00:00:00Z")!
+        let ics = feed("DTSTART:20261110T100000Z", "DTEND:20261110T103000Z").replacingOccurrences(of: "SUMMARY:Sync", with: "SUMMARY:Focus time")
+        #expect(parseCalendar(ics, from: from, to: to).map(\.title) == ["Focus time"])
+        // Older settings without the list get Google's names; an emptied list stays empty.
+        #expect(try JSONDecoder().decode(Config.self, from: Data("{}".utf8)).ignoredEvents == ignored)
+        var config = Config.defaults()
+        config.ignoredEvents = []
+        #expect(try JSONDecoder().decode(Config.self, from: Data(try encodeJSON(config).utf8)).ignoredEvents == [])
+    }
+
     @Test func callLinks() {
         #expect(callApp("https://meet.google.com/abc") == "Google Meet")
         #expect(callApp("https://acme.zoom.us/j/1") == "Zoom")

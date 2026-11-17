@@ -518,7 +518,13 @@ Settings in the app (stored in `~/Library/Application Support/Oatcake/config.jso
   Keychain, not in `config.json`, and Settings shows only that one is saved. Oatcake fetches it once an
   hour, or when you press ↻ next to Upcoming, and keeps events from yesterday to two weeks
   ahead in `calendar.json`. Upcoming in the sidebar lists the rest of today and tomorrow
-  (events you declined are left out). Clicking one starts a new recording named after it, in
+  (events you declined are left out). So are events that aren't calls: ones whose titles start
+  with a name in Settings › Calendar › Events that aren't calls ("Focus time", "Out of office",
+  "Working location" and "Task" to begin with), as whole words, or that have "Oatcake ignore"
+  anywhere in the title. They're kept out of the menu bar and reminders too. iCal doesn't say
+  which events are Google's focus-time or out-of-office blocks, so a block renamed to something
+  else still appears, and a call whose title starts with one of those names doesn't. Clicking an
+  event starts a new recording named after it, in
   the folder with the same name or path ("Sam & Alex 1:1" finds "Sam & Alex 1-1", "Product –
   Weekly sync" finds "Product › Weekly sync"), or offers a new folder for a recurring event
   with none; "Join the call" opens its Meet, Zoom or Teams link (only links on those services'

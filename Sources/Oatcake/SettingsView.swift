@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @ViewState private var devices: [InputDevice]?
     @ViewState private var jargon = ""
+    @ViewState private var ignoredEvents = ""
     /// macOS says notifications are turned off for Oatcake: reminders and call notices can't show.
     @ViewState private var notificationsOff = false
     @AppStorage("settingsPane") private var pane = "general"
@@ -32,6 +33,7 @@ struct SettingsView: View {
         .task(id: pane) { notificationsOff = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .denied }
         .onAppear {
             jargon = model.config.jargon.joined(separator: ", ")
+            ignoredEvents = model.config.ignoredEvents.joined(separator: ", ")
             // The Electron version's names for the two transcription choices read as the new ones.
             let key = SpeechModels.asrChoice(model.config.asrModel).key
             if key != model.config.asrModel { model.saveConfig(with(model.config) { $0.asrModel = key }) }
@@ -119,6 +121,21 @@ struct SettingsView: View {
             Text("In Google Calendar, open Settings, pick your calendar under “Settings for my calendars”, then copy “Secret address in iCal format” from the Integrate calendar section. Without one, Upcoming is hidden.")
                 .settingsHint()
         }
+        // Typed as one comma-separated line, like Jargon; kept as a list.
+        Section {
+            TextField("Leave out", text: $ignoredEvents, prompt: Text("Focus time, Out of office"), axis: .vertical)
+                .lineLimit(1...4)
+                .labelsHidden()
+                .onChange(of: ignoredEvents) {
+                    let titles = ignoredEvents.split(whereSeparator: { $0 == "," || $0.isNewline }).map { String($0).trimmed }.filter { !$0.isEmpty }
+                    if titles != model.config.ignoredEvents { model.saveConfig(with(model.config) { $0.ignoredEvents = titles }) }
+                }
+        } header: {
+            Text("Events that aren’t calls")
+        } footer: {
+            Text("Separated by commas. Events whose titles start with one of these, or have “Oatcake ignore” anywhere in them, are left out of Upcoming, the menu bar and reminders. Capitals don’t matter, and “Task” doesn’t leave out “Taskforce sync”.")
+                .settingsHint()
+        }
     }
 
     @ViewBuilder private var transcription: some View {
@@ -194,7 +211,7 @@ struct SettingsView: View {
             return calendar.updatedAt != nil ? "Last fetch failed: \(error)" : failure
         }
         if let updated = parseISO(calendar.updatedAt) {
-            let upcoming = calendar.events.filter { $0.endDate > Date() }.count
+            let upcoming = model.calendar.events.filter { $0.endDate > Date() }.count
             return "Updated \(hhmm(updated)) · \(upcoming) upcoming event\(upcoming == 1 ? "" : "s")"
         }
         return "Fetching…"

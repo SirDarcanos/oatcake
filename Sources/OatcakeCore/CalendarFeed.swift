@@ -83,6 +83,23 @@ extension CalendarCache {
     }
 }
 
+/**
+ * Whether an event is left out of Upcoming, the menu bar and reminders: its title starts with one of
+ * `ignored` (Settings › Calendar) as whole words, or has "Oatcake ignore" anywhere in it. Case and
+ * surrounding spaces don't count. iCal doesn't say which events are Google's focus time or
+ * out-of-office blocks, so their titles are all there is to go on.
+ */
+public func ignoredEvent(_ title: String, _ ignored: [String]) -> Bool {
+    let title = title.trimmed.lowercased()
+    if title.contains("oatcake ignore") { return true }
+    return ignored.contains { entry in
+        let entry = entry.trimmed.lowercased()
+        guard !entry.isEmpty, title.hasPrefix(entry) else { return false }
+        // "Task" leaves out "Task: file report", not "Taskforce sync".
+        return title.dropFirst(entry.count).first.map { !$0.isLetter && !$0.isNumber } ?? true
+    }
+}
+
 /// Video-call services, by the exact host (or parent domain) their links use.
 private let callHosts: [(name: String, pattern: String)] = [
     ("Google Meet", #"^meet\.google\.com$"#),
