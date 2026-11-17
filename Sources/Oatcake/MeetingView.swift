@@ -246,7 +246,7 @@ struct MeetingView: View {
             }
             let what = tab == .summary ? "summary and to-dos" : tab == .transcript ? "transcript" : "notes"
             Button { copy() } label: { Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") }
-                .help("Copy the \(what) as Markdown")
+                .help("Copy the \(what), formatted (as Markdown where only plain text can go)")
             ShareLink(item: shareText, subject: Text(meetingTitle(node))) { Label("Share", systemImage: "square.and.arrow.up") }
                 .help("Send the \(what) with Mail, Messages or another app")
             Button { model.library.reveal(path) } label: { Label("Show in Finder", systemImage: "arrow.up.forward.square") }
@@ -282,8 +282,11 @@ struct MeetingView: View {
     }
 
     private func copy() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(shareText, forType: .string)
+        // Formatted for documents and mail, and the Markdown for anything that only takes plain text.
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(clipboardHTML(shareText), forType: .html)
+        pasteboard.setString(shareText, forType: .string)
         copied = true
         Task {
             try? await Task.sleep(for: .seconds(1.5))
