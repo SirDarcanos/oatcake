@@ -78,9 +78,17 @@ extension CalendarCache {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         checkedAt = try c.decodeIfPresent(String.self, forKey: .checkedAt)
         updatedAt = try c.decodeIfPresent(String.self, forKey: .updatedAt)
-        events = try c.decodeIfPresent([CalendarEvent].self, forKey: .events) ?? []
+        events = (try c.decodeIfPresent([CalendarEvent].self, forKey: .events) ?? []).filter { !ignoredCalendarTitle($0.title) }
         error = try c.decodeIfPresent(String.self, forKey: .error).map { $0.hasPrefix(Self.failurePrefix) ? String($0.dropFirst(Self.failurePrefix.count)) : $0 }
     }
+}
+
+/// iCal doesn't preserve Google's event types. Use title labels for non-meeting blocks, and
+/// an opt-out marker anywhere in the title. Shared by fresh feeds and caches from older versions.
+private func ignoredCalendarTitle(_ title: String) -> Bool {
+    let title = title.trimmed.lowercased()
+    return title.contains("oatcake ignore")
+        || ["focus time", "out of office", "task", "working location"].contains { title.hasPrefix($0) }
 }
 
 /// Video-call services, by the exact host (or parent domain) their links use.
@@ -390,7 +398,7 @@ public func parseCalendar(_ text: String, from: Date, to: Date) -> [CalendarEven
     func add(_ event: ICalEvent, start: Date, end: Date, isDate: Bool, seriesId: String?) {
         guard end > from, start < to else { return }
         let c = event.component
-        if (c.first("STATUS")?.value ?? "").uppercased() == "CANCELLED" { return }
+        if (c.first("STATUS")?.value ?? "").uppercased() == "CANCELLED" || ignoredCalendarTitle(event.summary) { return }
         let attendees = c.all("ATTENDEE").map { p -> (email: String, name: String?, declined: Bool, resource: Bool) in
             let email = p.value.replacingOccurrences(of: "^mailto:", with: "", options: [.regularExpression, .caseInsensitive]).lowercased()
             let name = p.params["CN"].flatMap { $0.isEmpty ? nil : $0 }
