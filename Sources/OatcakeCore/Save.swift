@@ -146,17 +146,8 @@ public func writeSummary(_ config: Config, meeting rel: String) async throws {
 
 /// Puts a summary and its to-dos into a meeting. To-dos already in todo.md are kept. The meeting is
 /// named here rather than when the model was asked, because it can be renamed or moved meanwhile.
-/// When replacing a summary, keep to-dos untouched and refuse to overwrite intervening edits.
-public func writeSummary(_ draft: SummaryDraft, config: Config, meeting rel: String, replacingSummary: String? = nil) throws {
+public func writeSummary(_ draft: SummaryDraft, config: Config, meeting rel: String) throws {
     let meetings = Meetings(root: config.meetingsRoot)
-    if let replacingSummary {
-        guard try meetings.read(rel).summary == replacingSummary else {
-            throw OatcakeError("The summary changed while it was being regenerated. Your changes were kept. Try regenerating it again.")
-        }
-        guard !draft.summary.trimmed.isEmpty else { throw OatcakeError("The model returned an empty summary. Your previous summary was kept.") }
-        try meetings.write(rel, .summary, draft.summary)
-        return
-    }
     // Anything typed into the summary while the model was writing stays, with the model's below it.
     let typed = try meetings.read(rel).summary.replacingOccurrences(of: #"\s*$"#, with: "", options: .regularExpression)
     try meetings.write(rel, .summary, typed.trimmed.isEmpty ? draft.summary : typed + "\n\n" + draft.summary)
@@ -167,14 +158,34 @@ public func writeSummary(_ draft: SummaryDraft, config: Config, meeting rel: Str
     }
 }
 
-/// Asks the model for a meeting's summary and to-dos. Nothing is written.
-public func draftSummary(_ config: Config, meeting rel: String) async throws -> SummaryDraft {
+/// What Regenerate writes again: a meeting's summary, or its to-dos.
+public enum SummaryPart: Sendable { case summary, todos }
+
+/// Regenerate: puts a new draft of one part in place of the old one. `previous` is that part as it was
+/// when the model was asked. If it has changed since (edited somewhere else), nothing is written.
+public func writeRegenerated(_ part: SummaryPart, _ draft: SummaryDraft, config: Config, meeting rel: String, previous: String) throws {
+    let meetings = Meetings(root: config.meetingsRoot)
+    let now = try meetings.read(rel)
+    switch part {
+    case .summary:
+        guard now.summary == previous else { throw OatcakeError("The summary was changed while it was being regenerated.") }
+        guard !draft.summary.trimmed.isEmpty else { throw OatcakeError("The model returned an empty summary.") }
+        try meetings.write(rel, .summary, draft.summary)
+    case .todos:
+        guard now.todo == previous else { throw OatcakeError("The to-dos were changed while they were being regenerated.") }
+        if let problem = draft.todoProblem { throw OatcakeError(problem) }
+        try meetings.write(rel, .todo, draft.todo)
+    }
+}
+
+/// Asks the model for a meeting's summary and to-dos, or for just one of them. Nothing is written.
+public func draftSummary(_ config: Config, meeting rel: String, only part: SummaryPart? = nil) async throws -> SummaryDraft {
     let meetings = Meetings(root: config.meetingsRoot)
     let files = try meetings.read(rel)
     guard !files.transcript.trimmed.isEmpty else { throw OatcakeError("This meeting has no transcript to summarise.") }
     let notes = parseNotes(files.notes).map { Note(at: $0.stamp.map(seconds), text: $0.text) }
     return try await summarise(config, title: titleOfMeeting(rel, files.meta), participants: files.meta.participants ?? [config.myName],
-                               notes: notes, transcript: files.transcript)
+                               notes: notes, transcript: files.transcript, only: part)
 }
 
 /// A paragraph of the transcript runs for about this long at most before the next pause starts a new one.
@@ -248,7 +259,7 @@ let todosSchema = #"{"type":"object","properties":{"todos":{"type":"array","item
  * has just read the same transcript. A call too long for the model to take in at once on this Mac
  * is done in parts, and the parts' notes are joined.
  */
-private func summarise(_ config: Config, title: String, participants: [String], notes: [Note], transcript: String) async throws -> SummaryDraft {
+private func summarise(_ config: Config, title: String, participants: [String], notes: [Note], transcript: String, only: SummaryPart?) async throws -> SummaryDraft {
     // The notes stay the note-taker's own (notes.md). Here they only tell the model what mattered.
     let notesBlock = notes.isEmpty ? "" : ([
         "\(config.myName) took these notes ([mm:ss] = time into the call; \"before the call\" = prep written",
@@ -272,15 +283,22 @@ private func summarise(_ config: Config, title: String, participants: [String], 
         let which = parts.count > 1 ? ", part \(i + 1) of \(parts.count)" : ""
         let prompt = "\(head)\n\nTranscript ([mm:ss] is the time into the call)\(which):\n\(part)\n\n"
         let (summary, items) = try await withModel(config.llm, tokens: LocalModels.tokens(in: prompt) + overhead) { model, _ in
-            (summaryBody(try await model.complete([system, ChatMessage("user", prompt + summaryTask)], think: reasoning.summary, maxTokens: replyTokens)),
-             todoLines(try await model.complete([system, ChatMessage("user", prompt + todosTask)], schema: todosSchema, think: reasoning.todos, maxTokens: replyTokens)))
+            // Regenerate asks only for the part being written again.
+            var summary = "", items: [String]? = []
+            if only != .todos {
+                summary = summaryBody(try await model.complete([system, ChatMessage("user", prompt + summaryTask)], think: reasoning.summary, maxTokens: replyTokens))
+            }
+            if only != .summary {
+                items = todoLines(try await model.complete([system, ChatMessage("user", prompt + todosTask)], schema: todosSchema, think: reasoning.todos, maxTokens: replyTokens))
+            }
+            return (summary, items)
         }
         summaries.append(summary)
         todos += items ?? []
         if items == nil { todosUnread = true }
     }
     var summary = summaries.first ?? ""
-    if summaries.count > 1 {
+    if summaries.count > 1, only != .todos {
         let joined = summaries.enumerated().map { "Notes on part \($0 + 1) of \(summaries.count):\n\($1)" }.joined(separator: "\n\n")
         let prompt = "\(head)\n\nThe meeting was long, so notes were written on each part of it in turn. Here they are, in order.\n\n\(joined)\n\n\(mergeTask)\n\(summaryTask)"
         summary = try await withModel(config.llm, tokens: LocalModels.tokens(in: prompt) + replyTokens) { model, _ in

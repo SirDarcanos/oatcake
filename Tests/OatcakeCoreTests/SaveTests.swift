@@ -51,8 +51,9 @@ import Testing
         #expect(try meetings.read(renamed).summary == "My own line.\n\n## Topic\nDone.\n")
     }
 
-    /// Regeneration replaces only the summary after a successful draft, and protects intervening edits.
-    @Test func replacesSummaryWithoutChangingOtherFiles() throws {
+    /// Regenerate puts the new part in place of the old and leaves the rest of the meeting alone. It
+    /// writes nothing when that part was changed meanwhile, or the model's answer is empty or unreadable.
+    @Test func regenerateReplacesOnePart() throws {
         let meetings = TestMeetings()
         defer { meetings.remove() }
         let rel = "Team/2026-11-09 1000 Weekly sync"
@@ -65,17 +66,28 @@ import Testing
         config.outputDir = meetings.root.path
         let before = try Meetings(root: meetings.root).read(rel)
         let draft = SummaryDraft(summary: "## New summary\nA decision.\n", todo: "- [ ] Generated task\n")
-        try writeSummary(draft, config: config, meeting: rel, replacingSummary: old)
-        let after = try Meetings(root: meetings.root).read(rel)
+        try writeRegenerated(.summary, draft, config: config, meeting: rel, previous: old)
+        var after = try Meetings(root: meetings.root).read(rel)
         #expect(after.summary == draft.summary)
         #expect(after.transcript == before.transcript && after.notes == before.notes && after.todo == before.todo && after.meta == before.meta)
-        // A summary changed in another editor during generation is never silently replaced.
-        #expect(throws: (any Error).self) { try writeSummary(draft, config: config, meeting: rel, replacingSummary: old) }
-        #expect(try Meetings(root: meetings.root).read(rel).summary == draft.summary)
+        try writeRegenerated(.todos, draft, config: config, meeting: rel, previous: before.todo)
+        after = try Meetings(root: meetings.root).read(rel)
+        #expect(after.todo == draft.todo && after.summary == draft.summary && after.notes == before.notes)
+        // Changed in another editor while the model was writing: what's there now stays.
+        #expect(throws: (any Error).self) { try writeRegenerated(.summary, draft, config: config, meeting: rel, previous: old) }
+        #expect(throws: (any Error).self) { try writeRegenerated(.todos, draft, config: config, meeting: rel, previous: before.todo) }
+        // An empty summary, or to-dos that couldn't be read from the model's reply: the old ones stay.
         #expect(throws: (any Error).self) {
-            try writeSummary(SummaryDraft(summary: " \n", todo: ""), config: config, meeting: rel, replacingSummary: draft.summary)
+            try writeRegenerated(.summary, SummaryDraft(summary: " \n", todo: ""), config: config, meeting: rel, previous: draft.summary)
         }
-        #expect(try Meetings(root: meetings.root).read(rel).summary == draft.summary)
+        #expect(throws: (any Error).self) {
+            try writeRegenerated(.todos, SummaryDraft(summary: "", todo: "", todoProblem: todosUnreadMessage), config: config, meeting: rel, previous: draft.todo)
+        }
+        after = try Meetings(root: meetings.root).read(rel)
+        #expect(after.summary == draft.summary && after.todo == draft.todo)
+        // A call the model now finds no to-dos in: the list is emptied.
+        try writeRegenerated(.todos, SummaryDraft(summary: "", todo: ""), config: config, meeting: rel, previous: draft.todo)
+        #expect(try Meetings(root: meetings.root).read(rel).todo == "")
     }
 
     /// Two voices merged into one person in review give one fingerprint for the call, from the one

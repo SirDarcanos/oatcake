@@ -46,6 +46,8 @@ final class Jobs {
     /// Meetings whose summary is being written now, and why the last attempt failed, by path.
     var summarising = Set<String>()
     var summaryErrors: [String: String] = [:]
+    /// What Regenerate is writing again, by path; kept after a failure, so Try again knows what to retry.
+    var regenerating: [String: SummaryPart] = [:]
     /// Where each meeting being summarised lives now: it can be renamed or moved while the model writes.
     private var summaryJobs: [UUID: String] = [:]
     var reviewDrafts: [String: ReviewDraft] = [:]
@@ -81,6 +83,7 @@ final class Jobs {
         summarising = Set(summarising.map(remap))
         summaryJobs = summaryJobs.mapValues(remap)
         summaryErrors = Dictionary(summaryErrors.map { (remap($0.key), $0.value) }, uniquingKeysWith: { a, _ in a })
+        regenerating = Dictionary(regenerating.map { (remap($0.key), $0.value) }, uniquingKeysWith: { a, _ in a })
         todoProblems = Dictionary(todoProblems.map { (remap($0.key), $0.value) }, uniquingKeysWith: { a, _ in a })
         // A recording waiting in Who's who is still saved into the folder it was set to, wherever that is now.
         reviewDrafts = reviewDrafts.mapValues { draft in with(draft) { $0.folder = remap($0.folder) } }
@@ -181,35 +184,50 @@ final class Jobs {
         tidying.async { Recordings.tidySaved(meetingsRoot: root) }
     }
 
-    /// Replacing an existing summary is explicit: the old one stays until the model succeeds.
-    func regenerateSummary(_ path: String) {
+    /// Regenerate summary or Regenerate to-dos: asks first, as it replaces what's there. The old one
+    /// stays until the new one is written.
+    func regenerate(_ part: SummaryPart, _ path: String) {
         guard !summarising.contains(path) else { return }
-        app.confirm(Confirmation(title: "Regenerate this summary?",
-                                 text: "The new summary will use your current instructions in Settings and replace the existing summary, including any edits. Your transcript, notes and to-dos will be kept.",
-                                 ok: "Regenerate summary", cancel: "Cancel") { [self] in
-            writeSummary(path, regenerate: true)
-        })
+        let confirmation = part == .summary
+            ? Confirmation(title: "Regenerate this summary?",
+                           text: "It’s written again with your current instructions in Settings and replaces this summary, including any edits. Your transcript, notes and to-dos are kept.",
+                           ok: "Regenerate summary", cancel: "Cancel") { [self] in writeSummary(path, only: .summary) }
+            : Confirmation(title: "Regenerate these to-dos?",
+                           text: "They’re written again with your current instructions in Settings and replace these to-dos, including any you’ve ticked, added or edited. Your transcript, notes and summary are kept.",
+                           ok: "Regenerate to-dos", cancel: "Cancel") { [self] in writeSummary(path, only: .todos) }
+        app.confirm(confirmation)
     }
 
-    /// Writes a saved meeting's summary in the background. Regeneration preserves existing to-dos;
-    /// the normal first-write/retry path also collects to-dos.
-    func writeSummary(_ path: String, regenerate: Bool = false) {
+    /// Writes a saved meeting's summary and to-dos in the background: after every save, and from
+    /// Write summary when an earlier attempt couldn't reach the model. With `only`, that one part is
+    /// written again in place of what's there (Regenerate).
+    func writeSummary(_ path: String, only part: SummaryPart? = nil) {
         guard !summarising.contains(path) else { return }
         summarising.insert(path)
         summaryErrors.removeValue(forKey: path)
-        if !regenerate { todoProblems.removeValue(forKey: path) }
+        if part != .summary { todoProblems.removeValue(forKey: path) }
+        regenerating[path] = part
         let job = UUID()
         summaryJobs[job] = path
         let config = config
         Task {
             do {
-                let previous = regenerate ? try Meetings(root: config.meetingsRoot).read(summaryJobs[job] ?? path).summary : nil
+                // What's there now: if it's changed by the time the model is done, it isn't replaced.
+                let previous = try part.map { part in
+                    let files = try Meetings(root: config.meetingsRoot).read(path)
+                    return part == .summary ? files.summary : files.todo
+                }
                 try await downloads.ensureModel()
                 // Where the meeting is now: it may have been renamed or moved while the model downloaded.
-                let draft = try await OatcakeCore.draftSummary(config, meeting: summaryJobs[job] ?? path)
-                try OatcakeCore.writeSummary(draft, config: config, meeting: summaryJobs[job] ?? path, replacingSummary: previous)
-                // Regeneration keeps the existing to-dos, so their status hasn't changed.
-                if !regenerate, let problem = draft.todoProblem { todoProblems[summaryJobs[job] ?? path] = problem }
+                let draft = try await OatcakeCore.draftSummary(config, meeting: summaryJobs[job] ?? path, only: part)
+                if let part, let previous {
+                    try OatcakeCore.writeRegenerated(part, draft, config: config, meeting: summaryJobs[job] ?? path, previous: previous)
+                    regenerating.removeValue(forKey: summaryJobs[job] ?? path)
+                } else {
+                    try OatcakeCore.writeSummary(draft, config: config, meeting: summaryJobs[job] ?? path)
+                    // The summary is there, but its to-dos couldn't be read from what the model sent.
+                    if let problem = draft.todoProblem { todoProblems[summaryJobs[job] ?? path] = problem }
+                }
             } catch {
                 summaryErrors[summaryJobs[job] ?? path] = error.localizedDescription
             }

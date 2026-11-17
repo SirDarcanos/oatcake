@@ -233,9 +233,16 @@ struct MeetingView: View {
                 .font(.callout)
             }
             if tab == .summary, !(files?[.summary] ?? "").trimmed.isEmpty {
-                Button { regenerateSummary() } label: { Label("Regenerate summary", systemImage: "arrow.clockwise") }
+                Menu {
+                    Button("Regenerate summary") { regenerate(.summary) }
+                    Button("Regenerate to-dos") { regenerate(.todos) }
+                } label: {
+                    // Named on the image too: a toolbar menu is read out by its image's name, "Refresh".
+                    Label { Text("Regenerate") } icon: { Image(systemName: "arrow.clockwise").accessibilityLabel("Regenerate") }
+                }
+                    .accessibilityLabel("Regenerate")
                     .disabled(model.jobs.summarising.contains(path) || (files?[.transcript] ?? "").trimmed.isEmpty)
-                    .help("Replace this summary using the current instructions in Settings")
+                    .help("Write the summary or the to-dos again with the current instructions in Settings")
             }
             let what = tab == .summary ? "summary and to-dos" : tab == .transcript ? "transcript" : "notes"
             Button { copy() } label: { Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") }
@@ -327,19 +334,23 @@ struct MeetingView: View {
                         Notice(tone: .grey) { Text(granolaNotice(files)) }.padding(.top, 14)
                     }
                     Spacer().frame(height: 22)
-                    if tab == .summary, !(files[.summary] ?? "").trimmed.isEmpty {
+                    if tab == .summary, let part = model.jobs.regenerating[path] {
+                        let what = part == .summary ? "summary" : "to-dos"
                         if model.jobs.summarising.contains(path) {
                             Notice(tone: .blue) {
-                                Text("Regenerating the summary…").fontWeight(.semibold)
-                                Text("Your previous summary is kept until the new one is ready.")
+                                Text("Regenerating the \(what)…").fontWeight(.semibold)
+                                Text(part == .summary ? "Your summary stays until the new one is ready." : "Your to-dos stay until the new ones are ready.")
                             }.padding(.bottom, 16)
                         } else if let error = model.jobs.summaryErrors[path] {
                             Notice(tone: .red) {
-                                ModelError(raw: error, prefix: "Couldn’t regenerate it. ")
-                                Text("Your previous summary was kept.")
-                                Button("Try again") { regenerateSummary() }
-                                    .disabled((files[.transcript] ?? "").trimmed.isEmpty)
-                                SettingsPaneLink(pane: "summaries", title: "Open Settings").buttonStyle(.link)
+                                ModelError(raw: error, prefix: "Couldn’t regenerate the \(what). ")
+                                Text(part == .summary ? "Your previous summary was kept." : "Your previous to-dos were kept.")
+                                HStack(spacing: 10) {
+                                    Button("Try again") { regenerate(part) }
+                                        .disabled((files[.transcript] ?? "").trimmed.isEmpty)
+                                    SettingsPaneLink(pane: "summaries", title: "Open Settings").buttonStyle(.link)
+                                }
+                                .padding(.top, 6)
                             }.padding(.bottom, 16)
                         }
                     }
@@ -492,11 +503,11 @@ struct MeetingView: View {
         }
     }
 
-    private func regenerateSummary() {
+    private func regenerate(_ part: SummaryPart) {
         // Save edits before asking for a replacement; a failed save must not discard pending text.
         flush()
         guard pending.isEmpty else { return }
-        model.jobs.regenerateSummary(path)
+        model.jobs.regenerate(part, path)
     }
 
     /// A meeting without its summary: it's being written now (after a save), or the model couldn't
