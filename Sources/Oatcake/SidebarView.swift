@@ -5,7 +5,7 @@ import SwiftUI
 let dragPrefix = "oatcake-item:"
 
 enum SidebarItem: Hashable {
-    case live, todos, job(String), folder(String)
+    case live, todos, job(String), folder(String), meeting(String)
 }
 
 /// A section's header runs closer to the sidebar's edge than its rows do. This brings a button at the
@@ -36,7 +36,10 @@ struct SidebarView: View {
                         FolderRow(node: item.node, depth: item.depth, open: $open, renaming: $renaming, draft: $draft,
                                   newFolderIn: $newFolderIn, dropTarget: $dropTarget)
                     }
-                    if tree.subfolders.isEmpty { Text("No folders yet.").foregroundStyle(.secondary).font(.callout) }
+                    // A one-off call with no folder of its own is saved at the top level. It's listed here
+                    // under its call's title, after the folders, to open or to drag into one.
+                    ForEach(tree.meetings, id: \.path) { m in topLevelRow(m).tag(SidebarItem.meeting(m.path)) }
+                    if tree.children.isEmpty { Text("No folders yet.").foregroundStyle(.secondary).font(.callout) }
                 }
             } header: {
                 HStack {
@@ -112,6 +115,7 @@ struct SidebarView: View {
             case .live: .live
             case .todos: .todos
             case .job(let id): .job(id)
+            case .meeting(let path, _) where parentOf(path).isEmpty: .meeting(path)
             case .meeting, .folder, nil: .folder(model.folder)
             case .new: nil
             }
@@ -121,6 +125,7 @@ struct SidebarView: View {
             case .todos: model.selection = .todos
             case .job(let id): model.selection = .job(id)
             case .folder(let path): model.openFolder(path)
+            case .meeting(let path): model.openMeeting(path)
             case nil: break
             }
         }
@@ -175,6 +180,17 @@ struct SidebarView: View {
                     .font(.caption).foregroundStyle(recording || failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary)).monospacedDigit()
             }
         }
+    }
+
+    private func topLevelRow(_ m: TreeNode) -> some View {
+        HStack(spacing: 4) {
+            // Where a folder's disclosure arrow is, so the names line up.
+            Color.clear.frame(width: 12, height: 16)
+            Label(meetingTitle(m), systemImage: "doc.text").lineLimit(1)
+            Spacer()
+            if let date = m.startedAt { Text("\(shortMonth(date)) \(gregorian.component(.day, from: date))").foregroundStyle(.secondary).monospacedDigit() }
+        }
+        .draggable(dragPrefix + m.path)
     }
 
     private var todosRow: some View {
