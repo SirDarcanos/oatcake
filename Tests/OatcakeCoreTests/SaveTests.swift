@@ -51,6 +51,33 @@ import Testing
         #expect(try meetings.read(renamed).summary == "My own line.\n\n## Topic\nDone.\n")
     }
 
+    /// Regeneration replaces only the summary after a successful draft, and protects intervening edits.
+    @Test func replacesSummaryWithoutChangingOtherFiles() throws {
+        let meetings = TestMeetings()
+        defer { meetings.remove() }
+        let rel = "Team/2026-11-09 1000 Weekly sync"
+        let old = "## Old summary\nMy edits.\n"
+        try meetings.write(rel, .summary, old)
+        try meetings.write(rel, .transcript, "**[00:00] Sam:** A decision.\n")
+        try meetings.write(rel, .notes, "- My notes\n")
+        try meetings.write(rel, .todo, "- [x] Done\n- [ ] My own task\n")
+        var config = Config.defaults()
+        config.outputDir = meetings.root.path
+        let before = try Meetings(root: meetings.root).read(rel)
+        let draft = SummaryDraft(summary: "## New summary\nA decision.\n", todo: "- [ ] Generated task\n")
+        try writeSummary(draft, config: config, meeting: rel, replacingSummary: old)
+        let after = try Meetings(root: meetings.root).read(rel)
+        #expect(after.summary == draft.summary)
+        #expect(after.transcript == before.transcript && after.notes == before.notes && after.todo == before.todo && after.meta == before.meta)
+        // A summary changed in another editor during generation is never silently replaced.
+        #expect(throws: (any Error).self) { try writeSummary(draft, config: config, meeting: rel, replacingSummary: old) }
+        #expect(try Meetings(root: meetings.root).read(rel).summary == draft.summary)
+        #expect(throws: (any Error).self) {
+            try writeSummary(SummaryDraft(summary: " \n", todo: ""), config: config, meeting: rel, replacingSummary: draft.summary)
+        }
+        #expect(try Meetings(root: meetings.root).read(rel).summary == draft.summary)
+    }
+
     /// Two voices merged into one person in review give one fingerprint for the call, from the one
     /// that spoke most. With no name set in Settings, your own lines are saved as "Me".
     @Test func mergedVoicesAndNoNameOfYourOwn() throws {

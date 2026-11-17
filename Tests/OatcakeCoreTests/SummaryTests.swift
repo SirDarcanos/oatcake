@@ -59,6 +59,33 @@ import Testing
         #expect(unread == SummaryDraft(summary: "## Deck\n- Friday.\n", todo: "", todoProblem: todosUnreadMessage))
     }
 
+    /// Regeneration uses the instructions supplied now, without clearing the previous summary first.
+    @Test func regenerationUsesCurrentInstructionsAndKeepsSummaryOnFailure() async throws {
+        let meetings = TestMeetings()
+        defer { meetings.remove() }
+        let rel = "Team/2026-11-09 1000 Weekly sync"
+        let old = "## Original\nKeep until the replacement succeeds.\n"
+        try meetings.write(rel, .summary, old)
+        try meetings.write(rel, .transcript, "**[00:00] Sam:** We agreed to ship on Friday.\n")
+        let server = try await StandIn.model { request in
+            request.json["response_format"] == nil ? "## Replacement\nShip on Friday.\n" : #"{"todos":[]}"#
+        }
+        var config = server.config
+        config.outputDir = meetings.root.path
+        config.summaryInstructions = "Write one sentence."
+        _ = try await draftSummary(config, meeting: rel)
+        config.summaryInstructions = "Write in Italian."
+        let draft = try await draftSummary(config, meeting: rel)
+        #expect(server.requests[0].messages.user.hasSuffix("Write one sentence."))
+        #expect(server.requests[2].messages.user.hasSuffix("Write in Italian."))
+        #expect(try Meetings(root: meetings.root).read(rel).summary == old)
+        try writeSummary(draft, config: config, meeting: rel, replacingSummary: old)
+        #expect(try Meetings(root: meetings.root).read(rel).summary == draft.summary)
+        config.llm = LlmConfig(model: LlmConfig.ownServer)
+        await #expect(throws: (any Error).self) { _ = try await draftSummary(config, meeting: rel) }
+        #expect(try Meetings(root: meetings.root).read(rel).summary == draft.summary)
+    }
+
     @Test func summaryPieces() {
         // Anything before the first heading goes, and a code fence around the lot.
         #expect(summaryBody("Sure!\n\n## Launch\n- Done.\n") == "## Launch\n- Done.")

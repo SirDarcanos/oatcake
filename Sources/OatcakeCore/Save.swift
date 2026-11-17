@@ -146,8 +146,17 @@ public func writeSummary(_ config: Config, meeting rel: String) async throws {
 
 /// Puts a summary and its to-dos into a meeting. To-dos already in todo.md are kept. The meeting is
 /// named here rather than when the model was asked, because it can be renamed or moved meanwhile.
-public func writeSummary(_ draft: SummaryDraft, config: Config, meeting rel: String) throws {
+/// When replacing a summary, keep to-dos untouched and refuse to overwrite intervening edits.
+public func writeSummary(_ draft: SummaryDraft, config: Config, meeting rel: String, replacingSummary: String? = nil) throws {
     let meetings = Meetings(root: config.meetingsRoot)
+    if let replacingSummary {
+        guard try meetings.read(rel).summary == replacingSummary else {
+            throw OatcakeError("The summary changed while it was being regenerated. Your changes were kept. Try regenerating it again.")
+        }
+        guard !draft.summary.trimmed.isEmpty else { throw OatcakeError("The model returned an empty summary. Your previous summary was kept.") }
+        try meetings.write(rel, .summary, draft.summary)
+        return
+    }
     // Anything typed into the summary while the model was writing stays, with the model's below it.
     let typed = try meetings.read(rel).summary.replacingOccurrences(of: #"\s*$"#, with: "", options: .regularExpression)
     try meetings.write(rel, .summary, typed.trimmed.isEmpty ? draft.summary : typed + "\n\n" + draft.summary)

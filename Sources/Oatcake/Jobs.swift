@@ -181,24 +181,35 @@ final class Jobs {
         tidying.async { Recordings.tidySaved(meetingsRoot: root) }
     }
 
-    /// Writes a saved meeting's summary and to-dos in the background: after every save, and from
-    /// Write summary when an earlier attempt couldn't reach the model.
-    func writeSummary(_ path: String) {
+    /// Replacing an existing summary is explicit: the old one stays until the model succeeds.
+    func regenerateSummary(_ path: String) {
+        guard !summarising.contains(path) else { return }
+        app.confirm(Confirmation(title: "Regenerate this summary?",
+                                 text: "The new summary will use your current instructions in Settings and replace the existing summary, including any edits. Your transcript, notes and to-dos will be kept.",
+                                 ok: "Regenerate summary", cancel: "Cancel") { [self] in
+            writeSummary(path, regenerate: true)
+        })
+    }
+
+    /// Writes a saved meeting's summary in the background. Regeneration preserves existing to-dos;
+    /// the normal first-write/retry path also collects to-dos.
+    func writeSummary(_ path: String, regenerate: Bool = false) {
         guard !summarising.contains(path) else { return }
         summarising.insert(path)
         summaryErrors.removeValue(forKey: path)
-        todoProblems.removeValue(forKey: path)
+        if !regenerate { todoProblems.removeValue(forKey: path) }
         let job = UUID()
         summaryJobs[job] = path
         let config = config
         Task {
             do {
+                let previous = regenerate ? try Meetings(root: config.meetingsRoot).read(summaryJobs[job] ?? path).summary : nil
                 try await downloads.ensureModel()
                 // Where the meeting is now: it may have been renamed or moved while the model downloaded.
                 let draft = try await OatcakeCore.draftSummary(config, meeting: summaryJobs[job] ?? path)
-                try OatcakeCore.writeSummary(draft, config: config, meeting: summaryJobs[job] ?? path)
-                // The summary is there, but its to-dos couldn't be read from what the model sent.
-                if let problem = draft.todoProblem { todoProblems[summaryJobs[job] ?? path] = problem }
+                try OatcakeCore.writeSummary(draft, config: config, meeting: summaryJobs[job] ?? path, replacingSummary: previous)
+                // Regeneration keeps the existing to-dos, so their status hasn't changed.
+                if !regenerate, let problem = draft.todoProblem { todoProblems[summaryJobs[job] ?? path] = problem }
             } catch {
                 summaryErrors[summaryJobs[job] ?? path] = error.localizedDescription
             }

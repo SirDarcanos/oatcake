@@ -232,6 +232,11 @@ struct MeetingView: View {
                 }
                 .font(.callout)
             }
+            if tab == .summary, !(files?[.summary] ?? "").trimmed.isEmpty {
+                Button { regenerateSummary() } label: { Label("Regenerate summary", systemImage: "arrow.clockwise") }
+                    .disabled(model.jobs.summarising.contains(path) || (files?[.transcript] ?? "").trimmed.isEmpty)
+                    .help("Replace this summary using the current instructions in Settings")
+            }
             let what = tab == .summary ? "summary and to-dos" : tab == .transcript ? "transcript" : "notes"
             Button { copy() } label: { Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") }
                 .help("Copy the \(what) as Markdown")
@@ -322,6 +327,22 @@ struct MeetingView: View {
                         Notice(tone: .grey) { Text(granolaNotice(files)) }.padding(.top, 14)
                     }
                     Spacer().frame(height: 22)
+                    if tab == .summary, !(files[.summary] ?? "").trimmed.isEmpty {
+                        if model.jobs.summarising.contains(path) {
+                            Notice(tone: .blue) {
+                                Text("Regenerating the summary…").fontWeight(.semibold)
+                                Text("Your previous summary is kept until the new one is ready.")
+                            }.padding(.bottom, 16)
+                        } else if let error = model.jobs.summaryErrors[path] {
+                            Notice(tone: .red) {
+                                ModelError(raw: error, prefix: "Couldn’t regenerate it. ")
+                                Text("Your previous summary was kept.")
+                                Button("Try again") { regenerateSummary() }
+                                    .disabled((files[.transcript] ?? "").trimmed.isEmpty)
+                                SettingsPaneLink(pane: "summaries", title: "Open Settings").buttonStyle(.link)
+                            }.padding(.bottom, 16)
+                        }
+                    }
                     if markdown {
                         markdownEditors(files)
                     } else {
@@ -469,6 +490,13 @@ struct MeetingView: View {
                 MarkdownView(markdown: summary, fontSize: 14 * scale)
             }
         }
+    }
+
+    private func regenerateSummary() {
+        // Save edits before asking for a replacement; a failed save must not discard pending text.
+        flush()
+        guard pending.isEmpty else { return }
+        model.jobs.regenerateSummary(path)
     }
 
     /// A meeting without its summary: it's being written now (after a save), or the model couldn't
