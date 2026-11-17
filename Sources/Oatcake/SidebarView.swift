@@ -4,6 +4,11 @@ import SwiftUI
 /// What a drag from the meeting list or the folder tree carries: an item's path in the Meetings folder.
 let dragPrefix = "oatcake-item:"
 
+/// The paths in a drop. Dragging several meetings picked in the list brings one item for each.
+func droppedPaths(_ items: [String]) -> [String] {
+    items.filter { $0.hasPrefix(dragPrefix) }.map { String($0.dropFirst(dragPrefix.count)) }
+}
+
 enum SidebarItem: Hashable {
     case live, todos, job(String), folder(String)
 }
@@ -148,8 +153,9 @@ struct SidebarView: View {
     }
 
     private func drop(_ items: [String], on target: String) -> Bool {
-        guard let item = items.first, item.hasPrefix(dragPrefix) else { return false }
-        model.library.move(String(item.dropFirst(dragPrefix.count)), into: target)
+        let paths = droppedPaths(items)
+        guard !paths.isEmpty else { return false }
+        model.library.move(paths, into: target)
         return true
     }
 
@@ -350,8 +356,9 @@ private struct FolderRow: View {
         .tag(SidebarItem.folder(node.path))
         .draggable(dragPrefix + node.path)
         .dropDestination(for: String.self) { items, _ in
-            guard let item = items.first, item.hasPrefix(dragPrefix) else { return false }
-            model.library.move(String(item.dropFirst(dragPrefix.count)), into: node.path)
+            let paths = droppedPaths(items)
+            guard !paths.isEmpty else { return false }
+            model.library.move(paths, into: node.path)
             return true
         } isTargeted: { dropTarget = $0 ? node.path : (dropTarget == node.path ? nil : dropTarget) }
         .contextMenu {

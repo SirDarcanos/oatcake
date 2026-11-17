@@ -60,12 +60,24 @@ final class Library {
         attempt { moved(from: path, to: try meetings.retitle(path, to: title)) }
     }
 
-    func move(_ path: String, into target: String) {
-        guard path != target, !target.hasPrefix(path + "/"), parentOf(path) != target else { return }
-        attempt {
-            moved(from: path, to: try meetings.move(path, into: target))
-            toast("Moved to \(folderPath(target))")
+    /// Moves what was dropped on a folder: one meeting or folder, or every meeting picked in the list.
+    /// Ones already there are left alone. One that can't be moved stops the rest, and the toast says
+    /// how many went before it and why, as Move to Trash does.
+    func move(_ paths: [String], into target: String) {
+        let paths = paths.filter { $0 != target && !target.hasPrefix($0 + "/") && parentOf($0) != target }
+        guard !paths.isEmpty else { return }
+        var count = 0
+        do {
+            for path in paths {
+                moved(from: path, to: try meetings.move(path, into: target))
+                count += 1
+            }
+        } catch {
+            toast(paths.count == 1 ? error.localizedDescription
+                                   : "Moved \(count) of \(paths.count) meetings to \(folderPath(target)) — \(error.localizedDescription)", isError: true)
+            return
         }
+        toast(paths.count == 1 ? "Moved to \(folderPath(target))" : "Moved \(paths.count) meetings to \(folderPath(target))")
     }
 
     @discardableResult
