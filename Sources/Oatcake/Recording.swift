@@ -593,7 +593,7 @@ final class RecordingController {
             menuBar.show(.recording(title: live.title, elapsed: status.state == .recording ? status.elapsed ?? 0 : nil))
         } else if showsNextCallInMenuBar {
             let now = Date()
-            menuBar.show(.upcoming((calendar.cache?.events ?? []).filter { !$0.allDay && $0.endDate > now }))
+            menuBar.show(.upcoming(calendar.events.filter { !$0.allDay && $0.endDate > now }))
         } else {
             menuBar.hide()
         }

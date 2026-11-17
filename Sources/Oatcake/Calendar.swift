@@ -15,6 +15,8 @@ final class CalendarController {
 
     /// nil when no calendar address is set.
     var cache: CalendarCache?
+    /// The calendar's events that can be calls: without the ones Settings › Calendar leaves out.
+    var events: [CalendarEvent] { (cache?.events ?? []).filter { !ignoredEvent($0.title, config.ignoredEvents) } }
     /// The time, moved on every half minute: what Upcoming's countdowns are worked out from.
     var now = Date()
     var fetching = false
@@ -76,9 +78,9 @@ final class CalendarController {
     // Call reminders: 5 minutes before each call, a notification whose button opens the call and
     // starts recording it. Clicking the notification itself opens New recording for the event.
     func checkReminders() {
-        guard config.callReminders, let calendar = cache else { return }
+        guard config.callReminders else { return }
         let now = Date()
-        for event in calendar.events where !event.allDay && !reminded.contains(event.id) {
+        for event in events where !event.allDay && !reminded.contains(event.id) {
             let until = event.startDate.timeIntervalSince(now)
             // In the five minutes before it starts (or the first minute after, if the Mac was asleep).
             guard until <= 300, until >= -60 else { continue }
@@ -90,6 +92,6 @@ final class CalendarController {
     /// The calendar event happening now (or starting within ten minutes), if any.
     var currentEvent: CalendarEvent? {
         let now = Date()
-        return cache?.events.first { !$0.allDay && $0.startDate.addingTimeInterval(-600) <= now && $0.endDate > now }
+        return events.first { !$0.allDay && $0.startDate.addingTimeInterval(-600) <= now && $0.endDate > now }
     }
 }

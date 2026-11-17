@@ -45,30 +45,29 @@ import Testing
         #expect(old == event.attendees[0] && old.declined == nil)
     }
 
-    /// iCal drops Google's event types: titles starting with the agreed labels are excluded.
-    @Test func nonMeetingTitles() throws {
+    /// Events that aren't calls are left out by title, from the list in Settings › Calendar: at the
+    /// start of the title as whole words, or "Oatcake ignore" anywhere. The feed itself keeps them all,
+    /// so a change to the list counts straight away.
+    @Test func eventsThatArentCalls() throws {
+        let ignored = Config.defaultIgnoredEvents
+        for title in ["Focus time", "Out of office", "Task", "Working location", "  FOCUS TIME  ", "out OF office", " task ",
+                      "Focus time: read emails", "Out of office — holiday", "Task planning", "Working location: home",
+                      "Oatcake ignore", "Lunch — Oatcake ignore", "Before OATCAKE IGNORE after"] {
+            #expect(ignoredEvent(title, ignored), "\(title) should be left out")
+        }
+        for title in ["Sync", "Review focus time", "Discuss out of office coverage", "Weekly task review", "Taskforce sync",
+                      "Tasks review", "Focus timeline", "Oatcake planning", "Ignore this reminder"] {
+            #expect(!ignoredEvent(title, ignored), "\(title) should be kept")
+        }
+        #expect(!ignoredEvent("Focus time", []) && ignoredEvent("1:1 prep", ["1:1 prep", " "]) && !ignoredEvent("Sync", [" ", ""]))
         let from = parseISO("2026-11-01T00:00:00Z")!, to = parseISO("2026-12-01T00:00:00Z")!
-        for title in ["Focus time", "Out of office", "Task", "Working location", "  FOCUS TIME  ", "out OF office", " task ", "WORKING LOCATION", "Focus time: read emails", "Out of office — holiday", "Task planning", "Working location: home", "Oatcake ignore", "Lunch — Oatcake ignore", "Before OATCAKE IGNORE after"] {
-            let ics = feed("DTSTART:20261110T100000Z", "DTEND:20261110T103000Z")
-                .replacingOccurrences(of: "SUMMARY:Sync", with: "SUMMARY:\(title)")
-            #expect(parseCalendar(ics, from: from, to: to).isEmpty, "\(title) should be excluded")
-            // An existing cache must not keep offering these as calls until the next fetch.
-            let event = CalendarEvent(id: "e", title: title, start: isoString(from), end: isoString(to), allDay: false, attendees: [])
-            let cache = CalendarCache(events: [event])
-            let decoded = try JSONDecoder().decode(CalendarCache.self, from: Data(try encodeJSON(cache).utf8))
-            #expect(decoded.events.isEmpty, "Cached \(title) should be excluded")
-        }
-        for title in ["Sync", "Review focus time", "Discuss out of office coverage", "Plan working location", "Weekly task review", "Oatcake planning", "Ignore this reminder"] {
-            let ics = feed("DTSTART:20261110T100000Z", "DTEND:20261110T103000Z")
-                .replacingOccurrences(of: "SUMMARY:Sync", with: "SUMMARY:\(title)")
-            let events = parseCalendar(ics, from: from, to: to)
-            #expect(events.map(\.title) == [title])
-            let cache = CalendarCache(events: events)
-            #expect(try JSONDecoder().decode(CalendarCache.self, from: Data(try encodeJSON(cache).utf8)).events == events)
-        }
-        let recurring = feed("DTSTART:20261110T100000Z", "DTEND:20261110T103000Z", "RRULE:FREQ=DAILY;COUNT=3")
-            .replacingOccurrences(of: "SUMMARY:Sync", with: "SUMMARY:Focus time")
-        #expect(parseCalendar(recurring, from: from, to: to).isEmpty)
+        let ics = feed("DTSTART:20261110T100000Z", "DTEND:20261110T103000Z").replacingOccurrences(of: "SUMMARY:Sync", with: "SUMMARY:Focus time")
+        #expect(parseCalendar(ics, from: from, to: to).map(\.title) == ["Focus time"])
+        // Older settings without the list get Google's names; an emptied list stays empty.
+        #expect(try JSONDecoder().decode(Config.self, from: Data("{}".utf8)).ignoredEvents == ignored)
+        var config = Config.defaults()
+        config.ignoredEvents = []
+        #expect(try JSONDecoder().decode(Config.self, from: Data(try encodeJSON(config).utf8)).ignoredEvents == [])
     }
 
     @Test func callLinks() {

@@ -195,7 +195,7 @@ struct SidebarView: View {
         let calendar = model.calendar.cache!
         let now = model.calendar.now
         let endOfTomorrow = Calendar.current.date(byAdding: .day, value: 2, to: Calendar.current.startOfDay(for: now))!
-        let events = Array(calendar.events.filter { !$0.allDay && $0.endDate > now && $0.startDate < endOfTomorrow }.prefix(6))
+        let events = Array(model.calendar.events.filter { !$0.allDay && $0.endDate > now && $0.startDate < endOfTomorrow }.prefix(6))
         let next = events.first { $0.startDate > now }
         Section {
             ForEach(events) { event in

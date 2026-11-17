@@ -112,6 +112,10 @@ public struct Config: Codable, Equatable, Sendable {
     public var summaryInstructions: String
     /// What the model is told counts as a to-do, when you've changed it. "" = Oatcake's own (defaultTodoInstructions).
     public var todoInstructions: String
+    /// Calendar events whose titles start with one of these aren't offered as calls (ignoredEvent).
+    public var ignoredEvents: [String]
+    /// Google Calendar's names for blocks that aren't calls.
+    public static let defaultIgnoredEvents = ["Focus time", "Out of office", "Working location", "Task"]
 
     public var meetingsRoot: URL { URL(fileURLWithPath: outputDir, isDirectory: true) }
 
@@ -133,7 +137,7 @@ public struct Config: Codable, Equatable, Sendable {
 
     init(myName: String, outputDir: String, asrModel: String, llm: LlmConfig, keepAudio: Bool, mic: MicChoice?, callReminders: Bool, updateCheck: Bool,
          callNotice: Bool = true, autoStop: Bool = true, liveTranscript: Bool = true, jargon: [String] = [], menuBarNextCall: Bool = true,
-         summaryInstructions: String = "", todoInstructions: String = "") {
+         summaryInstructions: String = "", todoInstructions: String = "", ignoredEvents: [String] = Config.defaultIgnoredEvents) {
         self.myName = myName
         self.outputDir = outputDir
         self.asrModel = asrModel
@@ -149,6 +153,7 @@ public struct Config: Codable, Equatable, Sendable {
         self.menuBarNextCall = menuBarNextCall
         self.summaryInstructions = summaryInstructions
         self.todoInstructions = todoInstructions
+        self.ignoredEvents = ignoredEvents
     }
 
     /// Missing or unreadable settings fall back to the defaults one by one.
@@ -170,6 +175,7 @@ public struct Config: Codable, Equatable, Sendable {
         menuBarNextCall = (try? c.decodeIfPresent(Bool.self, forKey: .menuBarNextCall)) ?? base.menuBarNextCall
         summaryInstructions = (try? c.decodeIfPresent(String.self, forKey: .summaryInstructions)) ?? base.summaryInstructions
         todoInstructions = (try? c.decodeIfPresent(String.self, forKey: .todoInstructions)) ?? base.todoInstructions
+        ignoredEvents = (try? c.decodeIfPresent([String].self, forKey: .ignoredEvents)) ?? base.ignoredEvents
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -190,10 +196,11 @@ public struct Config: Codable, Equatable, Sendable {
         try c.encode(menuBarNextCall, forKey: .menuBarNextCall)
         try c.encode(summaryInstructions, forKey: .summaryInstructions)
         try c.encode(todoInstructions, forKey: .todoInstructions)
+        try c.encode(ignoredEvents, forKey: .ignoredEvents)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case myName, outputDir, asrModel, llm, keepAudio, mic, callReminders, updateCheck, callNotice, autoStop, liveTranscript, jargon, menuBarNextCall, summaryInstructions, todoInstructions
+        case myName, outputDir, asrModel, llm, keepAudio, mic, callReminders, updateCheck, callNotice, autoStop, liveTranscript, jargon, menuBarNextCall, summaryInstructions, todoInstructions, ignoredEvents
     }
 
     /// For the model: how to spell the names and terms you've listed, or "" when there are none.

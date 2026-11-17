@@ -78,17 +78,26 @@ extension CalendarCache {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         checkedAt = try c.decodeIfPresent(String.self, forKey: .checkedAt)
         updatedAt = try c.decodeIfPresent(String.self, forKey: .updatedAt)
-        events = (try c.decodeIfPresent([CalendarEvent].self, forKey: .events) ?? []).filter { !ignoredCalendarTitle($0.title) }
+        events = try c.decodeIfPresent([CalendarEvent].self, forKey: .events) ?? []
         error = try c.decodeIfPresent(String.self, forKey: .error).map { $0.hasPrefix(Self.failurePrefix) ? String($0.dropFirst(Self.failurePrefix.count)) : $0 }
     }
 }
 
-/// iCal doesn't preserve Google's event types. Use title labels for non-meeting blocks, and
-/// an opt-out marker anywhere in the title. Shared by fresh feeds and caches from older versions.
-private func ignoredCalendarTitle(_ title: String) -> Bool {
+/**
+ * Whether an event is left out of Upcoming, the menu bar and reminders: its title starts with one of
+ * `ignored` (Settings › Calendar) as whole words, or has "Oatcake ignore" anywhere in it. Case and
+ * surrounding spaces don't count. iCal doesn't say which events are Google's focus time or
+ * out-of-office blocks, so their titles are all there is to go on.
+ */
+public func ignoredEvent(_ title: String, _ ignored: [String]) -> Bool {
     let title = title.trimmed.lowercased()
-    return title.contains("oatcake ignore")
-        || ["focus time", "out of office", "task", "working location"].contains { title.hasPrefix($0) }
+    if title.contains("oatcake ignore") { return true }
+    return ignored.contains { entry in
+        let entry = entry.trimmed.lowercased()
+        guard !entry.isEmpty, title.hasPrefix(entry) else { return false }
+        // "Task" leaves out "Task: file report", not "Taskforce sync".
+        return title.dropFirst(entry.count).first.map { !$0.isLetter && !$0.isNumber } ?? true
+    }
 }
 
 /// Video-call services, by the exact host (or parent domain) their links use.
@@ -398,7 +407,7 @@ public func parseCalendar(_ text: String, from: Date, to: Date) -> [CalendarEven
     func add(_ event: ICalEvent, start: Date, end: Date, isDate: Bool, seriesId: String?) {
         guard end > from, start < to else { return }
         let c = event.component
-        if (c.first("STATUS")?.value ?? "").uppercased() == "CANCELLED" || ignoredCalendarTitle(event.summary) { return }
+        if (c.first("STATUS")?.value ?? "").uppercased() == "CANCELLED" { return }
         let attendees = c.all("ATTENDEE").map { p -> (email: String, name: String?, declined: Bool, resource: Bool) in
             let email = p.value.replacingOccurrences(of: "^mailto:", with: "", options: [.regularExpression, .caseInsensitive]).lowercased()
             let name = p.params["CN"].flatMap { $0.isEmpty ? nil : $0 }
