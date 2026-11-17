@@ -184,8 +184,13 @@ them all to the Trash.
    away with its transcript and notes, and its summary and to-dos are written in the background
    and appear in the meeting when they're ready. If the summary can't be written (the model's
    download was interrupted, a server of your own that's down), the meeting says why in plain words
-   (the raw message is behind Details) and shows **Write summary** to try again later. Your notes
-   steer what the summary focuses on but aren't copied into it. A long turn in the transcript is
+   (the raw message is behind Details) and shows **Write summary** to try again later.
+   To write a summary or its to-dos again (after changing the instructions in Settings ›
+   Summaries, say), choose **Regenerate › Regenerate summary** or **Regenerate to-dos** in the
+   Summary tab's toolbar and confirm. Only that part is asked for and replaced, edits and ticks
+   included; the rest of the meeting stays as it is. The old one stays until the new one is
+   ready, and stays if it fails or is changed somewhere else meanwhile. Your notes steer what the summary focuses
+   on but aren't copied into it. A long turn in the transcript is
    broken at a pause about every half minute, each part with its own time.
    Tabs: Summary (with the meeting's to-dos at the top), Transcript and My notes (⌘1–⌘3),
    each Rendered or as editable Markdown from the switch at the top right of the note (saved as

@@ -59,6 +59,31 @@ import Testing
         #expect(unread == SummaryDraft(summary: "## Deck\n- Friday.\n", todo: "", todoProblem: todosUnreadMessage))
     }
 
+    /// Regenerate asks the model only for the part being written again, with the instructions in Settings now.
+    @Test func regenerateAsksForOnePart() async throws {
+        let meetings = TestMeetings()
+        defer { meetings.remove() }
+        let rel = "Team/2026-11-09 1000 Weekly sync"
+        try meetings.write(rel, .transcript, "**[00:00] Sam:** We agreed to ship on Friday.\n")
+        let server = try await StandIn.model { request in
+            request.json["response_format"] == nil
+                ? "## Replacement\nShip on Friday.\n"
+                : #"{"todos":[{"task":"ship it","owner":"Sam","due":"Friday","at":"[00:00]"}]}"#
+        }
+        var config = server.config
+        config.outputDir = meetings.root.path
+        config.summaryInstructions = "Write in Italian."
+        let summary = try await draftSummary(config, meeting: rel, only: .summary)
+        #expect(server.requests.count == 1 && server.requests[0].json["response_format"] == nil)
+        #expect(server.requests[0].messages.user.hasSuffix("Write in Italian."))
+        #expect(summary.summary == "## Replacement\nShip on Friday.\n" && summary.todo.isEmpty && summary.todoProblem == nil)
+        config.todoInstructions = "List only what Sam agreed to do."
+        let todos = try await draftSummary(config, meeting: rel, only: .todos)
+        #expect(server.requests.count == 2 && server.requests[1].json["response_format"] != nil)
+        #expect(server.requests[1].messages.user.contains("List only what Sam agreed to do."))
+        #expect(todos.todo == "- [ ] Ship it — Sam — due Friday — [00:00]\n")
+    }
+
     @Test func summaryPieces() {
         // Anything before the first heading goes, and a code fence around the lot.
         #expect(summaryBody("Sure!\n\n## Launch\n- Done.\n") == "## Launch\n- Done.")
