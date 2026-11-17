@@ -96,17 +96,20 @@ public func markdownHTML(_ markdown: String) -> String {
             out += list.ordered ? "<ol>" : "<ul>"
             open.append((list.id, list.ordered, nil))
         }
+        // A second paragraph of the same item is a paragraph of its own, or the two would run together.
+        var moreOfItem = !open.isEmpty
         if !open.isEmpty, open.last!.item != block.item {
             closeItem()
             out += "<li>"
             open[open.count - 1].item = block.item
+            moreOfItem = false
         }
         let body: String
         switch block.kind {
         case .header(let level): body = "<h\(min(max(level + 1, 2), 4))>\(block.html)</h\(min(max(level + 1, 2), 4))>"
         case .codeBlock: body = "<pre><code>\(block.html.replacingOccurrences(of: #"\n+$"#, with: "", options: .regularExpression))</code></pre>"
         case .thematicBreak: body = "<hr>"
-        default: body = open.isEmpty ? "<p>\(block.html)</p>" : block.html
+        default: body = open.isEmpty || moreOfItem ? "<p>\(block.html)</p>" : block.html
         }
         out += block.quoted ? "<blockquote>\(body)</blockquote>" : body
     }

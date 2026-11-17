@@ -43,6 +43,8 @@ import Testing
         #expect(html.hasPrefix("<meta charset=\"utf-8\"><h2>Weekly sync</h2><p>Tuesday · 10:00</p><h3>To-dos</h3>"))
         #expect(html.contains("<ul><li>☐ Send the deck — Alex Kim — due Fri — [00:42]</li><li>☑ Book a room</li></ul>"))
         #expect(html.contains("<h3>Launch</h3><ul><li><strong>Sam</strong> moved it to Friday.</li></ul>"))
+        // An item of two paragraphs keeps them apart.
+        #expect(markdownHTML("- First point.\n\n  More detail.\n- Next.\n") == "<ul><li>First point.<p>More detail.</p></li><li>Next.</li></ul>")
         // Only a list item's own box: brackets anywhere else stay as they are.
         #expect(clipboardHTML("[ ] not a list\n").contains("<p>[ ] not a list</p>"))
     }
