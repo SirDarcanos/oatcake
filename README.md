@@ -190,7 +190,8 @@ them all to the Trash.
    Tabs: Summary (with the meeting's to-dos at the top), Transcript and My notes (⌘1–⌘3),
    each Rendered or as editable Markdown from the switch at the top right of the note (saved as
    you type; Summary shows `todo.md` and `summary.md`). **Copy** puts the tab you're on (the summary with its to-dos, the transcript,
-   or your notes) on the clipboard as Markdown under the meeting's title and date, and **Share**
+   or your notes) on the clipboard under the meeting's title and date, formatted for Google Docs,
+   Pages or mail and as Markdown for anything that only takes plain text, and **Share**
    sends the same text with Mail, Messages or another app. Tick to-dos off in place; a due date can be a date ("Fri, Oct 30") or a day as it was said ("Friday", "tomorrow", "end of the week"), counted from the day of the meeting; a to-do's time jumps to that moment in the
    transcript. **To-dos** at the top of the sidebar gathers every meeting's to-dos (open
    and overdue counts beside it): Open / Done / All, grouped by due date, folder or owner,
