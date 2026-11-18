@@ -57,6 +57,14 @@ struct SettingsView: View {
                 Text("Live transcript")
                 Text("Shows what’s being said beside your notes during the call. It’s transcribed on your Mac; who said what on the call side is worked out afterwards.")
             }
+            Picker(selection: bind(\.afterCall)) {
+                Text("Wait for me to check who’s who").tag(AfterCall.review)
+                Text("Save with a summary").tag(AfterCall.saveWithSummary)
+                Text("Save the transcript only").tag(AfterCall.saveTranscript)
+            } label: {
+                Text("After a call")
+                Text(afterCallHint(config.afterCall))
+            }
         }
 
         Section {
@@ -75,6 +83,14 @@ struct SettingsView: View {
             Text("Oatcake notices a call by which apps have the microphone open. It doesn’t listen until you record.").settingsHint()
         }
 
+    }
+
+    private func afterCallHint(_ choice: AfterCall) -> String {
+        switch choice {
+        case .review: "Each call waits under Needs review until you’ve named its voices and saved it."
+        case .saveWithSummary: "Each call is saved once it’s processed, with the names Oatcake recognised or suggested, and summarised. Name its voices later from the meeting."
+        case .saveTranscript: "Each call is saved once it’s processed, with the names Oatcake recognised or suggested, and no summary or to-dos. Name its voices later from the meeting."
+        }
     }
 
     @ViewBuilder private var storage: some View {

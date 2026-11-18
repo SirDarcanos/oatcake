@@ -178,6 +178,16 @@ them all to the Trash.
    it as mixed ("Several people"). Unnamed voices are saved as "Voice 1", "Voice 2"… The
    transcript beside it updates as you name voices. Confirmed voices with 30+ seconds of
    speech are saved, so they're recognised next time.
+
+   **Or skip it.** Settings › General › **After a call** can save each call as soon as it's
+   processed, instead of waiting here: **Save with a summary**, or **Save the transcript only**
+   (no summary or to-dos). Voices Oatcake recognised keep their names, voices it could only guess
+   at carry its suggestion, and the rest are "Voice 1", "Voice 2"… No voice is remembered from
+   names nobody checked. The meeting says it was saved without checking who's who: **Name
+   voices…** opens this screen for it, and **Update meeting** writes its transcript and
+   `meeting.json` again in place, puts the new names where the old ones were in its summary and
+   to-dos (as whole words), and leaves your notes and its title as they are. **Keep as is** keeps
+   the names it has. If a call can't be saved by itself, it waits here as usual.
 4. **Save.** The meeting is a folder in the folder you picked:
    `2026-11-05 1400 Weekly sync/` with `summary.md`, `todo.md` (action items, as
    `- [ ] Task — Owner — due Fri, Oct 30 — [12:34]`), `transcript.md`, `notes.md` (your own
@@ -514,6 +524,8 @@ Settings in the app (stored in `~/Library/Application Support/Oatcake/config.jso
   `audio.m4a`.
 - **Live transcript**, **Offer to record when a call starts**, **Stop recording when the call
   ends:** all on by default (Settings › General); see Record above.
+- **After a call** (Settings › General): wait for you to check who's who (the default), or save
+  each call once it's processed, with a summary or with the transcript only; see Review above.
 - **Jargon** (Settings › Summaries): names, products and acronyms, separated by commas. The
   summary model is told to spell them as written, in summaries, to-dos, name suggestions and Ask's
   answers. Transcripts keep what the speech model heard.
@@ -600,7 +612,9 @@ Settings in the app (stored in `~/Library/Application Support/Oatcake/config.jso
 - Once a meeting is saved, the recording's working folder in Oatcake's own data folder is
   deleted: the audio, the analysis with its voice fingerprints, and the working copy of your
   notes. With **Keep call audio** on, the audio goes into the meeting's own folder as
-  `audio.m4a` first, so it's in one place and goes to the Trash with the meeting.
+  `audio.m4a` first, so it's in one place and goes to the Trash with the meeting. A meeting saved
+  without checking who's who (After a call) keeps its analysis and voice clips there, but not the
+  call's full tracks, until its voices are named or you choose Keep as is.
 - Recording one call at a time is enforced by the app. If Oatcake crashes mid-call, the recorder
   carries on for up to ten minutes; opening Oatcake again in that time picks the recording up,
   and after it the recorder finishes by itself. A recorder that has gone is noticed within a

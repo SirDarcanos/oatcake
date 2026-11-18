@@ -336,6 +336,9 @@ struct MeetingView: View {
                     if granola {
                         Notice(tone: .grey) { Text(granolaNotice(files)) }.padding(.top, 14)
                     }
+                    if let id = meta.recording, model.jobs.unchecked.contains(where: { $0.id == id }) {
+                        uncheckedNotice(id).padding(.top, 14)
+                    }
                     Spacer().frame(height: 22)
                     if tab == .summary, let part = model.jobs.regenerating[path] {
                         let what = part == .summary ? "summary" : "to-dos"
@@ -406,6 +409,23 @@ struct MeetingView: View {
         return [date.map { "\(weekday($0)), \(longDate($0))" }, date.map(hhmm), length.map(minutes),
                 !granola && !withWhom.isEmpty ? "with \(withWhom.joined(separator: ", "))" : nil]
             .compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// Saved straight after the call, without anyone checking who's who (Settings › General › After a call).
+    private func uncheckedNotice(_ id: String) -> some View {
+        Notice(tone: .blue) {
+            Text("Saved without checking who’s who").fontWeight(.semibold)
+            Text("Voices Oatcake didn’t recognise carry its suggested names, or “Voice 1”, “Voice 2”… Name them and this meeting’s transcript, summary and to-dos are updated.")
+            HStack(spacing: 10) {
+                Button("Name voices…") {
+                    flush()
+                    model.selection = .job(id)
+                }
+                Button("Keep as is") { model.jobs.keepAsIs(id) }
+                    .help("Keep these names. The recording’s voice clips are deleted, so its voices can’t be named later.")
+            }
+            .padding(.top, 6)
+        }
     }
 
     private func granolaNotice(_ files: [FileKey: String]) -> String {

@@ -272,6 +272,9 @@ struct DetailView: View {
                     } else {
                         ProcessingView(rec: rec).id(rec.id)
                     }
+                } else if let rec = model.jobs.unchecked.first(where: { $0.id == id }) {
+                    // A meeting saved without checking who's who, having its voices named.
+                    ReviewView(rec: rec).id(rec.id)
                 } else {
                     blank
                 }

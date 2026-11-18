@@ -1,6 +1,7 @@
 // One call's working folder in the recordings folder (Paths.recordings, or wherever a test says): call.json, the recorder's audio and status,
 // meta.json, notes.json, analysis.json, clips/, saved.json. It's there until the call has been saved
-// as a meeting; then it goes (tidySaved), since everything the meeting needs is in its own folder.
+// as a meeting; then it goes (tidySaved), since everything the meeting needs is in its own folder. A
+// meeting saved without checking who's who keeps its analysis and clips until the voices are named.
 
 import Foundation
 // The recorder's status, its meta.json and the microphone choice are shared with the recorder itself.
@@ -43,6 +44,20 @@ public struct Note: Codable, Equatable, Sendable {
         if let at { try c.encode(at, forKey: .at) } else { try c.encodeNil(forKey: .at) }
         try c.encode(text, forKey: .text)
     }
+}
+
+/// What saved.json holds: where the recording was saved and, while who's who hasn't been checked, the
+/// name each voice was saved under (so naming them later knows what to replace).
+public struct SavedInfo: Codable, Equatable, Sendable {
+    public var meeting: String?
+    public var unchecked: Bool?
+    public var names: [String: String]?
+    public init(meeting: String?, unchecked: Bool? = nil, names: [String: String]? = nil) {
+        self.meeting = meeting
+        self.unchecked = unchecked
+        self.names = names
+    }
+    public var isUnchecked: Bool { unchecked == true }
 }
 
 /// What call.json holds.
@@ -249,6 +264,31 @@ public enum Recordings {
         for name in audioTracks + ["clips"] { try? FileManager.default.removeItem(at: rec.dir.appendingPathComponent(name)) }
     }
 
+    /// The call's tracks, but not the short clips who's who plays.
+    static func deleteTracks(_ dir: URL) {
+        for name in audioTracks { try? FileManager.default.removeItem(at: dir.appendingPathComponent(name)) }
+    }
+
+    public static func savedInfo(_ dir: URL) -> SavedInfo? { tryJSON(SavedInfo.self, dir.appendingPathComponent("saved.json")) }
+
+    /// Recordings saved as meetings without checking who's who: their voices can still be named.
+    public static func unchecked(recordings: URL = Paths.recordings) -> [Recording] {
+        list(recordings: recordings).filter { $0.state == .saved && savedInfo($0.dir)?.isUnchecked == true }
+    }
+
+    /// Keep as is: the meeting stays as it was saved, and the recording's working folder can go (tidySaved).
+    public static func markChecked(_ rec: Recording) throws {
+        let info = savedInfo(rec.dir) ?? SavedInfo(meeting: nil)
+        try writeAtomic(rec.dir.appendingPathComponent("saved.json"), try encodeJSON(SavedInfo(meeting: info.meeting)) + "\n")
+    }
+
+    /// Where a saved recording's meeting is now, relative to the Meetings folder (it may have been moved or renamed).
+    public static func meetingPath(_ rec: Recording, meetingsRoot: URL) -> String? {
+        guard let dir = savedMeeting(rec.id, savedInfo(rec.dir)?.meeting, under: meetingsRoot) else { return nil }
+        let root = meetingsRoot.standardizedFileURL.path, path = dir.standardizedFileURL.path
+        return path.hasPrefix(root + "/") ? String(path.dropFirst(root.count + 1)) : nil
+    }
+
     /**
      * Clears away the working folders of recordings that have been saved as meetings. One whose audio
      * was kept (Keep call audio) first has it written into its meeting's folder as audio.m4a, so it's
@@ -259,11 +299,16 @@ public enum Recordings {
         let fm = FileManager.default
         for id in (try? fm.contentsOfDirectory(atPath: recordings.path)) ?? [] {
             let dir = recordings.appendingPathComponent(id, isDirectory: true)
-            guard let saved = tryJSON([String: String].self, dir.appendingPathComponent("saved.json")) else { continue }
+            guard let saved = savedInfo(dir) else { continue }
             if audioTracks.contains(where: { size(dir.appendingPathComponent($0)) > 0 }) {
-                guard let meeting = savedMeeting(id, saved["meeting"], under: meetingsRoot) else { continue }
+                guard let meeting = savedMeeting(id, saved.meeting, under: meetingsRoot) else { continue }
                 let audio = meeting.appendingPathComponent("audio.m4a")
                 if !fm.exists(audio), (try? exportAudio(recording: dir, to: audio)) == nil { continue }
+            }
+            // Its voices can still be named: the analysis and clips stay, the tracks have gone to the meeting.
+            if saved.isUnchecked {
+                deleteTracks(dir)
+                continue
             }
             try? fm.removeItem(at: dir)
         }

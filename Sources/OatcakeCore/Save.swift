@@ -20,18 +20,30 @@ public func loadAnalysis(_ rec: Recording) throws -> Analysis {
     try readJSON(Analysis.self, rec.dir.appendingPathComponent("analysis.json"))
 }
 
+/// Who's who as Oatcake would fill it in by itself: each voice under the name it recognised or
+/// suggested, and the rest unnamed ("Voice 1"…). What a meeting saved without checking is saved with.
+public func suggestedDecisions(_ analysis: Analysis) -> [String: Decision] {
+    Dictionary(uniqueKeysWithValues: analysis.speakers.map { ($0.id, Decision.name($0.suggestion?.name.trimmed ?? "")) })
+}
+
 /**
  * Writes the meeting folder (transcript.md, notes.md, meeting.json) into `folder` (relative to the
  * Meetings folder) and saves confirmed voiceprints. Returns the meeting's path. No model is involved:
  * the summary and to-dos are written afterwards (writeSummary), so nothing from the call waits on one.
  * `title` replaces the one the recording was started with.
+ *
+ * `unchecked`: saved without anyone checking who's who (Settings › General › After a call). No voices
+ * are remembered, and the recording's analysis and clips are kept so they can be named later.
+ * `existing`: naming them later. The meeting already saved from this recording, wherever it is now, is
+ * written again in place: its transcript and meeting.json, with the new names carried into its
+ * summary and to-dos. Its title and your notes stay as they are.
  */
 @discardableResult
 public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: Decision], folder: String, title: String? = nil,
-                        voiceprints: URL = Paths.voiceprints) throws -> String {
+                        unchecked: Bool = false, into existing: String? = nil, voiceprints: URL = Paths.voiceprints) throws -> String {
     let analysis = try loadAnalysis(rec)
     let notes = Recordings.notes(in: rec.dir)
-    let title = title.map(\.trimmed).flatMap { $0.isEmpty ? nil : $0 } ?? analysis.title
+    var title = title.map(\.trimmed).flatMap { $0.isEmpty ? nil : $0 } ?? analysis.title
     // With no name set in Settings, your lines still need one to be read back as yours.
     let myName = config.myName.trimmed.isEmpty ? "Me" : config.myName.trimmed
 
@@ -69,21 +81,35 @@ public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: 
     }
     let transcript = paragraphs.map { "**[\(clock($0.start))] \($0.speaker):** \($0.text)" }.joined(separator: "\n\n") + "\n"
 
-    let startedAt = parseISO(analysis.startedAt) ?? rec.startedAt
-    let name = meetingFolderName(title: title, startedAt: startedAt)
-    // Another call with the same title in the same minute keeps its folder, and this one is numbered.
-    // Saving this recording again (after a failure) goes back into its own folder.
-    var outRel = folder.isEmpty ? name : folder + "/" + name
-    var out = try resolveInside(config.meetingsRoot, outRel)
-    var number = 2
-    while let other = savedRecording(out), other != rec.id {
-        outRel = (folder.isEmpty ? name : folder + "/" + name) + " (\(number))"
+    // The name each voice's lines are saved under, for naming them later.
+    var savedNames: [String: String] = [:]
+    for s in analysis.speakers { savedNames[s.id] = nameOf(s.id) }
+
+    var outRel: String
+    var out: URL
+    if let existing {
+        outRel = existing
+        out = try resolveInside(config.meetingsRoot, existing)
+        guard savedRecording(out) == rec.id else { throw OatcakeError("The meeting saved from this recording couldn’t be found.") }
+        if let kept = tryJSON(MeetingMeta.self, out.appendingPathComponent("meeting.json"))?.title?.trimmed, !kept.isEmpty { title = kept }
+    } else {
+        let startedAt = parseISO(analysis.startedAt) ?? rec.startedAt
+        let name = meetingFolderName(title: title, startedAt: startedAt)
+        // Another call with the same title in the same minute keeps its folder, and this one is numbered.
+        // Saving this recording again (after a failure) goes back into its own folder.
+        outRel = folder.isEmpty ? name : folder + "/" + name
         out = try resolveInside(config.meetingsRoot, outRel)
-        number += 1
+        var number = 2
+        while let other = savedRecording(out), other != rec.id {
+            outRel = (folder.isEmpty ? name : folder + "/" + name) + " (\(number))"
+            out = try resolveInside(config.meetingsRoot, outRel)
+            number += 1
+        }
     }
     try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
     try writeAtomic(out.appendingPathComponent("transcript.md"), transcript)
-    if !notes.isEmpty { try writeAtomic(out.appendingPathComponent("notes.md"), notesMarkdown(notes)) }
+    // Naming voices later leaves notes.md as it is: it may have been edited since.
+    if existing == nil, !notes.isEmpty { try writeAtomic(out.appendingPathComponent("notes.md"), notesMarkdown(notes)) }
     struct Meta: Encodable {
         var title: String
         var startedAt: String
@@ -95,9 +121,26 @@ public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: 
                     try encodeJSON(Meta(title: title, startedAt: analysis.startedAt, endedAt: analysis.endedAt,
                                         participants: participants, recording: rec.id)) + "\n")
 
+    // Naming voices later: the summary and to-dos say the new names where they said the old ones.
+    if existing != nil, let before = Recordings.savedInfo(rec.dir)?.names {
+        var renames: [String: String] = [:]
+        for (id, old) in before {
+            if let new = savedNames[id], new != old { renames[old] = new }
+        }
+        if !renames.isEmpty {
+            let meetings = Meetings(root: config.meetingsRoot)
+            let files = try meetings.read(outRel)
+            for (file, text) in [(MeetingFile.summary, files.summary), (.todo, files.todo)] where !text.isEmpty {
+                let renamed = renamePeople(text, renames)
+                if renamed != text { try meetings.write(outRel, file, renamed) }
+            }
+        }
+    }
+
     // Only now the meeting is written, so a save that's retried doesn't add the same voices twice.
-    // Fingerprints from another model (an analysis made by the Electron version) aren't kept.
-    if analysis.embeddingModel == voiceprintModel {
+    // Fingerprints from another model (an analysis made by the Electron version) aren't kept, and
+    // neither are names nobody has checked.
+    if !unchecked, analysis.embeddingModel == voiceprintModel {
         // Voices merged into one person in review give one fingerprint for the call: the one with the
         // most speech, not a stray half-minute of them.
         var kept = Set<String>()
@@ -107,9 +150,31 @@ public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: 
         }, call: rec.id, file: voiceprints)
     }
 
-    try writeAtomic(rec.dir.appendingPathComponent("saved.json"), try encodeJSON(["meeting": outRel]) + "\n")
-    if !config.keepAudio { Recordings.deleteAudio(rec) }
+    let info = unchecked ? SavedInfo(meeting: outRel, unchecked: true, names: savedNames) : SavedInfo(meeting: outRel)
+    try writeAtomic(rec.dir.appendingPathComponent("saved.json"), try encodeJSON(info) + "\n")
+    // An unchecked meeting keeps its clips, to play when its voices are named.
+    if !config.keepAudio { unchecked ? Recordings.deleteTracks(rec.dir) : Recordings.deleteAudio(rec) }
     return outRel
+}
+
+/**
+ * Puts new names in place of old ones in a summary or to-dos, as whole words only ("Voice 1" isn't
+ * the start of "Voice 12"). Done in two passes, so names that swap places don't run into each other.
+ * "Several people" is left alone: it may be any of several voices.
+ */
+func renamePeople(_ text: String, _ renames: [String: String]) -> String {
+    let pairs = renames.filter { !$0.key.trimmed.isEmpty && $0.key != $0.value && $0.key != "Several people" && $0.value != "Several people" }
+        .sorted { $0.key.count > $1.key.count }
+    var out = text
+    var placed: [(token: String, name: String)] = []
+    for (i, pair) in pairs.enumerated() {
+        let token = "\u{E000}\(i)\u{E001}"
+        let pattern = #"(?<![\p{L}\p{N}_])"# + NSRegularExpression.escapedPattern(for: pair.key) + #"(?![\p{L}\p{N}_])"#
+        out = out.replacingOccurrences(of: pattern, with: token, options: .regularExpression)
+        placed.append((token, pair.value))
+    }
+    for p in placed { out = out.replacingOccurrences(of: p.token, with: p.name) }
+    return out
 }
 
 /// The recording a meeting folder was saved from: nil when there's no meeting there, "" for a

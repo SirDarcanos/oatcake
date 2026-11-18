@@ -42,6 +42,8 @@ final class Jobs {
     private func refresh() { app.refresh() }
 
     var pending: [Recording] = []
+    /// Recordings saved as meetings without checking who's who, whose voices can still be named.
+    var unchecked: [Recording] = []
     var progress: [String: JobProgress] = [:]
     /// Meetings whose summary is being written now, and why the last attempt failed, by path.
     var summarising = Set<String>()
@@ -128,6 +130,55 @@ final class Jobs {
                 return
             }
             if let outcome { apply(id, outcome) }
+            // Settings › General › After a call: saved now, rather than waiting under Needs review.
+            if outcome?.done == true, config.afterCall != .review { autoSave(id) }
+        }
+    }
+
+    /// Saves a processed recording as a meeting without stopping at who's who: each voice under the
+    /// name Oatcake recognised or suggested, the rest as "Voice 1"… It can be named later from the
+    /// meeting. If it can't be saved, it waits under Needs review as usual.
+    private func autoSave(_ id: String) {
+        guard let rec = Recordings.get(id), rec.state == .processed, let analysis = try? loadAnalysis(rec) else { return }
+        let folder = rec.folder ?? ""
+        let withSummary = config.afterCall == .saveWithSummary
+        do {
+            let path = try saveMeeting(config, rec, decisions: suggestedDecisions(analysis), folder: folder, title: rec.title, unchecked: true)
+            reviewDrafts.removeValue(forKey: id)
+            if withSummary { writeSummary(path) }
+            tidySavedRecordings()
+            toast("“\(rec.title)” saved to \(folderPath(folder))")
+            refresh()
+            // Watching it being processed: on to the meeting.
+            if app.selection() == .job(id) { app.select(.meeting(path, jump: Jump(tab: withSummary ? .summary : .transcript))) }
+        } catch {
+            toast("Couldn’t save “\(rec.title)” by itself: \(error.localizedDescription) It’s waiting under Needs review.", isError: true)
+        }
+    }
+
+    /// Names the voices of a meeting saved without checking: its transcript and meeting.json are
+    /// written again in place, and the new names are put into its summary and to-dos. Returns its path.
+    func updateMeeting(_ rec: Recording, decisions: [String: Decision]) throws -> String {
+        guard let path = Recordings.meetingPath(rec, meetingsRoot: config.meetingsRoot) else {
+            throw OatcakeError("The meeting saved from this recording couldn’t be found. It may have been deleted.")
+        }
+        let saved = try saveMeeting(config, rec, decisions: decisions, folder: "", into: path)
+        reviewDrafts.removeValue(forKey: rec.id)
+        tidySavedRecordings()
+        return saved
+    }
+
+    /// Keep as is: the meeting stays with the names it was saved with, and the recording's working
+    /// folder (its analysis, voice fingerprints and clips) is cleared away.
+    func keepAsIs(_ id: String) {
+        guard let rec = unchecked.first(where: { $0.id == id }) else { return }
+        do {
+            try Recordings.markChecked(rec)
+            reviewDrafts.removeValue(forKey: id)
+            tidySavedRecordings()
+            refresh()
+        } catch {
+            toast(error.localizedDescription, isError: true)
         }
     }
 

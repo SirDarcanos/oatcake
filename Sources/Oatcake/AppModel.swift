@@ -162,6 +162,7 @@ final class AppModel {
         library.tree = library.meetings.tree()
         if let tree = library.tree { library.setTodos(library.meetings.allTodos(in: tree)) }
         jobs.pending = Recordings.list().filter { $0.state == .recorded || $0.state == .processed }
+        jobs.unchecked = Recordings.unchecked()
         openLastMeeting()
         refresh()
         calendar.start()
@@ -198,10 +199,11 @@ final class AppModel {
         refreshing = true
         let meetings = library.meetings
         Task {
-            let (tree, pending, todos) = await Task.detached {
+            let (tree, pending, unchecked, todos) = await Task.detached {
                 // The folder is walked once: the to-dos are read from the tree just built.
                 let tree = meetings.tree()
-                return (tree, Recordings.list().filter { $0.state == .recorded || $0.state == .processed }, meetings.allTodos(in: tree))
+                return (tree, Recordings.list().filter { $0.state == .recorded || $0.state == .processed }, Recordings.unchecked(),
+                        meetings.allTodos(in: tree))
             }.value
             refreshing = false
             defer {
@@ -219,6 +221,7 @@ final class AppModel {
             withTransaction(quiet) {
                 self.library.tree = tree
                 self.jobs.pending = pending
+                self.jobs.unchecked = unchecked
                 self.library.setTodos(todos)
                 self.library.diskVersion += 1
             }
