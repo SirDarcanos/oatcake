@@ -88,8 +88,8 @@ struct SettingsView: View {
     private func afterCallHint(_ choice: AfterCall) -> String {
         switch choice {
         case .review: "Each call waits under Needs review until you’ve named its voices and saved it."
-        case .saveWithSummary: "Each call is saved once it’s processed, and summarised. Voices Oatcake recognises keep their names; the rest are “Voice 1”, “Voice 2”… until you name them from the meeting."
-        case .saveTranscript: "Each call is saved once it’s processed, with no summary or to-dos. Voices Oatcake recognises keep their names; the rest are “Voice 1”, “Voice 2”… until you name them from the meeting."
+        case .saveWithSummary: "Each call is saved once it’s processed, and summarised. Voices Oatcake is sure it recognises keep their names; the rest are “Voice 1”, “Voice 2”… until you name them from the meeting."
+        case .saveTranscript: "Each call is saved once it’s processed, with no summary or to-dos. Voices Oatcake is sure it recognises keep their names; the rest are “Voice 1”, “Voice 2”… until you name them from the meeting."
         }
     }
 

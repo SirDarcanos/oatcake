@@ -55,6 +55,8 @@ final class Jobs {
     /// Summaries being written of a transcript that has since had its voices named (a meeting saved
     /// without checking who's who): what the model is writing has the old names, so it's asked again.
     private var staleSummaries = Set<UUID>()
+    /// Jobs regenerating a meeting's to-dos that are followed by its summary: a voice was left out meanwhile.
+    private var summaryAgain = Set<UUID>()
     var reviewDrafts: [String: ReviewDraft] = [:]
     /// Meetings whose to-dos couldn't be read from the model's reply, and why, by path.
     var todoProblems: [String: String] = [:]
@@ -165,9 +167,23 @@ final class Jobs {
         guard let path = Recordings.meetingPath(rec, meetingsRoot: config.meetingsRoot) else {
             throw OatcakeError("The meeting saved from this recording couldn’t be found. It may have been deleted.")
         }
+        // Asked before saving: after it, what the voices were saved as is no longer on record.
+        let leftOut = leavesOutSavedVoice(rec, decisions)
         let saved = try saveMeeting(config, rec, decisions: decisions, folder: "", into: path)
         // A summary of it that's still being written was asked for with the old names.
-        for (job, meeting) in summaryJobs where meeting == saved { staleSummaries.insert(job) }
+        let writing = summaryJobs.filter { $0.value == saved }.map(\.key)
+        staleSummaries.formUnion(writing)
+        // A voice left out of a meeting that has its summary already: putting new names in can't take
+        // out what the summary says of that voice, so the summary is written again from the transcript
+        // as it is now. One being written is read again anyway; a job that's only regenerating the
+        // to-dos is followed by the summary.
+        if leftOut, (try? Meetings(root: config.meetingsRoot).read(saved).summary.trimmed.isEmpty) == false {
+            if writing.isEmpty {
+                writeSummary(saved, only: .summary)
+            } else if regenerating[saved] == .todos {
+                summaryAgain.formUnion(writing)
+            }
+        }
         reviewDrafts.removeValue(forKey: rec.id)
         tidySavedRecordings()
         return saved
@@ -297,8 +313,10 @@ final class Jobs {
             } catch {
                 summaryErrors[summaryJobs[job] ?? path] = error.localizedDescription
             }
-            summarising.remove(summaryJobs[job] ?? path)
+            let meeting = summaryJobs[job] ?? path
+            summarising.remove(meeting)
             summaryJobs.removeValue(forKey: job)
+            if summaryAgain.remove(job) != nil { writeSummary(meeting, only: .summary) }
             refresh()
         }
     }

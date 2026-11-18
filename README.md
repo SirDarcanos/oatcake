@@ -181,10 +181,11 @@ them all to the Trash.
 
    **Or skip it.** Settings › General › **After a call** can save each call as soon as it's
    processed, instead of waiting here: **Save with a summary**, or **Save the transcript only**
-   (no summary or to-dos). Voices Oatcake recognised from before keep their names, and every
-   other voice is "Voice 1", "Voice 2"…, whatever the model guessed from the conversation: the
-   guess waits on the voice's card as a suggestion. No voice is remembered from names nobody
-   checked. The meeting says it was saved without checking who's who: **Name voices…** opens
+   (no summary or to-dos). Voices Oatcake is sure it recognises from before keep their names
+   (a closer match than this screen asks for, since nobody is looking), and every other voice
+   is "Voice 1", "Voice 2"…, whatever the model guessed from the conversation: a guess, or a
+   match that wasn't sure enough, waits on the voice's card as a suggestion. No voice is
+   remembered from names nobody checked. The meeting says it was saved without checking who's who: **Name voices…** opens
    this screen for it, and **Update meeting** writes its transcript and `meeting.json` again in
    place, puts the new names where the old ones were in its summary and to-dos (as whole words:
    each "Voice N" stands for one voice, so it's an exact swap wherever the model wrote it that

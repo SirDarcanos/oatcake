@@ -337,7 +337,8 @@ struct MeetingView: View {
                         Notice(tone: .grey) { Text(granolaNotice(files)) }.padding(.top, 14)
                     }
                     if let id = meta.recording, model.jobs.unchecked.contains(where: { $0.id == id }) {
-                        uncheckedNotice(id).padding(.top, 14)
+                        uncheckedNotice(id, unnamed: (meta.participants ?? []).contains { $0.range(of: #"^Voice \d+$"#, options: .regularExpression) != nil })
+                            .padding(.top, 14)
                     }
                     Spacer().frame(height: 22)
                     if tab == .summary, let part = model.jobs.regenerating[path] {
@@ -412,11 +413,14 @@ struct MeetingView: View {
     }
 
     /// Saved straight after the call, without anyone checking who's who (Settings › General › After a call).
-    private func uncheckedNotice(_ id: String) -> some View {
+    /// `unnamed`: some of its voices weren't recognised, so they're "Voice 1", "Voice 2"… for now.
+    private func uncheckedNotice(_ id: String, unnamed: Bool) -> some View {
         // Amber, not blue: blue notices carry a spinner, for work in progress.
         Notice(tone: .amber) {
             Text("Saved without checking who’s who").fontWeight(.semibold)
-            Text("Voices Oatcake didn’t recognise are “Voice 1”, “Voice 2”… Name them and this meeting’s transcript, summary and to-dos are updated.")
+            Text(unnamed
+                 ? "Voices Oatcake didn’t recognise are “Voice 1”, “Voice 2”… Name them and this meeting’s transcript, summary and to-dos are updated."
+                 : "Oatcake recognised every voice from before and used those names. Change one and this meeting’s transcript, summary and to-dos are updated.")
             HStack(spacing: 10) {
                 Button("Name voices…") {
                     flush()

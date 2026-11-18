@@ -30,6 +30,8 @@ public struct Suggestion: Codable, Equatable, Sendable {
     public var name: String
     public var how: How
     public var detail: String
+    /// How close a voice match is (0–1). nil for a name from the conversation, and in analyses made before this was kept.
+    public var score: Double? = nil
 }
 
 public struct SpeakerInfo: Codable, Equatable, Sendable {
@@ -213,7 +215,7 @@ public func analyse(_ dir: URL, config: Config = Config.load(), voiceprints file
             ? systemLines.filter { $0.speaker == id }.reduce(0) { $0 + $1.end - $1.start }
             : own.reduce(0) { $0 + $1.end - $1.start }
         return SpeakerInfo(id: id, seconds: seconds, embedding: embedding,
-                           suggestion: voice.map { Suggestion(name: $0.name, how: .voice, detail: String(format: "voice match %.2f", $0.score)) },
+                           suggestion: voice.map { Suggestion(name: $0.name, how: .voice, detail: String(format: "voice match %.2f", $0.score), score: Double($0.score)) },
                            quotes: quotes)
     }
 

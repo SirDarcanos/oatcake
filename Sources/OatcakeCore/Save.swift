@@ -20,14 +20,29 @@ public func loadAnalysis(_ rec: Recording) throws -> Analysis {
     try readJSON(Analysis.self, rec.dir.appendingPathComponent("analysis.json"))
 }
 
-/// Who's who as a meeting saved without checking gets it: a voice Oatcake recognised from before under
-/// that person's name, and every other voice unnamed ("Voice 1"…), whatever the model guessed from the
-/// conversation. A guess is a name that was said on the call, so it's often someone else's; and each
-/// "Voice N" stands for one voice only, so it can be given its name later wherever it's been written.
+/// How close a voice match has to be for the voice to get that person's name with nobody checking.
+/// Review suggests any match from 0.6 (Speakers.swift), where you see it and can say no. The same
+/// person measured 0.85–0.95 there; a match in the 0.6s has been someone else in the background.
+public let unattendedMatch = 0.8
+
+/// Who's who as a meeting saved without checking gets it: a voice Oatcake recognised from before, and
+/// is sure of, under that person's name, and every other voice unnamed ("Voice 1"…), whatever the
+/// model guessed from the conversation. A guess is a name that was said on the call, so it's often
+/// someone else's; and each "Voice N" stands for one voice only, so it can be given its name later
+/// wherever it's been written. A match that isn't sure enough is still suggested when the voices are named.
 public func suggestedDecisions(_ analysis: Analysis) -> [String: Decision] {
     Dictionary(uniqueKeysWithValues: analysis.speakers.map { s in
-        (s.id, Decision.name(s.suggestion?.how == .voice ? s.suggestion?.name.trimmed ?? "" : ""))
+        let sure = s.suggestion.flatMap { $0.how == .voice && ($0.score ?? 0) >= unattendedMatch ? $0.name.trimmed : nil }
+        return (s.id, Decision.name(sure ?? ""))
     })
+}
+
+/// Whether these decisions leave out a voice that's in the meeting as it was saved without checking.
+/// Its to-dos go with it when the meeting is saved again; what the summary says of it can only go by
+/// writing the summary again, which is the app's to ask for.
+public func leavesOutSavedVoice(_ rec: Recording, _ decisions: [String: Decision]) -> Bool {
+    guard let before = Recordings.savedInfo(rec.dir)?.names else { return false }
+    return decisions.contains { $0.value == .ignore && before[$0.key] != nil }
 }
 
 /**
@@ -134,11 +149,14 @@ public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: 
             if let new = savedNames[id] { after[old, default: []].insert(new) }
         }
         let renames = after.compactMapValues { $0.count == 1 ? $0.first : nil }.filter { $0.key != $0.value }
-        if !renames.isEmpty {
+        // A voice left out now takes its to-dos with it, unless a voice that stays was saved under the
+        // same name. (The summary is written again without it: see leavesOutSavedVoice.)
+        let gone = Set(before.filter { savedNames[$0.key] == nil }.values).subtracting(after.keys)
+        if !renames.isEmpty || !gone.isEmpty {
             let meetings = Meetings(root: config.meetingsRoot)
             let files = try meetings.read(outRel)
             for (file, text) in [(MeetingFile.summary, files.summary), (.todo, files.todo)] where !text.isEmpty {
-                let renamed = renamePeople(text, renames)
+                let renamed = renamePeople(file == .todo ? withoutTodos(of: gone, in: text) : text, renames)
                 if renamed != text { try meetings.write(outRel, file, renamed) }
             }
         }
@@ -182,6 +200,13 @@ func renamePeople(_ text: String, _ renames: [String: String]) -> String {
     }
     for p in placed { out = out.replacingOccurrences(of: p.token, with: p.name) }
     return out
+}
+
+/// To-dos without the ones these people own. Every other line stays as it is, ticks included.
+func withoutTodos(of owners: Set<String>, in markdown: String) -> String {
+    let theirs = Set(parseTodos(markdown).filter { owners.contains($0.owner) }.map(\.line))
+    guard !theirs.isEmpty else { return markdown }
+    return markdown.components(separatedBy: "\n").enumerated().filter { !theirs.contains($0.offset) }.map(\.element).joined(separator: "\n")
 }
 
 /// The recording a meeting folder was saved from: nil when there's no meeting there, "" for a
