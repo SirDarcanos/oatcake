@@ -203,19 +203,27 @@ struct ReviewView: View {
         return v.mixed ? "Several people" : v.name.trimmed.isEmpty ? label(analysis, id) : v.name.trimmed
     }
 
+    /// Whether a voice's lines are left out of the meeting: it was marked as not part of the call,
+    /// or merged into one that was.
+    private func leftOut(_ id: String, _ seen: Set<String> = []) -> Bool {
+        guard let v = voices[id] else { return false }
+        if let into = v.into, !seen.contains(id) { return leftOut(into, seen.union([id])) }
+        return v.leftOut
+    }
+
     /// People on the call's calendar invite who haven't been given a voice yet, as quick picks.
     private var invited: [String] {
-        let used = Set(voices.values.map { $0.name.trimmed.lowercased() })
+        let used = Set(voices.values.filter { !$0.leftOut }.map { $0.name.trimmed.lowercased() })
         return (rec.attendees ?? []).filter { !used.contains($0.lowercased()) }
     }
 
     /// Everyone named here, you first and then by talking time: the order their colours are given in.
     private func names(_ analysis: Analysis) -> [String] {
-        [myName] + analysis.speakers.map { nameOf(analysis, $0.id) }
+        [myName] + analysis.speakers.filter { !leftOut($0.id) }.map { nameOf(analysis, $0.id) }
     }
 
     @ToolbarContentBuilder private func toolbar(_ analysis: Analysis) -> some ToolbarContent {
-        let unnamed = analysis.speakers.filter { voices[$0.id]?.into == nil && voices[$0.id]?.mixed == false && (voices[$0.id]?.name.trimmed.isEmpty ?? true) }.count
+        let unnamed = analysis.speakers.filter { voices[$0.id]?.into == nil && voices[$0.id]?.mixed == false && voices[$0.id]?.leftOut != true && (voices[$0.id]?.name.trimmed.isEmpty ?? true) }.count
         ToolbarItem(placement: .principal) {
             (Text("Who’s who").fontWeight(.semibold) + Text(" · \(title)").foregroundStyle(.secondary)).lineLimit(1)
         }
@@ -308,42 +316,54 @@ struct ReviewView: View {
 
     private func voiceCard(_ analysis: Analysis, _ s: SpeakerInfo, visible: [SpeakerInfo], colors: [String: Color]) -> some View {
         let v = voices[s.id] ?? Voice(name: "")
-        let shown = v.mixed ? "Several people" : v.name.trimmed.isEmpty ? label(analysis, s.id) : v.name.trimmed
+        // Left out, it goes by its number whatever name it had: nobody of that name is in the meeting.
+        let shown = v.leftOut ? label(analysis, s.id) : v.mixed ? "Several people" : v.name.trimmed.isEmpty ? label(analysis, s.id) : v.name.trimmed
         let absorbed = analysis.speakers.filter { voices[$0.id]?.into == s.id }
         let fromSuggestion = s.suggestion.map { v.name == $0.name && !v.mixed } ?? false
-        let targets = visible.filter { $0.id != s.id && voices[$0.id]?.mixed != true }
+        let targets = visible.filter { $0.id != s.id && voices[$0.id]?.mixed != true && voices[$0.id]?.leftOut != true }
         return card {
             HStack(spacing: 10) {
                 Avatar(name: shown, size: 30, remember: false, color: v.mixed ? Color(nsColor: .systemGray) : colors[shown])
                 VStack(alignment: .leading, spacing: 1) {
                     Text(shown).fontWeight(.semibold)
-                    Text("\(v.name.trimmed.isEmpty && !v.mixed ? "" : "\(label(analysis, s.id)) · ")\(minutes(s.seconds)) talking")
+                    Text("\(v.leftOut || (v.name.trimmed.isEmpty && !v.mixed) ? "" : "\(label(analysis, s.id)) · ")\(minutes(s.seconds)) talking")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
-                // Merge into another voice (or you), or mark as mixed.
+                // Merge into another voice (or you), mark as mixed, or leave out of the meeting.
                 Menu {
-                    if !v.mixed {
-                        Menu("Merge with") {
-                            Button("\(myName) (your microphone)") { voices[s.id]?.into = me }
-                            ForEach(targets, id: \.id) { o in
-                                Button(voices[o.id].map { $0.name.trimmed.isEmpty ? label(analysis, o.id) : $0.name.trimmed } ?? label(analysis, o.id)) {
-                                    voices[s.id]?.into = o.id
+                    if v.leftOut {
+                        Button("Put back") { voices[s.id]?.leftOut = false }
+                    } else {
+                        if !v.mixed {
+                            Menu("Merge with") {
+                                Button("\(myName) (your microphone)") { voices[s.id]?.into = me }
+                                ForEach(targets, id: \.id) { o in
+                                    Button(voices[o.id].map { $0.name.trimmed.isEmpty ? label(analysis, o.id) : $0.name.trimmed } ?? label(analysis, o.id)) {
+                                        voices[s.id]?.into = o.id
+                                    }
                                 }
                             }
                         }
+                        Button(v.mixed ? "Not mixed" : "Mark as mixed (several people)") { voices[s.id]?.mixed.toggle() }
+                        Button("Leave out (not part of the call)") {
+                            voices[s.id]?.mixed = false
+                            voices[s.id]?.leftOut = true
+                        }
                     }
-                    Button(v.mixed ? "Not mixed" : "Mark as mixed (several people)") { voices[s.id]?.mixed.toggle() }
                 } label: {
-                    Image(systemName: "ellipsis")
+                    // The words are the button's own title, with only the icon drawn. A label added to the
+                    // menu from outside was lost whenever the card was drawn again, leaving the icon's "More".
+                    Label(v.leftOut ? "Put \(shown) back in the meeting" : "Merge \(shown) with another voice, mark it as mixed, or leave it out",
+                          systemImage: "ellipsis")
+                        .labelStyle(.iconOnly)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
-                .help("Merge or mark as mixed")
-                .accessibilityLabel("Merge \(shown) with another voice, or mark it as mixed")
+                .help(v.leftOut ? "Put back" : "Merge, mark as mixed or leave out")
             }
             clips(s.quotes)
-            if !v.mixed {
+            if !v.mixed && !v.leftOut {
                 VStack(alignment: .leading, spacing: 6) {
                     TextField("Who is this?", text: Binding(get: { voices[s.id]?.name ?? "" }, set: {
                         if $0 != voices[s.id]?.name { voices[s.id]?.fromInvite = false }
@@ -379,6 +399,10 @@ struct ReviewView: View {
                         .foregroundStyle(suggestion.how == .voice ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
                     }
                 }
+            }
+            if v.leftOut {
+                Text("Not part of the call, so its lines are left out of the meeting: they won’t be in the transcript, the summary or the to-dos.")
+                    .font(.callout).foregroundStyle(.secondary)
             }
             if v.mixed || !absorbed.isEmpty {
                 HStack(spacing: 4) {
@@ -430,7 +454,7 @@ struct ReviewView: View {
                     Spacer()
                     Text("Updates as you name voices").font(.caption).foregroundStyle(.secondary)
                 }
-                ForEach(Array(analysis.lines.enumerated()), id: \.offset) { _, l in
+                ForEach(Array(analysis.lines.enumerated()).filter { !leftOut($0.element.speaker) }, id: \.offset) { _, l in
                     let name = nameOf(analysis, l.speaker)
                     VStack(alignment: .leading, spacing: 2) {
                         HStack {
@@ -454,6 +478,7 @@ struct ReviewView: View {
         // An unnamed voice is sent with no name: it's saved as "Voice N" but never remembered as a person.
         let decisions = voices.mapValues { v -> Decision in
             if let into = v.into { return .merge(into: into) }
+            if v.leftOut { return .ignore }
             return v.mixed ? .mixed : .name(v.name.trimmed)
         }
         let folder = draft.folder

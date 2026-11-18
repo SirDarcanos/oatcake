@@ -176,6 +176,36 @@ import Testing
         #expect(paragraphs[0].text == "Part 1. Part 2. Part 3.")
     }
 
+    /// A voice merged into one that's left out goes with it: neither is in the meeting, and neither is remembered.
+    @Test func mergedIntoALeftOutVoice() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-save-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let recDir = tmp.appendingPathComponent("rec"), root = tmp.appendingPathComponent("Meetings"), voiceprints = tmp.appendingPathComponent("voiceprints.json")
+        try FileManager.default.createDirectory(at: recDir, withIntermediateDirectories: true)
+        let speaker = { (id: String, seconds: Double, embedding: [Float]) in SpeakerInfo(id: id, seconds: seconds, embedding: embedding, suggestion: nil, quotes: []) }
+        let analysis = Analysis(title: "Catch-up", startedAt: "2026-11-10T14:00:00.000Z", endedAt: "2026-11-10T14:25:00.000Z",
+                                lines: [Line(speaker: me, start: 1, end: 2, text: "Shall we start?"), Line(speaker: "A", start: 10, end: 12, text: "Table for two."),
+                                        Line(speaker: "B", start: 20, end: 22, text: "By the window."), Line(speaker: "C", start: 30, end: 32, text: "Yes, go ahead.")],
+                                speakers: [speaker("A", 300, [1, 0]), speaker("B", 45, [0, 1]), speaker("C", 60, [1, 1])],
+                                echoLinesRemoved: 0, me: nil, warnings: [], embeddingModel: voiceprintModel)
+        try encodeJSON(analysis).write(to: recDir.appendingPathComponent("analysis.json"), atomically: true, encoding: .utf8)
+        var config = Config.defaults()
+        config.myName = "Sam Taylor"
+        config.outputDir = root.path
+        let rec = Recording(id: "2026-11-10T14-00-00-000Z", dir: recDir, title: "Catch-up", folder: "", startedAt: Date(), state: .processed)
+
+        // A isn't on the call, and B is A again.
+        let saved = try saveMeeting(config, rec, decisions: ["A": .ignore, "B": .merge(into: "A"), "C": .name("Alex Kim")],
+                                    folder: "", voiceprints: voiceprints)
+        let out = root.appendingPathComponent(saved)
+        let transcript = readText(out.appendingPathComponent("transcript.md"))
+        #expect(!transcript.contains("Table for two.") && !transcript.contains("By the window."))
+        #expect(transcript.contains("**[00:30] Alex Kim:** Yes, go ahead."))
+        let meta = try readJSON(MeetingMeta.self, out.appendingPathComponent("meeting.json"))
+        #expect(meta.participants == ["Sam Taylor", "Alex Kim"])
+        #expect(Array(Voiceprints.load(voiceprints).people.keys) == ["Alex Kim"])
+    }
+
     /// What review decided for each voice is what's saved: merged into another, several people, or left out.
     @Test func mergedMixedAndIgnoredVoices() throws {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-save-\(UUID().uuidString)")
