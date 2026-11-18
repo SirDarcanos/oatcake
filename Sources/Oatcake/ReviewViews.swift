@@ -66,9 +66,10 @@ struct ProcessingView: View {
                         ProgressView(value: (Double(n - 1) + within) / 5)
                     }
                 }
+                let then = model.config.afterCall == .review ? "it’ll wait under Needs review." : "it’ll be saved to \(folderPath(rec.folder ?? "")) when it’s done."
                 Text(downloading
-                     ? "The speech models (about 500 MB) are downloading. That’s the first time only; after it, an hour-long call takes a minute or two. You can keep working — it’ll wait under Needs review."
-                     : "An hour-long call takes a minute or two. You can keep working — it’ll wait under Needs review.")
+                     ? "The speech models (about 500 MB) are downloading. That’s the first time only; after it, an hour-long call takes a minute or two. You can keep working — \(then)"
+                     : "An hour-long call takes a minute or two. You can keep working — \(then)")
                     .font(.callout).foregroundStyle(.secondary)
             }
         }
@@ -129,7 +130,8 @@ final class ClipPlayer: NSObject, AVAudioPlayerDelegate {
 }
 
 /// Who's who: one card per voice, to name, merge or mark as mixed before saving. The title and the
-/// folder it's saved in can be changed here too.
+/// folder it's saved in can be changed here too. For a meeting already saved without checking (Settings ›
+/// General › After a call), it names the voices and updates that meeting in place.
 struct ReviewView: View {
     @Environment(AppModel.self) private var model
     let rec: Recording
@@ -153,6 +155,8 @@ struct ReviewView: View {
         nonmutating set { draft.voices = newValue }
     }
     private var title: String { draft.title.trimmed.isEmpty ? rec.title : draft.title.trimmed }
+    /// The recording is already a meeting: saving updates it where it is, under the title it has.
+    private var rechecking: Bool { rec.state == .saved }
 
     var body: some View {
         Group {
@@ -217,15 +221,16 @@ struct ReviewView: View {
         }
         ToolbarItemGroup(placement: .automatic) {
             Toggle(isOn: $showTranscript) { Text("Transcript") }.toggleStyle(.button)
-            Button("Discard…") { model.jobs.discard(rec) }.disabled(saved)
+            if !rechecking { Button("Discard…") { model.jobs.discard(rec) }.disabled(saved) }
             if unnamed > 0 {
                 Text("\(unnamed) voice\(unnamed == 1 ? "" : "s") unnamed").font(.callout).foregroundStyle(.secondary)
                     .help("Unnamed voices are saved as “Voice 1”, “Voice 2”…")
             }
-            Button("Save") { save(analysis) }
+            Button(rechecking ? "Update meeting" : "Save") { save(analysis) }
                 .buttonStyle(.borderedProminent)
                 .disabled(saved)
-                .help("Save the meeting. Its summary is written straight after.")
+                .help(rechecking ? "Rewrite the meeting’s transcript with these names, and use them in its summary and to-dos."
+                      : "Save the meeting. Its summary is written straight after.")
         }
     }
 
@@ -235,24 +240,33 @@ struct ReviewView: View {
         let colors = provisionalColors(names(analysis))
         let folders = (model.library.tree?.allFolders ?? []).map(\.path)
         return VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Picker("Folder", selection: Binding(get: { draft.folder }, set: { draft.folder = $0 })) {
-                    Text("Meetings (top level)").tag("")
-                    ForEach(folders, id: \.self) { Text(folderPath($0)).tag($0) }
-                    // The folder it was recorded for has since gone: saving makes it again.
-                    if !draft.folder.isEmpty && !folders.contains(draft.folder) { Text(folderPath(draft.folder)).tag(draft.folder) }
+            if rechecking {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(rec.title).font(.system(size: 22, weight: .bold))
+                    Text(recordingMeta(rec)).foregroundStyle(.secondary)
+                    Text("This meeting was saved without checking who’s who. Name the voices, then Update meeting: its transcript is written again with these names, and they replace the old ones in its summary and to-dos. Your notes stay as they are.")
+                        .foregroundStyle(.secondary).padding(.top, 8)
                 }
-                .labelsHidden()
-                .fixedSize()
-                .padding(.leading, -8)
-                .help("The folder this meeting is saved in")
-                TextField("Title", text: Binding(get: { draft.title }, set: { draft.title = $0 }), prompt: Text(rec.title))
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 22, weight: .bold))
-                    .help("The meeting’s title")
-                Text(recordingMeta(rec)).foregroundStyle(.secondary)
-                Text("Check who’s who before saving. Names label the transcript, and Oatcake remembers these voices next time.")
-                    .foregroundStyle(.secondary).padding(.top, 8)
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    Picker("Folder", selection: Binding(get: { draft.folder }, set: { draft.folder = $0 })) {
+                        Text("Meetings (top level)").tag("")
+                        ForEach(folders, id: \.self) { Text(folderPath($0)).tag($0) }
+                        // The folder it was recorded for has since gone: saving makes it again.
+                        if !draft.folder.isEmpty && !folders.contains(draft.folder) { Text(folderPath(draft.folder)).tag(draft.folder) }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .padding(.leading, -8)
+                    .help("The folder this meeting is saved in")
+                    TextField("Title", text: Binding(get: { draft.title }, set: { draft.title = $0 }), prompt: Text(rec.title))
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 22, weight: .bold))
+                        .help("The meeting’s title")
+                    Text(recordingMeta(rec)).foregroundStyle(.secondary)
+                    Text("Check who’s who before saving. Names label the transcript, and Oatcake remembers these voices next time.")
+                        .foregroundStyle(.secondary).padding(.top, 8)
+                }
             }
             if !error.isEmpty { Notice(tone: .red) { Text(error) } }
             if analysis.speakers.isEmpty {
@@ -445,20 +459,21 @@ struct ReviewView: View {
         let folder = draft.folder
         let everyone = names(analysis)
         do {
-            let path = try model.jobs.saveRecording(rec, decisions: decisions, folder: folder, title: title)
+            let path = rechecking ? try model.jobs.updateMeeting(rec, decisions: decisions)
+                : try model.jobs.saveRecording(rec, decisions: decisions, folder: folder, title: title)
             saved = true
             // Colours are claimed in the order this screen showed them, so nobody changes colour on saving.
             for name in everyone { _ = person(name) }
             player.stop()
             model.refresh()
-            model.toast("Saved to \(folderPath(folder))")
+            model.toast(rechecking ? "Meeting updated" : "Saved to \(folderPath(folder))")
             Task {
                 // The tree reloads in the background; open the meeting once it's there, unless you've moved on.
                 for _ in 0..<40 where model.library.tree?.find(path) == nil {
                     try? await Task.sleep(for: .milliseconds(50))
                 }
                 // On its summary, whichever tab you last read another meeting on: that's where the summary arrives.
-                if model.selection == .job(rec.id) { model.openMeeting(path, jump: Jump(tab: .summary)) }
+                if model.selection == .job(rec.id) { model.openMeeting(path, jump: Jump(tab: rechecking ? .transcript : .summary)) }
             }
         } catch {
             self.error = error.localizedDescription

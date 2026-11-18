@@ -81,6 +81,17 @@ public struct LlmConfig: Codable, Equatable, Sendable {
     }
 }
 
+/// What happens to a recording once it has been processed.
+public enum AfterCall: String, Codable, CaseIterable, Sendable {
+    /// It waits under Needs review until who's who has been checked and it's saved (as it always has).
+    case review
+    /// It's saved straight away, the voices Oatcake is sure it recognised under their names and the rest as
+    /// "Voice 1", "Voice 2"… (they can be named later), then summarised.
+    case saveWithSummary
+    /// The same, with no summary or to-dos written.
+    case saveTranscript
+}
+
 public struct Config: Codable, Equatable, Sendable {
     /// Your name: the microphone track is always you.
     public var myName: String
@@ -103,6 +114,8 @@ public struct Config: Codable, Equatable, Sendable {
     public var autoStop: Bool
     /// Transcribe during the call, for the live transcript beside your notes.
     public var liveTranscript: Bool
+    /// Wait for who's who, or save the meeting as soon as it's processed (unchecked: it can be named later).
+    public var afterCall: AfterCall
     /// Names, products and acronyms the summary model should spell as written here.
     public var jargon: [String]
     /// With a calendar connected, show the time until the next call in the menu bar.
@@ -137,7 +150,8 @@ public struct Config: Codable, Equatable, Sendable {
 
     init(myName: String, outputDir: String, asrModel: String, llm: LlmConfig, keepAudio: Bool, mic: MicChoice?, callReminders: Bool, updateCheck: Bool,
          callNotice: Bool = true, autoStop: Bool = true, liveTranscript: Bool = true, jargon: [String] = [], menuBarNextCall: Bool = true,
-         summaryInstructions: String = "", todoInstructions: String = "", ignoredEvents: [String] = Config.defaultIgnoredEvents) {
+         summaryInstructions: String = "", todoInstructions: String = "", ignoredEvents: [String] = Config.defaultIgnoredEvents,
+         afterCall: AfterCall = .review) {
         self.myName = myName
         self.outputDir = outputDir
         self.asrModel = asrModel
@@ -154,6 +168,7 @@ public struct Config: Codable, Equatable, Sendable {
         self.summaryInstructions = summaryInstructions
         self.todoInstructions = todoInstructions
         self.ignoredEvents = ignoredEvents
+        self.afterCall = afterCall
     }
 
     /// Missing or unreadable settings fall back to the defaults one by one.
@@ -176,6 +191,7 @@ public struct Config: Codable, Equatable, Sendable {
         summaryInstructions = (try? c.decodeIfPresent(String.self, forKey: .summaryInstructions)) ?? base.summaryInstructions
         todoInstructions = (try? c.decodeIfPresent(String.self, forKey: .todoInstructions)) ?? base.todoInstructions
         ignoredEvents = (try? c.decodeIfPresent([String].self, forKey: .ignoredEvents)) ?? base.ignoredEvents
+        afterCall = (try? c.decodeIfPresent(AfterCall.self, forKey: .afterCall)) ?? base.afterCall
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -197,10 +213,11 @@ public struct Config: Codable, Equatable, Sendable {
         try c.encode(summaryInstructions, forKey: .summaryInstructions)
         try c.encode(todoInstructions, forKey: .todoInstructions)
         try c.encode(ignoredEvents, forKey: .ignoredEvents)
+        try c.encode(afterCall, forKey: .afterCall)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case myName, outputDir, asrModel, llm, keepAudio, mic, callReminders, updateCheck, callNotice, autoStop, liveTranscript, jargon, menuBarNextCall, summaryInstructions, todoInstructions, ignoredEvents
+        case myName, outputDir, asrModel, llm, keepAudio, mic, callReminders, updateCheck, callNotice, autoStop, liveTranscript, jargon, menuBarNextCall, summaryInstructions, todoInstructions, ignoredEvents, afterCall
     }
 
     /// For the model: how to spell the names and terms you've listed, or "" when there are none.

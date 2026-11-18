@@ -116,6 +116,8 @@ final class AppModel {
         downloads.app = app
         calendar.app = app
         library.whenMoved = { [unowned self] from, to in self.moved(from: from, to: to) }
+        // A meeting saved without checking who's who keeps voice clips in Oatcake's own folder: they go with it.
+        library.whenTrashed = { [unowned self] in self.jobs.tidySavedRecordings() }
         calendar.changed = { [unowned self] in self.recording.updateMenuBar() }
         recording.folderForEvent = { [unowned self] title, recurring in try self.library.meetings.folderForEvent(title: title, recurring: recurring) }
         recording.ended = { [unowned self] rec in self.jobs.progress[rec.id] = JobProgress() }
@@ -162,6 +164,7 @@ final class AppModel {
         library.tree = library.meetings.tree()
         if let tree = library.tree { library.setTodos(library.meetings.allTodos(in: tree)) }
         jobs.pending = Recordings.list().filter { $0.state == .recorded || $0.state == .processed }
+        jobs.unchecked = Recordings.unchecked()
         openLastMeeting()
         refresh()
         calendar.start()
@@ -198,10 +201,11 @@ final class AppModel {
         refreshing = true
         let meetings = library.meetings
         Task {
-            let (tree, pending, todos) = await Task.detached {
+            let (tree, pending, unchecked, todos) = await Task.detached {
                 // The folder is walked once: the to-dos are read from the tree just built.
                 let tree = meetings.tree()
-                return (tree, Recordings.list().filter { $0.state == .recorded || $0.state == .processed }, meetings.allTodos(in: tree))
+                return (tree, Recordings.list().filter { $0.state == .recorded || $0.state == .processed }, Recordings.unchecked(),
+                        meetings.allTodos(in: tree))
             }.value
             refreshing = false
             defer {
@@ -219,6 +223,7 @@ final class AppModel {
             withTransaction(quiet) {
                 self.library.tree = tree
                 self.jobs.pending = pending
+                self.jobs.unchecked = unchecked
                 self.library.setTodos(todos)
                 self.library.diskVersion += 1
             }

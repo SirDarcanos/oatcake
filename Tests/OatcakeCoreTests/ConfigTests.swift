@@ -60,6 +60,12 @@ import Testing
         #expect(!config.callReminders && config.myName == "Sam")
         let again = try JSONDecoder().decode(Config.self, from: Data(encodeJSON(with(config) { $0.autoStop = false; $0.jargon = ["Jetpack"] }).utf8))
         #expect(!again.autoStop && again.jargon == ["Jetpack"])
+        // Calls wait for who's who unless you've chosen otherwise, and the choice reads back.
+        #expect(config.afterCall == .review)
+        let saving = try JSONDecoder().decode(Config.self, from: Data(encodeJSON(with(config) { $0.afterCall = .saveTranscript }).utf8))
+        #expect(saving.afterCall == .saveTranscript)
+        let unknown = try JSONDecoder().decode(Config.self, from: Data(#"{"afterCall":"somethingNew"}"#.utf8))
+        #expect(unknown.afterCall == .review)
     }
 
     /// Settings that can't be read aren't quietly replaced by the first change made after them.

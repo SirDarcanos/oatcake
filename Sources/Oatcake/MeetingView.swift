@@ -336,6 +336,10 @@ struct MeetingView: View {
                     if granola {
                         Notice(tone: .grey) { Text(granolaNotice(files)) }.padding(.top, 14)
                     }
+                    if let id = meta.recording, model.jobs.unchecked.contains(where: { $0.id == id }) {
+                        uncheckedNotice(id, unnamed: (meta.participants ?? []).contains { $0.range(of: #"^Voice \d+$"#, options: .regularExpression) != nil })
+                            .padding(.top, 14)
+                    }
                     Spacer().frame(height: 22)
                     if tab == .summary, let part = model.jobs.regenerating[path] {
                         let what = part == .summary ? "summary" : "to-dos"
@@ -406,6 +410,27 @@ struct MeetingView: View {
         return [date.map { "\(weekday($0)), \(longDate($0))" }, date.map(hhmm), length.map(minutes),
                 !granola && !withWhom.isEmpty ? "with \(withWhom.joined(separator: ", "))" : nil]
             .compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// Saved straight after the call, without anyone checking who's who (Settings › General › After a call).
+    /// `unnamed`: some of its voices weren't recognised, so they're "Voice 1", "Voice 2"… for now.
+    private func uncheckedNotice(_ id: String, unnamed: Bool) -> some View {
+        // Amber, not blue: blue notices carry a spinner, for work in progress.
+        Notice(tone: .amber) {
+            Text("Saved without checking who’s who").fontWeight(.semibold)
+            Text(unnamed
+                 ? "Voices Oatcake didn’t recognise are “Voice 1”, “Voice 2”… Name them and this meeting’s transcript, summary and to-dos are updated."
+                 : "Oatcake recognised every voice from before and used those names. Change one and this meeting’s transcript, summary and to-dos are updated.")
+            HStack(spacing: 10) {
+                Button("Name voices…") {
+                    flush()
+                    model.selection = .job(id)
+                }
+                Button("Keep as is") { model.jobs.keepAsIs(id) }
+                    .help("Keep these names. The recording’s voice clips are deleted, so its voices can’t be named later.")
+            }
+            .padding(.top, 6)
+        }
     }
 
     private func granolaNotice(_ files: [FileKey: String]) -> String {

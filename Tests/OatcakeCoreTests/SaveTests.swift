@@ -215,4 +215,239 @@ import Testing
         // The audio goes unless it's being kept; the folder itself is tidySaved's to clear.
         #expect(FileManager.default.fileExists(atPath: recDir.appendingPathComponent("saved.json").path))
     }
+
+    /// Saved straight after the call (After a call), a meeting has the voices Oatcake recognised under
+    /// their names and every other voice as "Voice N", whatever the model guessed, and remembers no
+    /// voices. Naming them later rewrites it where it is now, under the title it has now, with the new
+    /// names put into its summary and to-dos and your notes left alone.
+    @Test func savedUncheckedThenNamedLater() throws {
+        let fm = FileManager.default
+        let tmp = fm.temporaryDirectory.appendingPathComponent("oatcake-save-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: tmp) }
+        let recordings = tmp.appendingPathComponent("recordings"), root = tmp.appendingPathComponent("Meetings")
+        let voiceprints = tmp.appendingPathComponent("voiceprints.json")
+        let id = "2026-11-10T14-00-00-000Z"
+        let recDir = recordings.appendingPathComponent(id)
+        try fm.createDirectory(at: recDir.appendingPathComponent("clips"), withIntermediateDirectories: true)
+        try #"{"title":"Planning","folder":"Team","startedAt":"2026-11-10T14:00:00.000Z"}"#.write(to: recDir.appendingPathComponent("call.json"), atomically: true, encoding: .utf8)
+        try Data([1, 2]).write(to: recDir.appendingPathComponent("system.pcm"))
+        try Data([1]).write(to: recDir.appendingPathComponent("clips/A-1.wav"))
+        let suggested = { (name: String, how: Suggestion.How) in Suggestion(name: name, how: how, detail: "", score: how == .voice ? 0.9 : nil) }
+        let analysis = Analysis(title: "Planning", startedAt: "2026-11-10T14:00:00.000Z", endedAt: "2026-11-10T14:25:00.000Z",
+                                lines: [Line(speaker: me, start: 1, end: 2, text: "Shall we start?"), Line(speaker: "A", start: 10, end: 12, text: "Yes."),
+                                        Line(speaker: "B", start: 20, end: 22, text: "Agreed."), Line(speaker: "C", start: 30, end: 32, text: "Me too.")],
+                                speakers: [SpeakerInfo(id: "A", seconds: 300, embedding: [1, 0], suggestion: suggested("Alex Kim", .voice), quotes: []),
+                                           SpeakerInfo(id: "B", seconds: 60, embedding: [0, 1], suggestion: suggested("Jo", .transcript), quotes: []),
+                                           SpeakerInfo(id: "C", seconds: 45, embedding: [1, 1], suggestion: nil, quotes: [])],
+                                echoLinesRemoved: 0, me: nil, warnings: [], embeddingModel: voiceprintModel)
+        try encodeJSON(analysis).write(to: recDir.appendingPathComponent("analysis.json"), atomically: true, encoding: .utf8)
+        try encodeJSON([Note(at: 65, text: "Budget agreed")]).write(to: recDir.appendingPathComponent("notes.json"), atomically: true, encoding: .utf8)
+        var config = Config.defaults()
+        config.myName = "Sam Taylor"
+        config.outputDir = root.path
+        let rec = try #require(Recordings.get(id, recordings: recordings))
+
+        // Recognised by voice: named. Guessed from the conversation, or not at all: a number.
+        #expect(suggestedDecisions(analysis) == ["A": .name("Alex Kim"), "B": .name(""), "C": .name("")])
+        // A voice match that's only good enough to suggest in review names nobody here, and neither
+        // does one from an analysis that kept no score.
+        var unsure = analysis
+        unsure.speakers[0].suggestion?.score = 0.64
+        #expect(suggestedDecisions(unsure)["A"] == .name(""))
+        unsure.speakers[0].suggestion?.score = nil
+        #expect(suggestedDecisions(unsure)["A"] == .name(""))
+        let saved = try saveMeeting(config, rec, decisions: suggestedDecisions(analysis), folder: "Team", title: rec.title,
+                                    unchecked: true, voiceprints: voiceprints)
+        let meetings = Meetings(root: root)
+        #expect(try meetings.read(saved).transcript.contains("**[00:10] Alex Kim:** Yes.\n\n**[00:20] Voice 2:** Agreed.\n\n**[00:30] Voice 3:** Me too."))
+        #expect(Recordings.savedInfo(recDir)?.names == ["A": "Alex Kim", "B": "Voice 2", "C": "Voice 3"])
+        #expect(try meetings.read(saved).meta.recording == id)
+        // Nobody checked these names, so no voice is remembered; the clips stay to be played, the tracks go.
+        #expect(Voiceprints.load(voiceprints).people.isEmpty)
+        #expect(fm.fileExists(atPath: recDir.appendingPathComponent("clips/A-1.wav").path))
+        #expect(!fm.fileExists(atPath: recDir.appendingPathComponent("system.pcm").path))
+        #expect(Recordings.unchecked(recordings: recordings).map(\.id) == [id])
+        // Clearing away saved recordings leaves this one: its voices can still be named.
+        Recordings.tidySaved(meetingsRoot: root, recordings: recordings)
+        #expect(fm.fileExists(atPath: recDir.appendingPathComponent("analysis.json").path))
+
+        // Meanwhile: summarised, retitled (so moved), and its notes and to-dos edited.
+        try meetings.write(saved, .summary, "## Budget\n- Voice 2 and Voice 3 agreed it. Jo and Voice 30 weren't there.\n")
+        try meetings.write(saved, .todo, "- [ ] Send the figures — Voice 3\n")
+        let moved = try meetings.retitle(saved, to: "Budget planning")
+        try meetings.write(moved, .notes, "- My own edit\n")
+
+        // Named: B is Jo Park, C is Alex Kim again.
+        let rec2 = try #require(Recordings.get(id, recordings: recordings))
+        #expect(Recordings.meetingPath(rec2, meetingsRoot: root) == moved)
+        let updated = try saveMeeting(config, rec2, decisions: ["A": .name("Alex Kim"), "B": .name("Jo Park"), "C": .merge(into: "A")],
+                                      folder: "", into: moved, voiceprints: voiceprints)
+        #expect(updated == moved)
+        let files = try meetings.read(moved)
+        #expect(files.transcript.contains("**[00:20] Jo Park:** Agreed.\n\n**[00:30] Alex Kim:** Me too."))
+        // Each number was one voice, so it's swapped exactly; a "Jo" who was only talked about is left alone.
+        #expect(files.summary == "## Budget\n- Jo Park and Alex Kim agreed it. Jo and Voice 30 weren't there.\n")
+        #expect(files.todo == "- [ ] Send the figures — Alex Kim\n")
+        #expect(files.notes == "- My own edit\n")
+        #expect(files.meta.title == "Budget planning" && files.meta.participants == ["Sam Taylor", "Alex Kim", "Jo Park"])
+        // Checked now: the named voices are remembered, and the working folder can go.
+        #expect(Set(Voiceprints.load(voiceprints).people.keys) == ["Alex Kim", "Jo Park"])
+        #expect(Recordings.unchecked(recordings: recordings).isEmpty)
+        Recordings.tidySaved(meetingsRoot: root, recordings: recordings)
+        #expect(!fm.fileExists(atPath: recDir.path))
+    }
+
+    /// Keep as is: the meeting stays as it was saved, and its recording is cleared away like any other.
+    @Test func uncheckedKeptAsIs() throws {
+        let fm = FileManager.default
+        let tmp = fm.temporaryDirectory.appendingPathComponent("oatcake-save-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: tmp) }
+        let recordings = tmp.appendingPathComponent("recordings"), root = tmp.appendingPathComponent("Meetings")
+        let id = "2026-11-10T15-00-00-000Z"
+        let recDir = recordings.appendingPathComponent(id)
+        try fm.createDirectory(at: recDir, withIntermediateDirectories: true)
+        try #"{"title":"Sync","startedAt":"2026-11-10T15:00:00.000Z"}"#.write(to: recDir.appendingPathComponent("call.json"), atomically: true, encoding: .utf8)
+        let analysis = Analysis(title: "Sync", startedAt: "2026-11-10T15:00:00.000Z", endedAt: "2026-11-10T15:10:00.000Z",
+                                lines: [Line(speaker: "A", start: 1, end: 2, text: "Hi.")],
+                                speakers: [SpeakerInfo(id: "A", seconds: 40, embedding: nil, suggestion: nil, quotes: [])],
+                                echoLinesRemoved: 0, me: nil, warnings: [], embeddingModel: voiceprintModel)
+        try encodeJSON(analysis).write(to: recDir.appendingPathComponent("analysis.json"), atomically: true, encoding: .utf8)
+        var config = Config.defaults()
+        config.outputDir = root.path
+        let rec = try #require(Recordings.get(id, recordings: recordings))
+        let saved = try saveMeeting(config, rec, decisions: suggestedDecisions(analysis), folder: "", unchecked: true,
+                                    voiceprints: tmp.appendingPathComponent("voiceprints.json"))
+        try Recordings.markChecked(rec)
+        #expect(Recordings.unchecked(recordings: recordings).isEmpty)
+        #expect(Recordings.savedInfo(recDir) == SavedInfo(meeting: saved))
+        Recordings.tidySaved(meetingsRoot: root, recordings: recordings)
+        #expect(!fm.fileExists(atPath: recDir.path))
+        #expect(try Meetings(root: root).read(saved).transcript.contains("Voice 1:** Hi."))
+    }
+
+    /// Two voices recognised as the same person, and so saved under one name, that turn out to be two
+    /// people: the transcript knows which is which, but a sentence in the summary doesn't, so that name
+    /// is left there. A voice left with its name isn't touched either.
+    @Test func oneNameForTwoVoicesIsLeftInTheSummary() throws {
+        let fm = FileManager.default
+        let tmp = fm.temporaryDirectory.appendingPathComponent("oatcake-save-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: tmp) }
+        let recordings = tmp.appendingPathComponent("recordings"), root = tmp.appendingPathComponent("Meetings")
+        let id = "2026-11-10T16-00-00-000Z"
+        let recDir = recordings.appendingPathComponent(id)
+        try fm.createDirectory(at: recDir, withIntermediateDirectories: true)
+        try #"{"title":"Sync","startedAt":"2026-11-10T16:00:00.000Z"}"#.write(to: recDir.appendingPathComponent("call.json"), atomically: true, encoding: .utf8)
+        let voice = { (id: String, name: String) in SpeakerInfo(id: id, seconds: 60, embedding: nil, suggestion: Suggestion(name: name, how: .voice, detail: "", score: 0.9), quotes: []) }
+        let analysis = Analysis(title: "Sync", startedAt: "2026-11-10T16:00:00.000Z", endedAt: "2026-11-10T16:10:00.000Z",
+                                lines: [Line(speaker: "A", start: 1, end: 2, text: "Hi."), Line(speaker: "B", start: 5, end: 6, text: "Hello."),
+                                        Line(speaker: "C", start: 9, end: 10, text: "Morning.")],
+                                speakers: [voice("A", "Alex Kim"), voice("B", "Alex Kim"), voice("C", "Jo Park")],
+                                echoLinesRemoved: 0, me: nil, warnings: [], embeddingModel: voiceprintModel)
+        try encodeJSON(analysis).write(to: recDir.appendingPathComponent("analysis.json"), atomically: true, encoding: .utf8)
+        var config = Config.defaults()
+        config.outputDir = root.path
+        let voiceprints = tmp.appendingPathComponent("voiceprints.json")
+        let rec = try #require(Recordings.get(id, recordings: recordings))
+        let saved = try saveMeeting(config, rec, decisions: suggestedDecisions(analysis), folder: "", unchecked: true, voiceprints: voiceprints)
+        let meetings = Meetings(root: root)
+        try meetings.write(saved, .summary, "Alex Kim opened. Jo Park agreed.\n")
+
+        try saveMeeting(config, try #require(Recordings.get(id, recordings: recordings)),
+                        decisions: ["A": .name("Alex Kim"), "B": .name("Sam Lee"), "C": .name("Jo Park")], folder: "", into: saved, voiceprints: voiceprints)
+        let files = try meetings.read(saved)
+        #expect(files.transcript.contains("**[00:01] Alex Kim:** Hi.\n\n**[00:05] Sam Lee:** Hello.\n\n**[00:09] Jo Park:** Morning."))
+        #expect(files.summary == "Alex Kim opened. Jo Park agreed.\n")
+    }
+
+    /// A voice left out when the voices are named later: its lines leave the transcript and its to-dos
+    /// go with it, the other to-dos stay as they are (ticked or not), and the app is told the summary
+    /// needs writing again, because what it says of that voice can't be cut out of it.
+    @Test func voiceLeftOutLater() throws {
+        let fm = FileManager.default
+        let tmp = fm.temporaryDirectory.appendingPathComponent("oatcake-save-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: tmp) }
+        let recordings = tmp.appendingPathComponent("recordings"), root = tmp.appendingPathComponent("Meetings")
+        let voiceprints = tmp.appendingPathComponent("voiceprints.json")
+        let id = "2026-11-10T17-00-00-000Z"
+        let recDir = recordings.appendingPathComponent(id)
+        try fm.createDirectory(at: recDir, withIntermediateDirectories: true)
+        try #"{"title":"Suppliers","folder":"","startedAt":"2026-11-10T17:00:00.000Z"}"#.write(to: recDir.appendingPathComponent("call.json"), atomically: true, encoding: .utf8)
+        let speaker = { (id: String) in SpeakerInfo(id: id, seconds: 60, embedding: nil, suggestion: nil, quotes: []) }
+        let analysis = Analysis(title: "Suppliers", startedAt: "2026-11-10T17:00:00.000Z", endedAt: "2026-11-10T17:25:00.000Z",
+                                lines: [Line(speaker: me, start: 1, end: 2, text: "Shall we start?"), Line(speaker: "A", start: 10, end: 12, text: "Two left."),
+                                        Line(speaker: "B", start: 20, end: 22, text: "A table for four."), Line(speaker: "C", start: 30, end: 32, text: "Same here.")],
+                                speakers: [speaker("A"), speaker("B"), speaker("C")],
+                                echoLinesRemoved: 0, me: nil, warnings: [], embeddingModel: voiceprintModel)
+        try encodeJSON(analysis).write(to: recDir.appendingPathComponent("analysis.json"), atomically: true, encoding: .utf8)
+        var config = Config.defaults()
+        config.myName = "Sam Taylor"
+        config.outputDir = root.path
+        let rec = try #require(Recordings.get(id, recordings: recordings))
+        let saved = try saveMeeting(config, rec, decisions: suggestedDecisions(analysis), folder: "", unchecked: true, voiceprints: voiceprints)
+        let meetings = Meetings(root: root)
+        try meetings.write(saved, .summary, "- Voice 1 has two left. Voice 2 asked for a table.\n")
+        try meetings.write(saved, .todo, "- [x] Ask for references — Voice 1\n- [ ] Book a table — Voice 2 — due Friday\n- [ ] Call the bank\n- [ ] Send the numbers — Voice 3\n")
+
+        // Naming alone leaves nobody out; leaving out B does, and so does leaving out a voice B was merged into.
+        let rec2 = try #require(Recordings.get(id, recordings: recordings))
+        #expect(!leavesOutSavedVoice(rec2, ["A": .name("Alex Kim"), "B": .mixed, "C": .merge(into: "A")]))
+        #expect(leavesOutSavedVoice(rec2, ["A": .ignore, "B": .merge(into: "A"), "C": .name("")]))
+        let decisions: [String: Decision] = ["A": .name("Alex Kim"), "B": .ignore, "C": .name("Jo Park")]
+        #expect(leavesOutSavedVoice(rec2, decisions))
+        _ = try saveMeeting(config, rec2, decisions: decisions, folder: "", into: saved, voiceprints: voiceprints)
+        let files = try meetings.read(saved)
+        #expect(!files.transcript.contains("A table for four.") && files.meta.participants == ["Sam Taylor", "Alex Kim", "Jo Park"])
+        #expect(files.todo == "- [x] Ask for references — Alex Kim\n- [ ] Call the bank\n- [ ] Send the numbers — Jo Park\n")
+        // The summary has its names put in; the rest of it is the app's to have written again.
+        #expect(files.summary == "- Alex Kim has two left. Voice 2 asked for a table.\n")
+        // Checked now, so there's nothing on record to leave a voice out of.
+        #expect(!leavesOutSavedVoice(try #require(Recordings.get(id, recordings: recordings)), decisions))
+    }
+
+    /// A meeting saved without checking that has since gone (to the Trash, say) takes its recording's
+    /// clips and analysis with it at the next clear-up. A Meetings folder that isn't there at all (a
+    /// drive that's unplugged) says nothing about one meeting, so nothing is cleared.
+    @Test func uncheckedRecordingGoesWithItsMeeting() throws {
+        let fm = FileManager.default
+        let tmp = fm.temporaryDirectory.appendingPathComponent("oatcake-save-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: tmp) }
+        let recordings = tmp.appendingPathComponent("recordings"), root = tmp.appendingPathComponent("Meetings")
+        var config = Config.defaults()
+        config.outputDir = root.path
+        func savedUnchecked(_ id: String) throws -> (dir: URL, meeting: String) {
+            let recDir = recordings.appendingPathComponent(id)
+            try fm.createDirectory(at: recDir.appendingPathComponent("clips"), withIntermediateDirectories: true)
+            try #"{"title":"Sync","startedAt":"2026-11-10T15:00:00.000Z"}"#.write(to: recDir.appendingPathComponent("call.json"), atomically: true, encoding: .utf8)
+            try Data([1]).write(to: recDir.appendingPathComponent("clips/A-1.wav"))
+            let analysis = Analysis(title: "Sync", startedAt: "2026-11-10T15:00:00.000Z", endedAt: "2026-11-10T15:10:00.000Z",
+                                    lines: [Line(speaker: "A", start: 1, end: 2, text: "Hi.")],
+                                    speakers: [SpeakerInfo(id: "A", seconds: 40, embedding: nil, suggestion: nil, quotes: [])],
+                                    echoLinesRemoved: 0, me: nil, warnings: [], embeddingModel: voiceprintModel)
+            try encodeJSON(analysis).write(to: recDir.appendingPathComponent("analysis.json"), atomically: true, encoding: .utf8)
+            let rec = try #require(Recordings.get(id, recordings: recordings))
+            return (recDir, try saveMeeting(config, rec, decisions: suggestedDecisions(analysis), folder: "", unchecked: true,
+                                            voiceprints: tmp.appendingPathComponent("voiceprints.json")))
+        }
+        let gone = try savedUnchecked("2026-11-10T15-00-00-000Z"), kept = try savedUnchecked("2026-11-10T15-00-01-000Z")
+        #expect(gone.meeting != kept.meeting)
+
+        // The Meetings folder can't be found: both stay.
+        Recordings.tidySaved(meetingsRoot: tmp.appendingPathComponent("Unplugged"), recordings: recordings)
+        #expect(fm.fileExists(atPath: gone.dir.path) && fm.fileExists(atPath: kept.dir.path))
+
+        // One meeting is deleted: its recording goes, the other's clips stay to be named.
+        try fm.removeItem(at: root.appendingPathComponent(gone.meeting))
+        Recordings.tidySaved(meetingsRoot: root, recordings: recordings)
+        #expect(!fm.fileExists(atPath: gone.dir.path))
+        #expect(fm.fileExists(atPath: kept.dir.appendingPathComponent("clips/A-1.wav").path))
+        #expect(Recordings.unchecked(recordings: recordings).map(\.id) == ["2026-11-10T15-00-01-000Z"])
+    }
+
+    /// New names go in as whole words, and names that swap places don't run into each other.
+    @Test func renamingPeople() {
+        #expect(renamePeople("Voice 1 and Voice 12 met Voice 1.", ["Voice 1": "Ana"]) == "Ana and Voice 12 met Ana.")
+        #expect(renamePeople("Jo told Jon.", ["Jo": "Jon", "Jon": "Jo"]) == "Jon told Jo.")
+        #expect(renamePeople("Several people agreed.", ["Several people": "Ana"]) == "Several people agreed.")
+        #expect(renamePeople("(Voice 2) owns it", ["Voice 2": "Kim (PM)"]) == "(Kim (PM)) owns it")
+    }
 }
