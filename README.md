@@ -134,7 +134,10 @@ them all to the Trash.
    mic is used until it's unplugged, then the Mac's input until it's back. Changing mic
    mid-call carries on recording, with the switch filled with silence so your track stays
    lined up with the call. You're warned after 30 seconds of a silent mic or no call audio, on
-   the call's screen and with a notification, since you're probably looking at the call. If
+   the call's screen and with a notification, since you're probably looking at the call. The
+   silent-mic notification comes once a recording, and once more if you change microphone (a
+   headset that cuts out room noise is silent whenever you aren't talking); the call's screen
+   goes on saying so for as long as the mic is silent. If
    the recorder stops or never starts (no permission, a full disk), Oatcake notices within a
    couple of seconds, says so the same two ways, and keeps and processes whatever was
    recorded. Stop asks first, and so does quitting Oatcake while a call is being recorded,

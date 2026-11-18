@@ -17,6 +17,46 @@ import Testing
         #expect(CallDetector.callingApp("com.microsoft.teams2") == "Microsoft Teams" && CallDetector.callingApp("com.microsoft.teams2.helper") == "Microsoft Teams")
     }
 
+    /// The silent-microphone notification: once a recording, and once more for each change of microphone.
+    @Test func micSilenceIsSaidOnce() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        var silence = MicSilence()
+        /// One look at the microphone, `seconds` into the recording: whether the notification is due.
+        func look(_ device: String?, quiet: Bool, _ seconds: Double) -> Bool {
+            silence.look(device: device, quiet: quiet, at: start.addingTimeInterval(seconds))
+        }
+        func since() -> Double? { silence.since?.timeIntervalSince(start) }
+
+        #expect(!look("headset", quiet: true, 0))
+        #expect(!look("headset", quiet: true, 29))
+        #expect(look("headset", quiet: true, 30))
+        #expect(!look("headset", quiet: true, 31))
+        #expect(since() == 0)
+        // You speak, then listen for a long while: the live screen says so again, the notification doesn't.
+        #expect(!look("headset", quiet: false, 40))
+        #expect(since() == nil)
+        #expect(!look("headset", quiet: true, 41))
+        #expect(!look("headset", quiet: true, 120))
+        #expect(since() == 41)
+        // Another microphone gets its own half minute and its own notification, and so does going back.
+        #expect(!look("built-in", quiet: true, 121))
+        #expect(since() == 121)
+        #expect(!look("built-in", quiet: true, 150))
+        #expect(look("built-in", quiet: true, 151))
+        #expect(!look("headset", quiet: true, 152))
+        #expect(look("headset", quiet: true, 182))
+        // No microphone at all isn't a silent one.
+        #expect(!look(nil, quiet: true, 300))
+        #expect(since() == nil)
+
+        // A microphone that's never quiet for half a minute at a time says nothing.
+        silence = MicSilence()
+        for second in stride(from: 0.0, to: 600, by: 20) {
+            let said = look("headset", quiet: second.truncatingRemainder(dividingBy: 40) != 0, second)
+            #expect(!said)
+        }
+    }
+
     /// The live transcript drops a microphone line that only repeats the call audio, and reads in time order.
     @Test func liveLines() {
         let lines = [

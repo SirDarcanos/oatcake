@@ -121,3 +121,33 @@ public func transcribeLive(_ dir: URL, config: Config = Config.load(), report: @
         try await Task.sleep(for: .seconds(1.5))
     }
 }
+
+/**
+ * When to say that the microphone has gone silent during a call. `since` is when it went quiet, for
+ * the live screen, which says so for as long as it lasts. The notification is another matter: a
+ * headset that cuts out room noise, or a quiet mic, is silent whenever you aren't talking, so one
+ * for every quiet spell would go on all through a call you're listening to. It's given once a
+ * recording, and once more after each change of microphone, which starts its half minute again.
+ */
+public struct MicSilence: Sendable {
+    /// When the microphone in use went quiet, while it is.
+    public private(set) var since: Date?
+    private var device: String?
+    private var said = false
+
+    public init() {}
+
+    /// The latest look: the microphone in use (nil for none) and whether nothing is arriving from
+    /// it. True when the notification is due now.
+    public mutating func look(device: String?, quiet: Bool, at now: Date) -> Bool {
+        if device != self.device {
+            self.device = device
+            since = nil
+            said = false
+        }
+        since = device != nil && quiet ? since ?? now : nil
+        guard let since, now.timeIntervalSince(since) >= 30, !said else { return false }
+        said = true
+        return true
+    }
+}
