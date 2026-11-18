@@ -338,12 +338,15 @@ struct ReviewView: View {
                         }
                     }
                 } label: {
-                    Image(systemName: "ellipsis")
+                    // The words are the button's own title, with only the icon drawn. A label added to the
+                    // menu from outside was lost whenever the card was drawn again, leaving the icon's "More".
+                    Label(v.leftOut ? "Put \(shown) back in the meeting" : "Merge \(shown) with another voice, mark it as mixed, or leave it out",
+                          systemImage: "ellipsis")
+                        .labelStyle(.iconOnly)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
                 .help(v.leftOut ? "Put back" : "Merge, mark as mixed or leave out")
-                .accessibilityLabel(v.leftOut ? "Put \(shown) back in the meeting" : "Merge \(shown) with another voice, mark it as mixed, or leave it out")
             }
             clips(s.quotes)
             if !v.mixed && !v.leftOut {
