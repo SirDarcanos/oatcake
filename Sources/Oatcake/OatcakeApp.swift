@@ -172,7 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if action == Reminders.recordAction {
                 model.recording.recordCall()
             } else if action == UNNotificationDefaultActionIdentifier {
-                model.newRecording(model.calendar.currentEvent)
+                model.newRecording(model.recording.noticedCallEvent)
             }
             return
         }

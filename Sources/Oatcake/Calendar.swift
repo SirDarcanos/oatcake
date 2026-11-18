@@ -89,9 +89,8 @@ final class CalendarController {
         }
     }
 
-    /// The calendar event happening now (or starting within ten minutes), if any.
-    var currentEvent: CalendarEvent? {
-        let now = Date()
-        return events.first { !$0.allDay && $0.startDate.addingTimeInterval(-600) <= now && $0.endDate > now }
+    /// The calendar event happening now (or starting within ten minutes), if any, unless it's in `recorded`.
+    func currentEvent(unless recorded: Set<String> = []) -> CalendarEvent? {
+        eventHappening(events, at: Date(), unless: recorded)
     }
 }

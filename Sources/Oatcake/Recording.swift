@@ -72,6 +72,8 @@ final class RecordingController {
 
     /// Recorders running now, by recording ID.
     private var active: [String: Recording] = [:]
+    /// Calendar events recorded since launch, kept after their recordings are saved and tidied away.
+    private var recordedEvents = Set<String>()
     private var liveHelper: ChildProcess.Handle?
     /// The recording whose live transcript helper is running or on its way up. A second helper for the
     /// same recording would say every line again.
@@ -166,6 +168,7 @@ final class RecordingController {
         guard active.isEmpty else { throw OatcakeError("Oatcake is already recording a call. Stop it first.") }
         let rec = try Recordings.start(title: title, folder: folder, micUid: config.mic?.uid, options: options)
         active[rec.id] = rec
+        if let eventId = options.eventId { recordedEvents.insert(eventId) }
         // The prep is in the call's notes now.
         if !options.prep.isEmpty { try? PrepNotes.save(options.eventId, []) }
         goLive(rec)
@@ -500,7 +503,7 @@ final class RecordingController {
             callOffered = true
         } else if config.callNotice, !callOffered, now.timeIntervalSince(callSince!) >= 4 {
             callOffered = true
-            Reminders.offerRecording(app: apps[0], event: calendar.currentEvent)
+            Reminders.offerRecording(app: apps[0], event: noticedCallEvent)
         }
     }
 
@@ -530,12 +533,20 @@ final class RecordingController {
         }
     }
 
+    /// The calendar event a call Oatcake noticed by itself belongs to: the one happening now, unless it
+    /// has been recorded already. Its call may have finished early and this be another one in its slot.
+    /// A recording started from the event itself (New recording, Upcoming) isn't asked this.
+    var noticedCallEvent: CalendarEvent? {
+        let recorded = recordedEvents.union(Recordings.list().compactMap(\.eventId))
+        return calendar.currentEvent(unless: recorded)
+    }
+
     /// From the "On a call?" notification: record it, under the calendar event happening now if there is one.
     func recordCall() {
         showWindow()
         guard active.isEmpty else { return selection = .live }
         do {
-            if let event = calendar.currentEvent {
+            if let event = noticedCallEvent {
                 let folder = try folderForEvent(event.title, event.seriesId != nil)
                 try startRecording(title: event.title, folder: folder, options: startOptions(event))
             } else {

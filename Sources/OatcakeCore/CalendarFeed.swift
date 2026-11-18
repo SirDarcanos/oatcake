@@ -84,6 +84,16 @@ extension CalendarCache {
 }
 
 /**
+ * The event happening at `now` (or starting within ten minutes), if any. None if that event is in
+ * `recorded` (by ID): a call that finishes early and is followed by another while its slot is still on
+ * the clock (a quick debrief, say) would otherwise be named after the first call and get its invite.
+ */
+public func eventHappening(_ events: [CalendarEvent], at now: Date, unless recorded: Set<String> = []) -> CalendarEvent? {
+    let event = events.first { !$0.allDay && $0.startDate.addingTimeInterval(-600) <= now && $0.endDate > now }
+    return event.flatMap { recorded.contains($0.id) ? nil : $0 }
+}
+
+/**
  * Whether an event is left out of Upcoming, the menu bar and reminders: its title starts with one of
  * `ignored` (Settings › Calendar) as whole words, or has "Oatcake ignore" anywhere in it. Case and
  * surrounding spaces don't count. iCal doesn't say which events are Google's focus time or
