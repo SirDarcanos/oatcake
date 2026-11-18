@@ -69,6 +69,7 @@ struct LiveView: View {
                     Text(model.recording.recorderFailure != nil ? "Couldn’t record" : status.state == .starting ? "Starting…" : "Recording stopped").foregroundStyle(.secondary)
                 }
             }
+            .toolbarStatusPadding()
         }
         if model.config.liveTranscript {
             ToolbarItem(placement: .automatic) {
