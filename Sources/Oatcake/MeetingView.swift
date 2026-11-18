@@ -416,7 +416,7 @@ struct MeetingView: View {
         // Amber, not blue: blue notices carry a spinner, for work in progress.
         Notice(tone: .amber) {
             Text("Saved without checking who’s who").fontWeight(.semibold)
-            Text("Voices Oatcake didn’t recognise carry its suggested names, or “Voice 1”, “Voice 2”… Name them and this meeting’s transcript, summary and to-dos are updated.")
+            Text("Voices Oatcake didn’t recognise are “Voice 1”, “Voice 2”… Name them and this meeting’s transcript, summary and to-dos are updated.")
             HStack(spacing: 10) {
                 Button("Name voices…") {
                     flush()

@@ -181,13 +181,16 @@ them all to the Trash.
 
    **Or skip it.** Settings › General › **After a call** can save each call as soon as it's
    processed, instead of waiting here: **Save with a summary**, or **Save the transcript only**
-   (no summary or to-dos). Voices Oatcake recognised keep their names, voices it could only guess
-   at carry its suggestion, and the rest are "Voice 1", "Voice 2"… No voice is remembered from
-   names nobody checked. The meeting says it was saved without checking who's who: **Name
-   voices…** opens this screen for it, and **Update meeting** writes its transcript and
-   `meeting.json` again in place, puts the new names where the old ones were in its summary and
-   to-dos (as whole words), and leaves your notes and its title as they are. **Keep as is** keeps
-   the names it has. If a call can't be saved by itself, it waits here as usual.
+   (no summary or to-dos). Voices Oatcake recognised from before keep their names, and every
+   other voice is "Voice 1", "Voice 2"…, whatever the model guessed from the conversation: the
+   guess waits on the voice's card as a suggestion. No voice is remembered from names nobody
+   checked. The meeting says it was saved without checking who's who: **Name voices…** opens
+   this screen for it, and **Update meeting** writes its transcript and `meeting.json` again in
+   place, puts the new names where the old ones were in its summary and to-dos (as whole words:
+   each "Voice N" stands for one voice, so it's an exact swap wherever the model wrote it that
+   way), and leaves your notes and its title as they are. Name them while the summary is still
+   being written and it's written again from the named transcript. **Keep as is** keeps the
+   names it has. If a call can't be saved by itself, it waits here as usual.
 4. **Save.** The meeting is a folder in the folder you picked:
    `2026-11-05 1400 Weekly sync/` with `summary.md`, `todo.md` (action items, as
    `- [ ] Task — Owner — due Fri, Oct 30 — [12:34]`), `transcript.md`, `notes.md` (your own
@@ -614,7 +617,8 @@ Settings in the app (stored in `~/Library/Application Support/Oatcake/config.jso
   notes. With **Keep call audio** on, the audio goes into the meeting's own folder as
   `audio.m4a` first, so it's in one place and goes to the Trash with the meeting. A meeting saved
   without checking who's who (After a call) keeps its analysis and voice clips there, but not the
-  call's full tracks, until its voices are named or you choose Keep as is.
+  call's full tracks, until its voices are named, you choose Keep as is, or the meeting itself
+  goes (to the Trash, or deleted in Finder; that's noticed at launch and after the next save).
 - Recording one call at a time is enforced by the app. If Oatcake crashes mid-call, the recorder
   carries on for up to ten minutes; opening Oatcake again in that time picks the recording up,
   and after it the recorder finishes by itself. A recorder that has gone is noticed within a

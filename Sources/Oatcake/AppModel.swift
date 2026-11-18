@@ -116,6 +116,8 @@ final class AppModel {
         downloads.app = app
         calendar.app = app
         library.whenMoved = { [unowned self] from, to in self.moved(from: from, to: to) }
+        // A meeting saved without checking who's who keeps voice clips in Oatcake's own folder: they go with it.
+        library.whenTrashed = { [unowned self] in self.jobs.tidySavedRecordings() }
         calendar.changed = { [unowned self] in self.recording.updateMenuBar() }
         recording.folderForEvent = { [unowned self] title, recurring in try self.library.meetings.folderForEvent(title: title, recurring: recurring) }
         recording.ended = { [unowned self] rec in self.jobs.progress[rec.id] = JobProgress() }

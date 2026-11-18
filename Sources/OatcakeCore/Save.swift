@@ -20,10 +20,14 @@ public func loadAnalysis(_ rec: Recording) throws -> Analysis {
     try readJSON(Analysis.self, rec.dir.appendingPathComponent("analysis.json"))
 }
 
-/// Who's who as Oatcake would fill it in by itself: each voice under the name it recognised or
-/// suggested, and the rest unnamed ("Voice 1"…). What a meeting saved without checking is saved with.
+/// Who's who as a meeting saved without checking gets it: a voice Oatcake recognised from before under
+/// that person's name, and every other voice unnamed ("Voice 1"…), whatever the model guessed from the
+/// conversation. A guess is a name that was said on the call, so it's often someone else's; and each
+/// "Voice N" stands for one voice only, so it can be given its name later wherever it's been written.
 public func suggestedDecisions(_ analysis: Analysis) -> [String: Decision] {
-    Dictionary(uniqueKeysWithValues: analysis.speakers.map { ($0.id, Decision.name($0.suggestion?.name.trimmed ?? "")) })
+    Dictionary(uniqueKeysWithValues: analysis.speakers.map { s in
+        (s.id, Decision.name(s.suggestion?.how == .voice ? s.suggestion?.name.trimmed ?? "" : ""))
+    })
 }
 
 /**
@@ -123,10 +127,13 @@ public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: 
 
     // Naming voices later: the summary and to-dos say the new names where they said the old ones.
     if existing != nil, let before = Recordings.savedInfo(rec.dir)?.names {
-        var renames: [String: String] = [:]
+        // A name two voices were saved under (both recognised as one person) that they no longer
+        // share can't be told apart in a sentence: it's left as it is there.
+        var after: [String: Set<String>] = [:]
         for (id, old) in before {
-            if let new = savedNames[id], new != old { renames[old] = new }
+            if let new = savedNames[id] { after[old, default: []].insert(new) }
         }
+        let renames = after.compactMapValues { $0.count == 1 ? $0.first : nil }.filter { $0.key != $0.value }
         if !renames.isEmpty {
             let meetings = Meetings(root: config.meetingsRoot)
             let files = try meetings.read(outRel)

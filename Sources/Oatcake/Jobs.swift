@@ -52,6 +52,9 @@ final class Jobs {
     var regenerating: [String: SummaryPart] = [:]
     /// Where each meeting being summarised lives now: it can be renamed or moved while the model writes.
     private var summaryJobs: [UUID: String] = [:]
+    /// Summaries being written of a transcript that has since had its voices named (a meeting saved
+    /// without checking who's who): what the model is writing has the old names, so it's asked again.
+    private var staleSummaries = Set<UUID>()
     var reviewDrafts: [String: ReviewDraft] = [:]
     /// Meetings whose to-dos couldn't be read from the model's reply, and why, by path.
     var todoProblems: [String: String] = [:]
@@ -135,8 +138,8 @@ final class Jobs {
         }
     }
 
-    /// Saves a processed recording as a meeting without stopping at who's who: each voice under the
-    /// name Oatcake recognised or suggested, the rest as "Voice 1"… It can be named later from the
+    /// Saves a processed recording as a meeting without stopping at who's who: a voice Oatcake
+    /// recognised under that person's name, the rest as "Voice 1"… They can be named later from the
     /// meeting. If it can't be saved, it waits under Needs review as usual.
     private func autoSave(_ id: String) {
         guard let rec = Recordings.get(id), rec.state == .processed, let analysis = try? loadAnalysis(rec) else { return }
@@ -163,6 +166,8 @@ final class Jobs {
             throw OatcakeError("The meeting saved from this recording couldn’t be found. It may have been deleted.")
         }
         let saved = try saveMeeting(config, rec, decisions: decisions, folder: "", into: path)
+        // A summary of it that's still being written was asked for with the old names.
+        for (job, meeting) in summaryJobs where meeting == saved { staleSummaries.insert(job) }
         reviewDrafts.removeValue(forKey: rec.id)
         tidySavedRecordings()
         return saved
@@ -262,15 +267,25 @@ final class Jobs {
         summaryJobs[job] = path
         let config = config
         Task {
+            defer { staleSummaries.remove(job) }
             do {
                 // What's there now: if it's changed by the time the model is done, it isn't replaced.
-                let previous = try part.map { part in
-                    let files = try Meetings(root: config.meetingsRoot).read(path)
-                    return part == .summary ? files.summary : files.todo
+                @MainActor func partNow() throws -> String? {
+                    try part.map { part in
+                        let files = try Meetings(root: config.meetingsRoot).read(summaryJobs[job] ?? path)
+                        return part == .summary ? files.summary : files.todo
+                    }
                 }
+                var previous = try partNow()
                 try await downloads.ensureModel()
-                // Where the meeting is now: it may have been renamed or moved while the model downloaded.
-                let draft = try await OatcakeCore.draftSummary(config, meeting: summaryJobs[job] ?? path, only: part)
+                var draft: SummaryDraft
+                repeat {
+                    // The meeting's voices were named meanwhile: the transcript is read again with its new
+                    // names, and what's there now is what they were just put into.
+                    if staleSummaries.remove(job) != nil { previous = try partNow() }
+                    // Where the meeting is now: it may have been renamed or moved while the model downloaded.
+                    draft = try await OatcakeCore.draftSummary(config, meeting: summaryJobs[job] ?? path, only: part)
+                } while staleSummaries.contains(job)
                 if let part, let previous {
                     try OatcakeCore.writeRegenerated(part, draft, config: config, meeting: summaryJobs[job] ?? path, previous: previous)
                     regenerating.removeValue(forKey: summaryJobs[job] ?? path)

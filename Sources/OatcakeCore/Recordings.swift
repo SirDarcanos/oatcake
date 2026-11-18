@@ -305,8 +305,15 @@ public enum Recordings {
                 let audio = meeting.appendingPathComponent("audio.m4a")
                 if !fm.exists(audio), (try? exportAudio(recording: dir, to: audio)) == nil { continue }
             }
-            // Its voices can still be named: the analysis and clips stay, the tracks have gone to the meeting.
             if saved.isUnchecked {
+                // Its meeting has gone (to the Trash, say), so there's nothing left to name: the clips
+                // and the analysis go too. Not when the whole Meetings folder is missing (a drive
+                // that isn't plugged in): that's no sign of what happened to one meeting.
+                if fm.exists(meetingsRoot), savedMeeting(id, saved.meeting, under: meetingsRoot) == nil {
+                    try? fm.removeItem(at: dir)
+                    continue
+                }
+                // Its voices can still be named: the analysis and clips stay, the tracks have gone to the meeting.
                 deleteTracks(dir)
                 continue
             }

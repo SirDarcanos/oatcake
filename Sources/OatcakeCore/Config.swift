@@ -85,7 +85,8 @@ public struct LlmConfig: Codable, Equatable, Sendable {
 public enum AfterCall: String, Codable, CaseIterable, Sendable {
     /// It waits under Needs review until who's who has been checked and it's saved (as it always has).
     case review
-    /// It's saved straight away with the names Oatcake recognised or suggested, then summarised.
+    /// It's saved straight away, the voices Oatcake recognised under their names and the rest as
+    /// "Voice 1", "Voice 2"… (they can be named later), then summarised.
     case saveWithSummary
     /// The same, with no summary or to-dos written.
     case saveTranscript
