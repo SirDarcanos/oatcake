@@ -91,7 +91,7 @@ final class RecordingController {
     private var keepsRecording = false
     /// The recording is being stopped or cancelled, so the recorder going is expected.
     private var endingLive = false
-    private var micQuietSaid = false
+    private var micSilence = MicSilence()
     private var callQuietSaid = false
     let menuBar = MenuBarItem()
     private var timers: [Timer] = []
@@ -260,7 +260,7 @@ final class RecordingController {
         liveNotesError = nil
         micQuietSince = nil
         callQuietSince = nil
-        micQuietSaid = false
+        micSilence = MicSilence()
         callQuietSaid = false
         keepsRecording = false
         withdrawStopWarning()
@@ -333,22 +333,19 @@ final class RecordingController {
         Reminders.say("Oatcake couldn’t start recording", why, id: "recorder-failed")
     }
 
-    /// Silence: a working mic always picks up some room noise, and true silence means nothing arrives.
-    /// After half a minute of it there's a notification, once for each quiet spell; the live screen
-    /// says so too.
+    /// Silence: after half a minute of it the live screen says so, for as long as it lasts, and
+    /// there's a notification: for the call audio once for each quiet spell, for the microphone
+    /// once a recording and once more after a change of microphone (MicSilence says why).
     private func trackSilence() {
         guard status.state == .recording, recorderFailure == nil else { return }
         let now = Date()
-        let micQuiet = status.micDevice != nil && (status.micLevel ?? 0) < 0.001
+        let sayMic = micSilence.look(device: status.micDevice?.uid, quiet: (status.micLevel ?? 0) < 0.001, at: now)
         let callQuiet = callAudioQuiet
-        let mic = micQuiet ? (micQuietSince ?? now) : nil
         let call = callQuiet ? (callQuietSince ?? now) : nil
-        if mic != micQuietSince { micQuietSince = mic }
+        if micSilence.since != micQuietSince { micQuietSince = micSilence.since }
         if call != callQuietSince { callQuietSince = call }
-        if !micQuiet { micQuietSaid = false }
         if !callQuiet { callQuietSaid = false }
-        if let mic, now.timeIntervalSince(mic) >= 30, !micQuietSaid {
-            micQuietSaid = true
+        if sayMic {
             Reminders.say("Your microphone has been silent for 30 seconds", "Check it isn’t muted, or pick another microphone in Oatcake.", id: "mic-quiet")
         }
         // Only while a calling app has the microphone: dictating notes on your own, there is no call audio to miss.
