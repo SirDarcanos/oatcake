@@ -99,7 +99,6 @@ struct ModelError: View {
     }
 }
 
-/// The pulsing red dot of a recording in progress.
 extension View {
     /// Room at each end for what a screen says of itself in the middle of the toolbar (the recording's
     /// state, "Who’s who · …"). macOS 26 draws a capsule behind a toolbar item, hard against whatever is
@@ -107,6 +106,7 @@ extension View {
     func toolbarStatusPadding() -> some View { padding(.horizontal, 12) }
 }
 
+/// The pulsing red dot of a recording in progress.
 struct RecDot: View {
     @ViewState private var dim = false
     var body: some View {
