@@ -413,7 +413,8 @@ struct MeetingView: View {
 
     /// Saved straight after the call, without anyone checking who's who (Settings › General › After a call).
     private func uncheckedNotice(_ id: String) -> some View {
-        Notice(tone: .blue) {
+        // Amber, not blue: blue notices carry a spinner, for work in progress.
+        Notice(tone: .amber) {
             Text("Saved without checking who’s who").fontWeight(.semibold)
             Text("Voices Oatcake didn’t recognise carry its suggested names, or “Voice 1”, “Voice 2”… Name them and this meeting’s transcript, summary and to-dos are updated.")
             HStack(spacing: 10) {
