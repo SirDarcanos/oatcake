@@ -78,6 +78,7 @@ struct ProcessingView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 (Text(progress?.error != nil ? "Couldn’t finish" : "Processing").fontWeight(.semibold) + Text(" · \(rec.title)").foregroundStyle(.secondary)).lineLimit(1)
+                    .toolbarStatusPadding()
             }
             if progress?.error == nil {
                 ToolbarItem(placement: .automatic) { Button("Discard…") { model.jobs.discard(rec) } }
@@ -226,6 +227,7 @@ struct ReviewView: View {
         let unnamed = analysis.speakers.filter { voices[$0.id]?.into == nil && voices[$0.id]?.mixed == false && voices[$0.id]?.leftOut != true && (voices[$0.id]?.name.trimmed.isEmpty ?? true) }.count
         ToolbarItem(placement: .principal) {
             (Text("Who’s who").fontWeight(.semibold) + Text(" · \(title)").foregroundStyle(.secondary)).lineLimit(1)
+                .toolbarStatusPadding()
         }
         ToolbarItemGroup(placement: .automatic) {
             Toggle(isOn: $showTranscript) { Text("Transcript") }.toggleStyle(.button)

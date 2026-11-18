@@ -74,6 +74,7 @@ struct NewRecordingView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 (Text("New recording").fontWeight(.semibold) + Text(event.map { " · \($0.title)" } ?? "").foregroundStyle(.secondary)).lineLimit(1)
+                    .toolbarStatusPadding()
             }
         }
         .task {
