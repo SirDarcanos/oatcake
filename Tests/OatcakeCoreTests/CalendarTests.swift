@@ -70,6 +70,27 @@ import Testing
         #expect(try JSONDecoder().decode(Config.self, from: Data(try encodeJSON(config).utf8)).ignoredEvents == [])
     }
 
+    /// A call that finishes early and another in its slot: the second isn't named after the first.
+    @Test func callAfterAnEarlyFinish() {
+        func event(_ id: String, _ start: String, _ end: String, allDay: Bool = false) -> CalendarEvent {
+            CalendarEvent(id: id, seriesId: nil, title: id, start: start, end: end, allDay: allDay, attendees: [], meetUrl: nil)
+        }
+        let renewal = event("Renewal sync", "2026-11-18T09:00:00Z", "2026-11-18T10:00:00Z")
+        let next = event("Next call", "2026-11-18T10:00:00Z", "2026-11-18T11:00:00Z")
+        let offsite = event("Offsite", "2026-11-18T00:00:00Z", "2026-11-19T00:00:00Z", allDay: true)
+        func at(_ time: String) -> Date { parseISO("2026-11-18T\(time)Z")! }
+        // As before when nothing has been recorded.
+        #expect(eventHappening([offsite, renewal], at: at("09:01:00"))?.id == "Renewal sync")
+        #expect(eventHappening([renewal], at: at("08:51:00"))?.id == "Renewal sync")
+        #expect(eventHappening([renewal], at: at("08:49:00")) == nil)
+        #expect(eventHappening([renewal, next], at: at("09:51:00"))?.id == "Renewal sync")
+        #expect(eventHappening([renewal], at: at("10:00:00")) == nil)
+        // Recorded already: no event, rather than its name or the next call's.
+        #expect(eventHappening([renewal, next], at: at("09:47:00"), unless: ["Renewal sync"]) == nil)
+        #expect(eventHappening([renewal, next], at: at("09:51:00"), unless: ["Renewal sync"]) == nil)
+        #expect(eventHappening([renewal, next], at: at("09:51:00"), unless: ["Other call"])?.id == "Renewal sync")
+    }
+
     @Test func callLinks() {
         #expect(callApp("https://meet.google.com/abc") == "Google Meet")
         #expect(callApp("https://acme.zoom.us/j/1") == "Zoom")

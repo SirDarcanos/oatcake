@@ -89,6 +89,16 @@ extension CalendarCache {
  * surrounding spaces don't count. iCal doesn't say which events are Google's focus time or
  * out-of-office blocks, so their titles are all there is to go on.
  */
+/**
+ * The event happening at `now` (or starting within ten minutes), if any. None if that event is in
+ * `recorded` (by ID): a call that finishes early and is followed by another while its slot is still on
+ * the clock (a quick debrief, say) would otherwise be named after the first call and get its invite.
+ */
+public func eventHappening(_ events: [CalendarEvent], at now: Date, unless recorded: Set<String> = []) -> CalendarEvent? {
+    let event = events.first { !$0.allDay && $0.startDate.addingTimeInterval(-600) <= now && $0.endDate > now }
+    return event.flatMap { recorded.contains($0.id) ? nil : $0 }
+}
+
 public func ignoredEvent(_ title: String, _ ignored: [String]) -> Bool {
     let title = title.trimmed.lowercased()
     if title.contains("oatcake ignore") { return true }
