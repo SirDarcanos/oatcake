@@ -174,8 +174,10 @@ them all to the Trash.
 3. **Review (Who's who).** Change the title or the folder it's saved in if you want to. One card
    per voice: play its clips, confirm or type the name, or pick one of the people on the call's
    calendar invite (each is offered until they've been given a voice)
-   (with where the suggestion came from), merge it into another voice or into you, or mark
-   it as mixed ("Several people"). Unnamed voices are saved as "Voice 1", "Voice 2"… The
+   (with where the suggestion came from), merge it into another voice or into you, mark
+   it as mixed ("Several people"), or leave it out when it isn't part of the call (people
+   talking in the background, say): its lines then stay out of the transcript, the summary and
+   the to-dos. Unnamed voices are saved as "Voice 1", "Voice 2"… The
    transcript beside it updates as you name voices. Confirmed voices with 30+ seconds of
    speech are saved, so they're recognised next time.
 4. **Save.** The meeting is a folder in the folder you picked:

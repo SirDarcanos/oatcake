@@ -22,6 +22,8 @@ struct ReviewDraft: Equatable {
         /// The name was picked from the calendar invite.
         var fromInvite = false
         var mixed = false
+        /// Not part of the call (people talking in the background, say): its lines aren't saved.
+        var leftOut = false
         /// Merged into another voice (`me` for your microphone).
         var into: String?
     }
