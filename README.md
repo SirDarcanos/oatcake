@@ -349,9 +349,9 @@ Scripts/bundle.sh debug      # the same, debug build
 ```
 
 `Scripts/bundle.sh` signs with the "Oatcake Release" certificate when that's in your keychain,
-and ad-hoc otherwise. macOS ties the recorder's microphone and system-audio permission, and
-Oatcake's Keychain items, to the signature: an ad-hoc build is a new app to macOS every time
-(so it asks again), and only a release-signed copy can update itself. The Dock badge counts
+and ad-hoc otherwise. macOS ties the recorder's microphone and system-audio permission to the
+signature: an ad-hoc build is a new app to macOS every time (so it asks again), and only a
+release-signed copy can update itself. The Dock badge counts
 recordings waiting under Needs review. The icon is `assets/icon.svg`; `assets/Oatcake.icns` is
 built from `assets/icon.png` with `iconutil`.
 
@@ -422,7 +422,7 @@ publishing it, serve a folder holding a zip and its `latest.json` and start Oatc
 same way. With either, the zip is fetched from beside the manifest.
 
 Four more environment variables help when trying things out: `OATCAKE_DATA_DIR` points a
-development copy at another data folder (not another Keychain: don't save a real calendar address in one);
+development copy at another data folder, with its own saved calendar address;
 `OATCAKE_LLAMA_DIR` names the folder llama.cpp's server is in, for a copy that isn't a bundle;
 `OATCAKE_CALENDAR_URL` gives it a calendar address without saving one (a local `.ics` served over
 HTTP will do); and `OATCAKE_CALL_APPS` names a file listing the apps to treat as on a call, one
@@ -487,8 +487,8 @@ revision and checksum together, then check summaries, to-dos and names on a know
 0.4.0 is the same app rebuilt in Swift, with the same bundle ID, certificate and update feed, so
 0.3.0 updates to it (or to any later version) in place. The first launch, once:
 
-- moves the calendar address from `secrets.json` (Electron's encrypted store) into your
-  Keychain, then deletes `secrets.json`;
+- moves the calendar address from `secrets.json` (Electron's encrypted store) into
+  `private.json`, then deletes `secrets.json`;
 - drops the keys for the Anthropic API and for an OpenAI-compatible service, if you'd saved
   either: summaries are written by a model on your Mac now. Settings that named Claude become the
   model recommended for your Mac; a model server on your own Mac or network carries over;
@@ -543,9 +543,12 @@ Settings in the app (stored in `~/Library/Application Support/Oatcake/config.jso
   **Forget** stops it recognising them. Meetings already saved keep the names they were saved
   with.
 - **Calendar:** paste your calendar's private iCal address (Google Calendar › Settings › your
-  calendar › Integrate calendar › "Secret address in iCal format"). It's kept in your login
-  Keychain, not in `config.json`, and Settings shows only that one is saved. Oatcake fetches it once an
-  hour, or when you press ↻ next to Upcoming, and keeps events from yesterday to two weeks
+  calendar › Integrate calendar › "Secret address in iCal format"). It's kept in `private.json`
+  in Oatcake's data folder, which only your user account can read, not in `config.json`, and
+  Settings shows only that one is saved. (0.4.0 to 0.5.2 kept it in your login Keychain, which
+  asked for your login password after every update; the first launch of a later version moves
+  it, asking that one last time.) Oatcake fetches it once an hour, or when you press ↻ next
+  to Upcoming, and keeps events from yesterday to two weeks
   ahead in `calendar.json`. Upcoming in the sidebar lists the rest of today and tomorrow
   (events you declined are left out). So are events that aren't calls: ones whose titles start
   with a name in Settings › Calendar › Events that aren't calls ("Focus time", "Out of office",
@@ -616,8 +619,7 @@ Settings in the app (stored in `~/Library/Application Support/Oatcake/config.jso
   only the recorder opens it: macOS counts the recorder's use as Oatcake's, and under the hardened
   runtime it won't ask for the permission at all without that.
 - The app, the recorder and llama.cpp's server are signed for the hardened runtime, so another
-  program on your Mac can't load its own code into them to borrow the recorder's permissions or
-  read Oatcake's Keychain item.
+  program on your Mac can't load its own code into them to borrow the recorder's permissions.
 - Once a meeting is saved, the recording's working folder in Oatcake's own data folder is
   deleted: the audio, the analysis with its voice fingerprints, and the working copy of your
   notes. With **Keep call audio** on, the audio goes into the meeting's own folder as

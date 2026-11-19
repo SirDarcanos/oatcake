@@ -130,7 +130,7 @@ final class AppModel {
     }
 
     func start() {
-        // Left by the Electron version: its secrets move into the Keychain, its speech models and
+        // Left by the Electron version: its secrets move into private.json, its speech models and
         // Chromium caches go. Once: after that there's nothing of its to find. (A secret that couldn't
         // be moved stays in its file, and this is tried again at the next launch.)
         if !UserDefaults.standard.bool(forKey: "electronCleanUpDone") {
@@ -140,6 +140,13 @@ final class AppModel {
             if !FileManager.default.fileExists(atPath: Paths.data.appendingPathComponent("secrets.json").path) {
                 UserDefaults.standard.set(true, forKey: "electronCleanUpDone")
             }
+        }
+        // Kept in the Keychain by 0.4.0 to 0.5.2: the calendar's address moves to private.json, once.
+        // Not by a development copy pointed at another data folder, which would copy your real
+        // address into it.
+        if !UserDefaults.standard.bool(forKey: "secretsMovedFromKeychain"),
+           ProcessInfo.processInfo.environment["OATCAKE_DATA_DIR"] == nil, Secrets.moveFromKeychain() {
+            UserDefaults.standard.set(true, forKey: "secretsMovedFromKeychain")
         }
         Secrets.forgetRetired()
         // The recording permissions given to earlier versions are withdrawn, to be asked for again by
