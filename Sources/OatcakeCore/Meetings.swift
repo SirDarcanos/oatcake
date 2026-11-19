@@ -49,6 +49,9 @@ public struct MeetingMeta: Codable, Equatable, Sendable {
     public var source: String?
     /// The recording it was saved from (Oatcake's own recordings only).
     public var recording: String?
+    /// The summary template it was last regenerated with, by name (Config.summaryTemplates). nil = the
+    /// summary instructions.
+    public var template: String?
     public init() {}
 }
 
@@ -264,6 +267,21 @@ public final class Meetings: @unchecked Sendable {
         let name = (rel as NSString).lastPathComponent
         guard let date = name.range(of: folderDate, options: .regularExpression) else { return rel }
         return (try? rename(rel, to: String(name[date]) + folderSafe(clean))) ?? rel
+    }
+
+    /// Keeps the summary template a meeting was regenerated with, in meeting.json (its other keys are
+    /// kept). nil = the summary instructions.
+    public func setSummaryTemplate(_ rel: String, _ name: String?) throws {
+        guard !rel.isEmpty else { throw OatcakeError("That isn't a meeting") }
+        let file = try resolveInside(root, rel).appendingPathComponent("meeting.json")
+        guard let data = try? Data(contentsOf: file), var meta = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            throw OatcakeError("This meeting's details (meeting.json) can't be read")
+        }
+        let before = meta["template"] as? String
+        if before == name { return }
+        if let name { meta["template"] = name } else { meta.removeValue(forKey: "template") }
+        let written = try JSONSerialization.data(withJSONObject: meta, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        try writeAtomic(file, written + Data("\n".utf8))
     }
 
     @discardableResult

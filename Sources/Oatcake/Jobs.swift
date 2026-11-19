@@ -52,6 +52,8 @@ final class Jobs {
     var summaryErrors: [String: String] = [:]
     /// What Regenerate is writing again, by path; kept after a failure, so Try again knows what to retry.
     var regenerating: [String: SummaryPart] = [:]
+    /// The template a summary is being regenerated with, by path; kept after a failure, for Try again.
+    var regeneratingWith: [String: SummaryTemplateChoice] = [:]
     /// Where each meeting being summarised lives now: it can be renamed or moved while the model writes.
     private var summaryJobs: [UUID: String] = [:]
     /// Summaries being written of a transcript that has since had its voices named (a meeting saved
@@ -93,6 +95,7 @@ final class Jobs {
         summaryJobs = summaryJobs.mapValues(remap)
         summaryErrors = Dictionary(summaryErrors.map { (remap($0.key), $0.value) }, uniquingKeysWith: { a, _ in a })
         regenerating = Dictionary(regenerating.map { (remap($0.key), $0.value) }, uniquingKeysWith: { a, _ in a })
+        regeneratingWith = Dictionary(regeneratingWith.map { (remap($0.key), $0.value) }, uniquingKeysWith: { a, _ in a })
         todoProblems = Dictionary(todoProblems.map { (remap($0.key), $0.value) }, uniquingKeysWith: { a, _ in a })
         // A recording waiting in Who's who is still saved into the folder it was set to, wherever that is now.
         reviewDrafts = reviewDrafts.mapValues { draft in with(draft) { $0.folder = remap($0.folder) } }
@@ -259,13 +262,22 @@ final class Jobs {
     }
 
     /// Regenerate summary or Regenerate to-dos: asks first, as it replaces what's there. The old one
-    /// stays until the new one is written.
-    func regenerate(_ part: SummaryPart, _ path: String) {
+    /// stays until the new one is written. A summary can be written with a template picked for it,
+    /// which the meeting then keeps.
+    func regenerate(_ part: SummaryPart, _ path: String, template: SummaryTemplateChoice = .meetings) {
         guard !summarising.contains(path) else { return }
+        let summaryText: String
+        switch template {
+        case .picked(let name?) where config.summaryTemplate(named: name) != nil:
+            summaryText = "It’s written again with the “\(name)” template and replaces this summary, including any edits. The meeting keeps the template for summaries written of it later. Your transcript, notes and to-dos are kept."
+        case .picked:
+            summaryText = "It’s written again with your summary instructions in Settings and replaces this summary, including any edits. Your transcript, notes and to-dos are kept."
+        case .meetings:
+            summaryText = "It’s written again with your current instructions in Settings and replaces this summary, including any edits. Your transcript, notes and to-dos are kept."
+        }
         let confirmation = part == .summary
-            ? Confirmation(title: "Regenerate this summary?",
-                           text: "It’s written again with your current instructions in Settings and replaces this summary, including any edits. Your transcript, notes and to-dos are kept.",
-                           ok: "Regenerate summary", cancel: "Cancel") { [self] in writeSummary(path, only: .summary) }
+            ? Confirmation(title: "Regenerate this summary?", text: summaryText,
+                           ok: "Regenerate summary", cancel: "Cancel") { [self] in writeSummary(path, only: .summary, template: template) }
             : Confirmation(title: "Regenerate these to-dos?",
                            text: "They’re written again with your current instructions in Settings and replace these to-dos, including any you’ve ticked, added or edited. Your transcript, notes and summary are kept.",
                            ok: "Regenerate to-dos", cancel: "Cancel") { [self] in writeSummary(path, only: .todos) }
@@ -274,13 +286,14 @@ final class Jobs {
 
     /// Writes a saved meeting's summary and to-dos in the background: after every save, and from
     /// Write summary when an earlier attempt couldn't reach the model. With `only`, that one part is
-    /// written again in place of what's there (Regenerate).
-    func writeSummary(_ path: String, only part: SummaryPart? = nil) {
+    /// written again in place of what's there (Regenerate), with `template` for a summary.
+    func writeSummary(_ path: String, only part: SummaryPart? = nil, template: SummaryTemplateChoice = .meetings) {
         guard !summarising.contains(path) else { return }
         summarising.insert(path)
         summaryErrors.removeValue(forKey: path)
         if part != .summary { todoProblems.removeValue(forKey: path) }
         regenerating[path] = part
+        if part == .summary { regeneratingWith[path] = template } else { regeneratingWith.removeValue(forKey: path) }
         let job = UUID()
         summaryJobs[job] = path
         let config = config
@@ -302,11 +315,13 @@ final class Jobs {
                     // names, and what's there now is what they were just put into.
                     if staleSummaries.remove(job) != nil { previous = try partNow() }
                     // Where the meeting is now: it may have been renamed or moved while the model downloaded.
-                    draft = try await OatcakeCore.draftSummary(config, meeting: summaryJobs[job] ?? path, only: part)
+                    draft = try await OatcakeCore.draftSummary(config, meeting: summaryJobs[job] ?? path, only: part, template: template)
                 } while staleSummaries.contains(job)
                 if let part, let previous {
-                    try OatcakeCore.writeRegenerated(part, draft, config: config, meeting: summaryJobs[job] ?? path, previous: previous)
+                    try OatcakeCore.writeRegenerated(part, draft, config: config, meeting: summaryJobs[job] ?? path, previous: previous,
+                                                     template: template)
                     regenerating.removeValue(forKey: summaryJobs[job] ?? path)
+                    regeneratingWith.removeValue(forKey: summaryJobs[job] ?? path)
                 } else {
                     try OatcakeCore.writeSummary(draft, config: config, meeting: summaryJobs[job] ?? path)
                     // The summary is there, but its to-dos couldn't be read from what the model sent.
