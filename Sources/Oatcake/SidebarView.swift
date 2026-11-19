@@ -28,7 +28,7 @@ struct SidebarView: View {
     var body: some View {
         List(selection: selectionBinding) {
             if let live = model.recording.live { liveRow(live).tag(SidebarItem.live) }
-            todosRow.tag(SidebarItem.todos)
+            if model.config.todosEnabled { todosRow.tag(SidebarItem.todos) }
             if model.calendar.cache != nil { upcoming }
             if !model.jobs.list.isEmpty {
                 Section("Needs review") {

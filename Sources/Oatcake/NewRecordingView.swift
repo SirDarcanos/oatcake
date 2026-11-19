@@ -34,7 +34,7 @@ struct NewRecordingView: View {
                     PageTitle(text: "New recording")
                 }
                 form
-                if !openTodos.isEmpty { previousTodos }
+                if model.config.todosEnabled, !openTodos.isEmpty { previousTodos }
                 prepNotes
                 if !error.isEmpty { Notice(tone: .red) { Text(error) } }
                 VStack(alignment: .leading, spacing: 10) {

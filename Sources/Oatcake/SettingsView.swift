@@ -83,6 +83,12 @@ struct SettingsView: View {
             Text("Oatcake notices a call by which apps have the microphone open. It doesn’t listen until you record.").settingsHint()
         }
 
+        Section("To-dos") {
+            Toggle(isOn: bind(\.todosEnabled)) {
+                Text("Collect to-dos")
+                Text("Each summary comes with the to-dos agreed in the call, listed in the meeting and on the To-dos page. Turned off, none are collected, and the To-dos page and checklists are hidden. To-dos already saved stay in each meeting’s todo.md, for if you turn this back on.")
+            }
+        }
     }
 
     private func afterCallHint(_ choice: AfterCall) -> String {
@@ -288,7 +294,7 @@ struct SettingsView: View {
         if LocalModels.find(model.config.llm.model) != nil {
             Section {
                 Toggle("Summaries", isOn: bindLlm(\.reasoning.summary))
-                Toggle("To-dos", isOn: bindLlm(\.reasoning.todos))
+                if model.config.todosEnabled { Toggle("To-dos", isOn: bindLlm(\.reasoning.todos)) }
                 Toggle("Name suggestions", isOn: bindLlm(\.reasoning.names))
                 Toggle("Ask", isOn: bindLlm(\.reasoning.ask))
             } header: {
@@ -314,9 +320,11 @@ struct SettingsView: View {
         InstructionsSection(title: "Summary instructions", setting: \.summaryInstructions, standard: defaultSummaryInstructions,
                             applies: "Used for summaries written from now on.",
                             hint: "What the model is told to write once it has read the transcript. Change the headings, the level of detail or the language to suit you. To-dos are collected separately and aren’t affected.")
-        InstructionsSection(title: "To-do instructions", setting: \.todoInstructions, standard: defaultTodoInstructions,
-                            applies: "Used for to-dos collected from now on.",
-                            hint: "What the model is told counts as a to-do. Make it stricter or looser, or keep it to your own action items (“Only list what Sam agreed to do”). Each to-do still comes with its owner, due date and time in the call.")
+        if model.config.todosEnabled {
+            InstructionsSection(title: "To-do instructions", setting: \.todoInstructions, standard: defaultTodoInstructions,
+                                applies: "Used for to-dos collected from now on.",
+                                hint: "What the model is told counts as a to-do. Make it stricter or looser, or keep it to your own action items (“Only list what Sam agreed to do”). Each to-do still comes with its owner, due date and time in the call.")
+        }
     }
 }
 

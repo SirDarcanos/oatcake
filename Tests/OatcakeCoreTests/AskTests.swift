@@ -61,6 +61,33 @@ import Testing
         #expect(answer.hasSuffix("Question: What was the budget for the offsite?"))
     }
 
+    /// To-dos turned off: Ask isn't given them, in the open meeting or in the others it looks through.
+    @Test func askWithoutTodos() async throws {
+        let meetings = TestMeetings()
+        defer { meetings.remove() }
+        let sync = "Team/2026-11-09 1000 Weekly sync", review = "Design/2026-11-06 1400 Design review"
+        try meetings.write(sync, .transcript, "**[12:34] Alex Kim:** I will book the café.\n", meta: #"{"title":"Weekly sync"}"#)
+        try meetings.write(sync, .todo, "- [x] Book the café — Alex Kim\n")
+        var config = Config.defaults()
+        config.outputDir = meetings.root.path
+        config.todosEnabled = false
+        let server = try await StandIn.model { _ in "Alex Kim [M1 12:34]." }
+        config.llm = server.config.llm
+        _ = try await OatcakeCore.ask(config, meeting: sync, question: "Who is booking the café?")
+        #expect(server.requests.count == 1)
+        #expect(!server.requests[0].messages.user.contains("To-dos") && !server.requests[0].messages.user.contains("Book the café"))
+
+        // Another meeting whose only mention of the deck is a to-do isn't found, and isn't given its to-dos.
+        try meetings.write(review, .summary, "## Colours\n- New tokens agreed.\n", meta: #"{"title":"Design review"}"#)
+        try meetings.write(review, .todo, "- [ ] Send the deck — Alex\n")
+        let lib = Meetings(root: meetings.root)
+        let others = lib.tree().allMeetings.filter { $0.path != sync }
+        #expect(otherMeetings(lib, others: others, besides: sync, phrases: ["deck"], tokens: 2_000).map(\.path) == [review])
+        #expect(otherMeetings(lib, others: others, besides: sync, phrases: ["deck"], tokens: 2_000, todos: false).isEmpty)
+        let found = otherMeetings(lib, others: others, besides: sync, phrases: ["tokens"], tokens: 2_000, todos: false)
+        #expect(found.map(\.path) == [review] && !found[0].text.contains("To-dos"))
+    }
+
     @Test func askPieces() {
         // A tag with several times, a time past the hour, and a path that needs encoding.
         let odd = "Board (Q4)/2026-10-29 1630 Budget & plan #2"

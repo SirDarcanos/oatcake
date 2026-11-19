@@ -325,6 +325,8 @@ final class AppModel {
         config = saved
         do { try saved.save() } catch { toast("Couldn’t save your settings: \(error.localizedDescription)", isError: true) }
         recording.settingsChanged(saved)
+        // To-dos turned off while their page is open: back to the meetings.
+        if !saved.todosEnabled, selection == .todos { openFolder(folder) }
     }
 
     /// Saves the microphone choice and switches any running recording to it.

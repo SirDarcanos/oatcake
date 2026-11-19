@@ -169,6 +169,9 @@ import Testing
         // Notes and to-dos are looked through as well, and a line is shown as plain text.
         #expect(meetings.search("tokens", in: all).first?.file == .notes)
         #expect(meetings.search("deck", in: all).first == SearchHit(path: review, file: .todo, line: "Send the deck — Alex"))
+        // Unless to-dos are turned off.
+        #expect(meetings.search("deck", in: all, todos: false).isEmpty)
+        #expect(meetings.search("tokens", in: all, todos: false).first?.file == .notes)
         // Words can be split between the title and the text, and every one of them is needed.
         #expect(meetings.search("weekly checklist", in: all).first == SearchHit(path: sync, file: .summary, line: "Alex said the checklist is nearly done."))
         #expect(meetings.search("weekly deck", in: all).isEmpty)

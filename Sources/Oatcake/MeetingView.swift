@@ -235,16 +235,17 @@ struct MeetingView: View {
             if tab == .summary, !(files?[.summary] ?? "").trimmed.isEmpty {
                 Menu {
                     Button("Regenerate summary") { regenerate(.summary) }
-                    Button("Regenerate to-dos") { regenerate(.todos) }
+                    if model.config.todosEnabled { Button("Regenerate to-dos") { regenerate(.todos) } }
                 } label: {
                     // Named on the image too: a toolbar menu is read out by its image's name, "Refresh".
                     Label { Text("Regenerate") } icon: { Image(systemName: "arrow.clockwise").accessibilityLabel("Regenerate") }
                 }
                     .accessibilityLabel("Regenerate")
                     .disabled(model.jobs.summarising.contains(path) || (files?[.transcript] ?? "").trimmed.isEmpty)
-                    .help("Write the summary or the to-dos again with the current instructions in Settings")
+                    .help(model.config.todosEnabled ? "Write the summary or the to-dos again with the current instructions in Settings"
+                          : "Write the summary again with the current instructions in Settings")
             }
-            let what = tab == .summary ? "summary and to-dos" : tab == .transcript ? "transcript" : "notes"
+            let what = tab == .summary ? (model.config.todosEnabled ? "summary and to-dos" : "summary") : tab == .transcript ? "transcript" : "notes"
             Button { copy() } label: { Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") }
                 .help("Copy the \(what), formatted (as Markdown where only plain text can go)")
             ShareLink(item: shareText, subject: Text(meetingTitle(node))) { Label("Share", systemImage: "square.and.arrow.up") }
@@ -273,7 +274,7 @@ struct MeetingView: View {
         var parts = ["# \(meetingTitle(node))", metaLine]
         switch tab {
         case .summary:
-            if !part(.todos).isEmpty { parts.append("## To-dos\n\n\(part(.todos))") }
+            if model.config.todosEnabled, !part(.todos).isEmpty { parts.append("## To-dos\n\n\(part(.todos))") }
             parts.append(part(.summary))
         case .transcript: parts.append(part(.transcript))
         case .notes: parts.append(part(.notes))
@@ -449,7 +450,7 @@ struct MeetingView: View {
 
     private func markdownEditors(_ files: [FileKey: String]) -> some View {
         VStack(alignment: .leading, spacing: 18) {
-            ForEach(tab == .summary ? [FileKey.todos, .summary] : [tab == .transcript ? .transcript : .notes], id: \.self) { key in
+            ForEach(tab == .summary ? (model.config.todosEnabled ? [FileKey.todos, .summary] : [.summary]) : [tab == .transcript ? .transcript : .notes], id: \.self) { key in
                 VStack(alignment: .leading, spacing: 6) {
                     Label("\(folderPath(path)) › \(key.file.rawValue)", systemImage: "doc.text").font(.caption).foregroundStyle(.secondary)
                     // While the model is writing these two files they aren't for typing in: what's typed
@@ -486,6 +487,21 @@ struct MeetingView: View {
         let open = todos.filter { !$0.done }.count
         let summary = forReading(files[.summary] ?? "")
         return VStack(alignment: .leading, spacing: 0) {
+            // Turned off in Settings › General: no checklist, and nothing to say about one.
+            if model.config.todosEnabled { todoList(todos, todoText: todoText, open: open) }
+            if summary.trimmed.isEmpty && !(files[.transcript] ?? "").trimmed.isEmpty {
+                summaryLater
+            } else if summary.trimmed.isEmpty {
+                Text("No summary for this meeting.").foregroundStyle(.secondary)
+            } else {
+                MarkdownView(markdown: summary, fontSize: 14 * scale)
+            }
+        }
+    }
+
+    /// The meeting's to-dos (todo.md), to tick and add to, above its summary.
+    private func todoList(_ todos: [Todo], todoText: String, open: Int) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
             // The summary was written but the to-dos couldn't be read from the model's reply.
             if let problem = model.jobs.todoProblems[path] {
                 Notice(tone: .amber) { Text(problem) }.padding(.bottom, 16)
@@ -521,13 +537,6 @@ struct MeetingView: View {
                 }
             }
             .padding(.bottom, 24)
-            if summary.trimmed.isEmpty && !(files[.transcript] ?? "").trimmed.isEmpty {
-                summaryLater
-            } else if summary.trimmed.isEmpty {
-                Text("No summary for this meeting.").foregroundStyle(.secondary)
-            } else {
-                MarkdownView(markdown: summary, fontSize: 14 * scale)
-            }
         }
     }
 

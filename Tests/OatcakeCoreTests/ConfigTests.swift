@@ -66,6 +66,10 @@ import Testing
         #expect(saving.afterCall == .saveTranscript)
         let unknown = try JSONDecoder().decode(Config.self, from: Data(#"{"afterCall":"somethingNew"}"#.utf8))
         #expect(unknown.afterCall == .review)
+        // To-dos are collected unless you've turned them off, and that reads back.
+        #expect(config.todosEnabled)
+        let noTodos = try JSONDecoder().decode(Config.self, from: Data(encodeJSON(with(config) { $0.todosEnabled = false }).utf8))
+        #expect(!noTodos.todosEnabled)
     }
 
     /// Settings that can't be read aren't quietly replaced by the first change made after them.

@@ -281,6 +281,8 @@ public func draftSummary(_ config: Config, meeting rel: String, only part: Summa
     let files = try meetings.read(rel)
     guard !files.transcript.trimmed.isEmpty else { throw OatcakeError("This meeting has no transcript to summarise.") }
     let notes = parseNotes(files.notes).map { Note(at: $0.stamp.map(seconds), text: $0.text) }
+    // With to-dos turned off (Settings › General), only the summary is asked for, so todo.md is left alone.
+    let part = part ?? (config.todosEnabled ? nil : .summary)
     return try await summarise(config, title: titleOfMeeting(rel, files.meta), participants: files.meta.participants ?? [config.myName],
                                notes: notes, transcript: files.transcript, only: part)
 }
