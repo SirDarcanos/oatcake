@@ -140,7 +140,7 @@ public func knownVoices(_ file: URL = Paths.voiceprints) -> [KnownVoice] {
 }
 
 /**
- * Renames a person's voice ("Nate" to "Nate Allen"). When someone already has the new name, the two
+ * Renames a person's voice ("John" to "John Smith"). When someone already has the new name, the two
  * become one person with both sets of fingerprints (newest kept), rather than two people with the same
  * voice, which would stop either being recognised. Meetings already saved keep the name they had.
  */
@@ -158,7 +158,7 @@ public func renameVoice(_ name: String, to newName: String, file: URL = Paths.vo
 /**
  * Rename speakers… in a saved meeting: the fingerprint saved from that call (`call`) under an old
  * name goes with the name, so the next call isn't recognised as the wrong person too. It stays
- * where it is only when the new name is the old one spelt out ("Nate" → "Nate Allen") and the old
+ * where it is only when the new name is the old one spelt out ("John" → "John Smith") and the old
  * name's fingerprints from other calls clearly match it (unattendedMatch), and it's dropped rather than moved when
  * the new name isn't one to remember ("Voice 2", you). A person left with no fingerprints is
  * forgotten. Two names can swap; someone who already has a fingerprint from this call keeps theirs.
@@ -171,7 +171,7 @@ func moveCallVoiceprints(call: String, renames: [String: String], me: String, fi
     for (old, new) in renames {
         guard var person = prints.people[old], let i = person.samples.firstIndex(where: { $0.call == call }) else { continue }
         let sample = person.samples[i]
-        // Only a respelling of the same person ("Nate" → "Nate Allen") whose voice clearly matches
+        // Only a respelling of the same person ("John" → "John Smith") whose voice clearly matches
         // their other calls keeps it where it is. Any other new name is someone else, even when the
         // voice was close enough for review to suggest the old name: that's how a wrong name arrives.
         if respelling(old, new), person.samples.contains(where: { $0.call != call && cosine(sample.embedding, $0.embedding) >= Float(unattendedMatch) }) { continue }
@@ -190,7 +190,7 @@ func moveCallVoiceprints(call: String, renames: [String: String], me: String, fi
     if changed { try prints.save(file) }
 }
 
-/// One name runs into the other ("Nate" and "Nate Allen"), ignoring case and punctuation.
+/// One name runs into the other ("John" and "John Smith"), ignoring case and punctuation.
 private func respelling(_ a: String, _ b: String) -> Bool {
     let x = loose(a), y = loose(b)
     return !x.isEmpty && !y.isEmpty && (x.hasPrefix(y) || y.hasPrefix(x))
