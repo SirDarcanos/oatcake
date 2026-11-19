@@ -246,7 +246,8 @@ public struct Config: Codable, Equatable, Sendable {
     /// What the model is told when it writes a summary: yours, or Oatcake's own.
     public var summaryTask: String { summaryInstructions.trimmed.isEmpty ? defaultSummaryInstructions : summaryInstructions.trimmed }
 
-    /// The template of that name, if there still is one (and it has instructions).
+    /// The template of that name, if there still is one (and it has instructions). Meetings keep
+    /// their template by name, so a template given a deleted one's name again takes its meetings back.
     public func summaryTemplate(named name: String?) -> SummaryTemplate? {
         guard let name = name?.trimmed, !name.isEmpty else { return nil }
         return summaryTemplates.first { $0.name.trimmed == name && !$0.instructions.trimmed.isEmpty }

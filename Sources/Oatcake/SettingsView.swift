@@ -443,7 +443,7 @@ private struct TemplateSection: View {
                         }
                         Button("Cancel", role: .cancel) {}
                     } message: {
-                        Text("Summaries already written with it stay as they are. Those meetings are summarised with the summary instructions from now on.")
+                        Text("Summaries already written with it stay as they are. Those meetings are summarised with the summary instructions from now on, or with a template you give this name again.")
                     }
             } label: {
                 Text(text.trimmed.isEmpty ? "Without instructions, meetings use the summary instructions" : "Used for the meetings you regenerate with it")

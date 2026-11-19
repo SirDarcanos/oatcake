@@ -522,9 +522,10 @@ Settings in the app (stored in `~/Library/Application Support/Oatcake/config.jso
   for the meetings that need a different summary (a one-to-one you lead, one with your own lead,
   a team meeting). **Add Template** starts one as a copy of the summary instructions. Pick one for
   a meeting from **Regenerate › Regenerate summary**; the meeting keeps it (in its `meeting.json`)
-  and every other meeting keeps the summary instructions. A template that's renamed or deleted
-  leaves the meetings that used it on the summary instructions. The summary starts at the
-  model's first `## ` heading: anything written before it is left out.
+  and every other meeting keeps the summary instructions. A meeting keeps its template by name:
+  once that template is renamed or deleted, the meeting is back on the summary instructions,
+  until a template is given that name again. The summary starts at the model's first `## `
+  heading: anything written before it is left out.
 - **To-do instructions** (Settings › Summaries): what the model is told counts as a to-do.
   Oatcake's own keep it to what somebody said they'd do after the call, and leave out what was
   only discussed, what was asked and not taken on, what was done during the call, and small
