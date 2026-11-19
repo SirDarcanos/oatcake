@@ -552,7 +552,13 @@ Settings in the app (stored in `~/Library/Application Support/Oatcake/config.jso
   "Working location" and "Task" to begin with), as whole words, or that have "Oatcake ignore"
   anywhere in the title. They're kept out of the menu bar and reminders too. iCal doesn't say
   which events are Google's focus-time or out-of-office blocks, so a block renamed to something
-  else still appears, and a call whose title starts with one of those names doesn't. Clicking an
+  else still appears, and a call whose title starts with one of those names doesn't. A call you
+  can't rename (someone else's recurring meeting) can be ignored on its own: right-click it in
+  Upcoming for **Ignore This Event**, or for a recurring one **Ignore This One** or **Ignore This
+  and Following Events**. That's kept in `config.json`, nothing changes in your calendar, and
+  Settings › Calendar › Ignored events brings one back. An occurrence its organiser moves shows
+  again (its ID includes its start), and so does the rest of a series changed with Google's "this
+  and following events" (that gives it a new UID). Clicking an
   event starts a new recording named after it, in
   the folder with the same name or path ("Sam & Alex 1:1" finds "Sam & Alex 1-1", "Product –
   Weekly sync" finds "Product › Weekly sync"), or offers a new folder for a recurring event
