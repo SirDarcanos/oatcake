@@ -21,7 +21,7 @@ private func askSystem(_ config: Config) -> String {
     [
         "You answer \(config.myName)'s questions about their meetings, from the meetings written out below. Each one starts with a tag like [M1].",
         "Use only what the meetings say, and name who said or decided each thing. A transcript line belongs to the person named at its start, so check who is speaking before you say that someone said or agreed to something.",
-        "After each point, cite where it comes from: the meeting's tag and the [mm:ss] time of the transcript line you rely on, like [M1 12:34], or the tag alone, like [M1], for something from a summary, notes or to-dos.",
+        "After each point, cite where it comes from: the meeting's tag and the [mm:ss] time of the transcript line you rely on, like [M1 12:34], or the tag alone, like [M1], for something from \(config.todosEnabled ? "a summary, notes or to-dos" : "a summary or notes").",
         "If the meetings below don't answer the question, say so rather than guessing. Answer in concise Markdown.",
         config.jargonLine,
     ].filter { !$0.isEmpty }.joined(separator: " ")
