@@ -225,12 +225,12 @@ them all to the Trash.
    meeting's `todo.md`, and under Open it leaves the list (it's under Done if you didn't mean it). Add a to-do under a meeting's Summary and it goes in that meeting's
    `todo.md`; add one on the To-dos page and it goes in the Meetings folder's own `todo.md`,
    owned by you unless you name someone. Type owner and due date after dashes:
-   `Send the deck - Alex - due Fri, Nov 6`. The middle column's width drags, like the
+   `Send the deck - Jane - due Fri, Nov 6`. The middle column's width drags, like the
    sidebar's. Organise meetings by dragging them onto folders, or
    right-click to rename or trash; Finder and the app stay in step. Renaming a meeting changes
    its title (in `meeting.json`) and its folder's name, which keeps its date.
 5. **Ask.** The lozenge at the bottom of a meeting takes questions about it ("what did we
-   decide about hiring?") or across meetings ("when did Alex first raise the launch date?").
+   decide about hiring?") or across meetings ("when did Jane first raise the launch date?").
    The model on your Mac is given the meeting you have open, whole: its summary, to-dos, your
    notes and the transcript. It's first asked whether the question reaches beyond that meeting.
    When it does, Oatcake searches your other meetings for the names and topics the model gives,
@@ -538,7 +538,7 @@ Settings in the app (stored in `~/Library/Application Support/Oatcake/config.jso
 - **Jargon** (Settings › Summaries): names, products and acronyms, separated by commas. The
   summary model is told to spell them as written, in summaries, to-dos, name suggestions and Ask's
   answers. Transcripts keep what the speech model heard.
-- **People:** the voices Oatcake recognises. **Rename** one ("Nate" to "Nate Allen") to change the
+- **People:** the voices Oatcake recognises. **Rename** one ("John" to "John Smith") to change the
   name it suggests from now on; renaming to a name that's already there makes them one person.
   **Forget** stops it recognising them. Meetings already saved keep the names they were saved
   with.
@@ -560,7 +560,7 @@ Settings in the app (stored in `~/Library/Application Support/Oatcake/config.jso
   again (its ID includes its start), and so does the rest of a series changed with Google's "this
   and following events" (that gives it a new UID). Clicking an
   event starts a new recording named after it, in
-  the folder with the same name or path ("Sam & Alex 1:1" finds "Sam & Alex 1-1", "Product –
+  the folder with the same name or path ("John & Jane 1:1" finds "John & Jane 1-1", "Product –
   Weekly sync" finds "Product › Weekly sync"), or offers a new folder for a recurring event
   with none; "Join the call" opens its Meet, Zoom or Teams link (only links on those services'
   own domains count, so a look-alike address is never opened). A failed

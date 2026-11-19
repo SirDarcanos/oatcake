@@ -30,18 +30,18 @@ import Testing
         SUMMARY:Planning
         DTSTART:20261110T100000Z
         DTEND:20261110T103000Z
-        ATTENDEE;CN=Alex Kim;PARTSTAT=ACCEPTED:mailto:alex@example.com
-        ATTENDEE;CN=Jo Park;PARTSTAT=DECLINED:mailto:jo@example.com
+        ATTENDEE;CN=Jane Doe;PARTSTAT=ACCEPTED:mailto:jane@example.com
+        ATTENDEE;CN=Jane Smith;PARTSTAT=DECLINED:mailto:jane.smith@example.com
         ATTENDEE;CUTYPE=RESOURCE;CN=London-6-Boardroom (10):mailto:room@resource.calendar.example.com
         END:VEVENT
         END:VCALENDAR
         """
         let event = try #require(parseCalendar(ics, from: parseISO("2026-11-10T00:00:00Z")!, to: parseISO("2026-11-11T00:00:00Z")!).first)
-        #expect(event.attendees.map(\.email) == ["alex@example.com", "jo@example.com", "room@resource.calendar.example.com"])
+        #expect(event.attendees.map(\.email) == ["jane@example.com", "jane.smith@example.com", "room@resource.calendar.example.com"])
         #expect(event.attendees.map(\.declined) == [nil, true, nil])
         #expect(event.attendees.map(\.resource) == [nil, nil, true])
         // A cache written before these were kept still reads.
-        let old = try JSONDecoder().decode(CalendarEvent.Attendee.self, from: Data(#"{"name":"Alex Kim","email":"alex@example.com"}"#.utf8))
+        let old = try JSONDecoder().decode(CalendarEvent.Attendee.self, from: Data(#"{"name":"Jane Doe","email":"jane@example.com"}"#.utf8))
         #expect(old == event.attendees[0] && old.declined == nil)
     }
 
@@ -314,7 +314,7 @@ import Testing
         #expect(CalendarCache(checkedAt: "2026-11-10T10:59:59Z").isStale(now: now))
 
         let event = { (reply: String) in
-            parseCalendar(self.feed("DTSTART:20261110T100000Z", "DTEND:20261110T103000Z", "ATTENDEE;CN=Alex Kim;PARTSTAT=\(reply):mailto:alex@example.com"),
+            parseCalendar(self.feed("DTSTART:20261110T100000Z", "DTEND:20261110T103000Z", "ATTENDEE;CN=Jane Doe;PARTSTAT=\(reply):mailto:jane@example.com"),
                           from: parseISO("2026-11-01T00:00:00Z")!, to: parseISO("2026-11-30T00:00:00Z")!)[0]
         }
         let accepted = event("ACCEPTED"), declined = event("DECLINED")
