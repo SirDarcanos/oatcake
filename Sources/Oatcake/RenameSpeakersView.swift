@@ -10,9 +10,10 @@ struct RenameSpeakersSheet: View {
     @Environment(\.dismiss) private var dismiss
     @ViewState private var names: [String: String] = [:]
 
-    /// The names that change: a field left blank, or as it was, leaves that speaker alone.
+    /// The names that change: a field left blank, or as it was, leaves that speaker alone, and
+    /// "Several people" isn't a name anyone can be given (it stands for more than one voice).
     private var changes: [String: String] {
-        names.mapValues(\.trimmed).filter { !$0.value.isEmpty && $0.key != $0.value }
+        names.mapValues(\.trimmed).filter { !$0.value.isEmpty && $0.key != $0.value && $0.value != "Several people" }
     }
 
     var body: some View {

@@ -158,8 +158,8 @@ public func renameVoice(_ name: String, to newName: String, file: URL = Paths.vo
 /**
  * Rename speakers… in a saved meeting: the fingerprint saved from that call (`call`) under an old
  * name goes with the name, so the next call isn't recognised as the wrong person too. It stays
- * where it is when the old name's fingerprints from other calls match it (the voice was theirs, and
- * the name was only written differently in this meeting), and it's dropped rather than moved when
+ * where it is only when the new name is the old one spelt out ("Nate" → "Nate Allen") and the old
+ * name's fingerprints from other calls clearly match it (unattendedMatch), and it's dropped rather than moved when
  * the new name isn't one to remember ("Voice 2", you). A person left with no fingerprints is
  * forgotten. Two names can swap; someone who already has a fingerprint from this call keeps theirs.
  * Fingerprints from other calls are never moved.
