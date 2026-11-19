@@ -301,7 +301,7 @@ public final class Meetings: @unchecked Sendable {
 
     /**
      * The folder a calendar event's recording goes in: the folder named like the event (punctuation
-     * ignored, so "Sam & Alex 1:1" finds "Sam & Alex 1-1"), by its own name or its whole path. With no
+     * ignored, so "John & Jane 1:1" finds "John & Jane 1-1"), by its own name or its whole path. With no
      * such folder, it goes where the latest meeting of the same name is (a "Weekly sync" kept in
      * Team stays in Team). Failing that, a recurring event gets a new top-level folder named after
      * it, and a one-off goes at the top level.
@@ -464,7 +464,7 @@ func plainLine(_ line: String) -> String {
         .replacingOccurrences(of: #"\\([\\`*_{}\[\]()#+\-.!~&<>|])"#, with: "$1", options: .regularExpression)
         .replacingOccurrences(of: #"\[([^\]]+)\]\([^)]*\)"#, with: "$1", options: .regularExpression)
         .replacingOccurrences(of: "\\s*\\[\(stampForm)\\]", with: "", options: .regularExpression)
-        // A to-do that ended with its time ("… — Alex — [12:34]") is left with the dash before it.
+        // A to-do that ended with its time ("… — Jane — [12:34]") is left with the dash before it.
         .replacingOccurrences(of: #"\s+[—–-]\s*$"#, with: "", options: .regularExpression)
         .replacingOccurrences(of: "[*_`]", with: "", options: .regularExpression)
         .trimmed
@@ -475,10 +475,10 @@ func foldedForSearch(_ text: String) -> String {
     text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
 }
 
-/// The time a transcript line starts with: "**[12:34] Alex:** …".
+/// The time a transcript line starts with: "**[12:34] Jane:** …".
 private let transcriptStamp = try! NSRegularExpression(pattern: "^\\**\\[(\(stampForm))\\]")
 
-/// Who is speaking in a transcript line once it's plain text: "Alex Rivers: …".
+/// Who is speaking in a transcript line once it's plain text: "Jane Doe: …".
 private let transcriptSpeaker = try! NSRegularExpression(pattern: #"^([^:]{1,60}):\s+"#)
 
 /// A long line cut to start a few words before `word` (already folded), so the word shows in the two
