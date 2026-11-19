@@ -79,7 +79,7 @@ final class StandIn: @unchecked Sendable {
     /// Settings that send every request for the model here.
     var config: Config {
         var config = Config.defaults()
-        config.myName = "Sam Taylor"
+        config.myName = "John Doe"
         config.llm = LlmConfig(model: LlmConfig.ownServer)
         config.llm.own.baseUrl = address + "/v1"
         config.llm.own.model = "stand-in"

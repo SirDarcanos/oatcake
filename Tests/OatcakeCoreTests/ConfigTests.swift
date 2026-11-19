@@ -50,14 +50,14 @@ import Testing
         config.todoInstructions = "  Only my own action items.\n"
         #expect(config.todosTask == "Only my own action items.\n" + todosFormat)
         #expect(try JSONDecoder().decode(Config.self, from: Data(encodeJSON(config).utf8)).todoInstructions == config.todoInstructions)
-        #expect(try JSONDecoder().decode(Config.self, from: Data(#"{"myName":"Sam"}"#.utf8)).todoInstructions == "")
+        #expect(try JSONDecoder().decode(Config.self, from: Data(#"{"myName":"John"}"#.utf8)).todoInstructions == "")
     }
 
     @Test func olderConfig() throws {
-        let old = #"{"myName":"Sam","outputDir":"/tmp/m","asrModel":"parakeet-unified-en","keepAudio":false,"mic":null,"callReminders":false,"updateCheck":true}"#
+        let old = #"{"myName":"John","outputDir":"/tmp/m","asrModel":"parakeet-unified-en","keepAudio":false,"mic":null,"callReminders":false,"updateCheck":true}"#
         let config = try JSONDecoder().decode(Config.self, from: Data(old.utf8))
         #expect(config.callNotice && config.autoStop && config.liveTranscript && config.menuBarNextCall && config.jargon.isEmpty)
-        #expect(!config.callReminders && config.myName == "Sam")
+        #expect(!config.callReminders && config.myName == "John")
         let again = try JSONDecoder().decode(Config.self, from: Data(encodeJSON(with(config) { $0.autoStop = false; $0.jargon = ["Jetpack"] }).utf8))
         #expect(!again.autoStop && again.jargon == ["Jetpack"])
         // Calls wait for who's who unless you've chosen otherwise, and the choice reads back.
@@ -75,13 +75,13 @@ import Testing
         let file = dir.appendingPathComponent("config.json"), kept = dir.appendingPathComponent("config.unreadable.json")
         // None yet: the ones Oatcake comes with are written, and there's nothing to say.
         #expect(Config.loadWithProblem(file: file).problem == nil && FileManager.default.fileExists(atPath: file.path))
-        try with(Config.defaults()) { $0.myName = "Sam"; $0.outputDir = "/tmp/m" }.save(to: file)
+        try with(Config.defaults()) { $0.myName = "John"; $0.outputDir = "/tmp/m" }.save(to: file)
         let read = Config.loadWithProblem(file: file)
-        #expect(read.config.myName == "Sam" && read.problem == nil && !FileManager.default.fileExists(atPath: kept.path))
+        #expect(read.config.myName == "John" && read.problem == nil && !FileManager.default.fileExists(atPath: kept.path))
         // A hand edit that went wrong.
-        try #"{"myName": "Sam", "outputDir": }"#.write(to: file, atomically: true, encoding: .utf8)
+        try #"{"myName": "John", "outputDir": }"#.write(to: file, atomically: true, encoding: .utf8)
         let broken = Config.loadWithProblem(file: file)
         #expect(broken.config.outputDir == Config.defaults().outputDir && broken.problem?.contains("config.unreadable.json") == true)
-        #expect(readText(kept) == #"{"myName": "Sam", "outputDir": }"#)
+        #expect(readText(kept) == #"{"myName": "John", "outputDir": }"#)
     }
 }

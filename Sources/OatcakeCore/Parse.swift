@@ -132,7 +132,7 @@ public func toggleTodo(_ markdown: String, line: Int, text: String) -> String? {
 /**
  * A typed to-do in todo.md's form. " - " and " -- " count as the separator (an em dash is awkward
  * to type), and `owner` fills in when none is given: "Send the deck - due Fri, Nov 6" with owner
- * "Sam" becomes "Send the deck — Sam — due Fri, Nov 6".
+ * "John" becomes "Send the deck — John — due Fri, Nov 6".
  */
 public func typedTodo(_ text: String, owner: String? = nil) -> String {
     var parts = text.trimmed.replacingOccurrences(of: #"\s+(?:—|--|-)\s+"#, with: "\u{0}", options: .regularExpression).components(separatedBy: "\u{0}")

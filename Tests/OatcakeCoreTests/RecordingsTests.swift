@@ -67,7 +67,7 @@ import Testing
     private func make(_ id: String, in recordings: URL, title: String = "Weekly sync", files: [String: String] = [:]) throws -> URL {
         let dir = recordings.appendingPathComponent(id)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try encodeJSON(CallInfo(title: title, folder: "Team", startedAt: "2026-11-10T14:00:00.000Z", eventId: "e1", attendees: ["Alex"]))
+        try encodeJSON(CallInfo(title: title, folder: "Team", startedAt: "2026-11-10T14:00:00.000Z", eventId: "e1", attendees: ["Jane"]))
             .write(to: dir.appendingPathComponent("call.json"), atomically: true, encoding: .utf8)
         for (name, text) in files { try text.write(to: dir.appendingPathComponent(name), atomically: true, encoding: .utf8) }
         return dir
@@ -89,7 +89,7 @@ import Testing
         let all = Recordings.list(recordings: recordings)
         // Newest first.
         #expect(all.map(\.state) == [.saved, .processed, .recorded, .recording])
-        #expect(all.first?.id == "2026-11-13T14-00-00-000Z" && all.first?.folder == "Team" && all.first?.attendees == ["Alex"])
+        #expect(all.first?.id == "2026-11-13T14-00-00-000Z" && all.first?.folder == "Team" && all.first?.attendees == ["Jane"])
         #expect(all.first?.endedAt == parseISO("2026-11-10T14:30:00Z") && all.last?.endedAt == nil)
         #expect(Recordings.get("2026-11-11T14-00-00-000Z", recordings: recordings)?.state == .recorded)
         #expect(Recordings.get("2026-11-14T14-00-00-000Z", recordings: recordings) == nil)

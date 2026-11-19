@@ -436,7 +436,7 @@ struct MeetingView: View {
     private func granolaNotice(_ files: [FileKey: String]) -> String {
         let transcript = files[.transcript] ?? ""
         let plain = transcriptLines.isEmpty && !transcript.trimmed.isEmpty
-        // The raw file: parsing turns "System audio (Alex)" into plain "Alex".
+        // The raw file: parsing turns "System audio (Jane)" into plain "Jane".
         let guessed = transcript.range(of: #"(?m)^\[[\d:]+\]\s+System audio \("#, options: .regularExpression) != nil
         let sidesOnly = transcript.range(of: #"(?m)^\[[\d:]+\]\s+System audio:"#, options: .regularExpression) != nil
         return ["Imported from Granola.",
@@ -511,7 +511,7 @@ struct MeetingView: View {
                     Image(systemName: "circle").font(.system(size: 15)).foregroundStyle(.quaternary)
                     TextField("Add a to-do, then Return", text: $newTodo)
                         .textFieldStyle(.plain)
-                        .help("Add an owner or due date with dashes: Send the deck - Alex - due Fri, Nov 6")
+                        .help("Add an owner or due date with dashes: Send the deck - Jane - due Fri, Nov 6")
                         .onSubmit {
                             guard !newTodo.trimmed.isEmpty else { return }
                             let typed = typedTodo(newTodo)

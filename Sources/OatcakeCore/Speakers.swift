@@ -140,7 +140,7 @@ public func knownVoices(_ file: URL = Paths.voiceprints) -> [KnownVoice] {
 }
 
 /**
- * Renames a person's voice ("Nate" to "Nate Allen"). When someone already has the new name, the two
+ * Renames a person's voice ("John" to "John Smith"). When someone already has the new name, the two
  * become one person with both sets of fingerprints (newest kept), rather than two people with the same
  * voice, which would stop either being recognised. Meetings already saved keep the name they had.
  */
