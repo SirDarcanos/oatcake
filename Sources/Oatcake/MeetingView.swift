@@ -254,7 +254,9 @@ struct MeetingView: View {
             }
             if canRenameSpeakers {
                 Button {
+                    // A failed save keeps its text pending; renaming then would have it written back over the new names.
                     flush()
+                    guard pending.isEmpty else { return }
                     renamingSpeakers = true
                 } label: { Label("Rename Speakers", systemImage: "person.2") }
                     .disabled(model.jobs.summarising.contains(path))

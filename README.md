@@ -235,8 +235,9 @@ them all to the Trash.
    said), the names in its summary and to-dos, and its people in `meeting.json`. Two names can
    swap, and giving two speakers one name makes them one; "Several people" stays as it is. The
    fingerprint saved from that call goes with the name, so the next call isn't recognised as the
-   wrong person too, unless the old name's other calls sound the same (then only the spelling was
-   different, and Settings › People renames a person everywhere). A meeting saved without
+   wrong person too. It stays only when the new name is the old one spelt out ("Nate" → "Nate
+   Allen") and the voice clearly matches their other calls (Settings › People renames a person
+   everywhere). A meeting saved without
    checking who's who has **Name voices…** instead.
 5. **Ask.** The lozenge at the bottom of a meeting takes questions about it ("what did we
    decide about hiring?") or across meetings ("when did Alex first raise the launch date?").

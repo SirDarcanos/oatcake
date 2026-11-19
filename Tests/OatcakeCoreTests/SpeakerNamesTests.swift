@@ -105,4 +105,23 @@ import Testing
         #expect(prints.people["Alex Smith"] == nil)
         #expect(prints.people["Sam"] == nil && prints.people["Voice 2"] == nil)
     }
+
+    /// A wrong name that came from a voice suggestion: this call's fingerprint was close to the old
+    /// name's other calls (0.65, above the 0.6 that review suggests at), and so is a near match
+    /// under an unrelated name. Both move: only a respelling of the same name keeps one in place.
+    @Test func movesAWrongNameFromAVoiceSuggestion() throws {
+        let (m, meetings) = try meeting()
+        defer { m.remove() }
+        let file = m.root.appendingPathComponent("voiceprints.json")
+        try Voiceprints(model: voiceprintModel, people: [
+            "Alex": .init(samples: [sample([1, 0, 0], "earlier"), sample([0.65, 0.76, 0], "rec-1")]),
+            "Sam": .init(samples: [sample([0, 0, 1], "earlier"), sample([0.2, 0, 0.98], "rec-1")]),
+        ]).save(file)
+        try meetings.renameSpeakers("Team/2026-11-19 1000 Weekly", ["Alex": "Bea", "Sam": "Cal"], me: "Tester", voiceprints: file)
+        let prints = Voiceprints.load(file)
+        #expect(prints.people["Alex"]?.samples.map(\.call) == ["earlier"])
+        #expect(prints.people["Bea"]?.samples.map(\.call) == ["rec-1"])
+        #expect(prints.people["Sam"]?.samples.map(\.call) == ["earlier"])
+        #expect(prints.people["Cal"]?.samples.map(\.call) == ["rec-1"])
+    }
 }

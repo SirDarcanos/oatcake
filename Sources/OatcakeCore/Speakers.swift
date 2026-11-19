@@ -171,7 +171,10 @@ func moveCallVoiceprints(call: String, renames: [String: String], me: String, fi
     for (old, new) in renames {
         guard var person = prints.people[old], let i = person.samples.firstIndex(where: { $0.call == call }) else { continue }
         let sample = person.samples[i]
-        if person.samples.contains(where: { $0.call != call && cosine(sample.embedding, $0.embedding) >= matchThreshold }) { continue }
+        // Only a respelling of the same person ("Nate" → "Nate Allen") whose voice clearly matches
+        // their other calls keeps it where it is. Any other new name is someone else, even when the
+        // voice was close enough for review to suggest the old name: that's how a wrong name arrives.
+        if respelling(old, new), person.samples.contains(where: { $0.call != call && cosine(sample.embedding, $0.embedding) >= Float(unattendedMatch) }) { continue }
         person.samples.remove(at: i)
         prints.people[old] = person.samples.isEmpty ? nil : person
         changed = true
@@ -185,6 +188,12 @@ func moveCallVoiceprints(call: String, renames: [String: String], me: String, fi
         prints.people[name] = person
     }
     if changed { try prints.save(file) }
+}
+
+/// One name runs into the other ("Nate" and "Nate Allen"), ignoring case and punctuation.
+private func respelling(_ a: String, _ b: String) -> Bool {
+    let x = loose(a), y = loose(b)
+    return !x.isEmpty && !y.isEmpty && (x.hasPrefix(y) || y.hasPrefix(x))
 }
 
 /// A name to recognise a voice by: not "Voice 2", "Several people", "Call audio" or you.
