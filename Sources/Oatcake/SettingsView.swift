@@ -323,7 +323,7 @@ struct SettingsView: View {
         if model.config.todosEnabled {
             InstructionsSection(title: "To-do instructions", setting: \.todoInstructions, standard: defaultTodoInstructions,
                                 applies: "Used for to-dos collected from now on.",
-                                hint: "What the model is told counts as a to-do. Make it stricter or looser, or keep it to your own action items (“Only list what Sam agreed to do”). Each to-do still comes with its owner, due date and time in the call.")
+                                hint: "What the model is told counts as a to-do. Make it stricter or looser, or keep it to your own action items (“Only list what John agreed to do”). Each to-do still comes with its owner, due date and time in the call.")
         }
     }
 }

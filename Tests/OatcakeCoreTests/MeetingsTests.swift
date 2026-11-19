@@ -10,9 +10,9 @@ import Testing
         var c = DateComponents()
         (c.year, c.month, c.day, c.hour, c.minute) = (2026, 11, 5, 14, 0)
         let date = gregorian.date(from: c)!
-        #expect(meetingFolderName(title: "Sam / Alex: 1:1", startedAt: date) == "2026-11-05 1400 Sam - Alex- 1-1")
+        #expect(meetingFolderName(title: "John / Jane: 1:1", startedAt: date) == "2026-11-05 1400 John - Jane- 1-1")
         #expect(meetingFolderName(title: "  ", startedAt: date) == "2026-11-05 1400 Call")
-        #expect(loose("Sam & Alex 1:1") == loose("Sam & Alex 1-1"))
+        #expect(loose("John & Jane 1:1") == loose("John & Jane 1-1"))
         #expect(safeName("A/B:  C") == "A-B- C")
         #expect(safeName(" ..Hidden") == "Hidden" && seriesFolder("...") == "Untitled")
     }
@@ -42,8 +42,8 @@ import Testing
         #expect(readText(file) == "- [ ] From the summary\n- [ ] One\n- [x] Two\n")
         try meetings.toggleTodo(rel, line: 1, text: "One")
         try meetings.toggleTodo(rel, line: 0, text: "No longer there")
-        try meetings.addTodo(rel, "Three — Sam")
-        #expect(readText(file) == "- [ ] From the summary\n- [x] One\n- [x] Two\n- [ ] Three — Sam\n")
+        try meetings.addTodo(rel, "Three — John")
+        #expect(readText(file) == "- [ ] From the summary\n- [x] One\n- [x] Two\n- [ ] Three — John\n")
         // The Meetings folder's own list.
         try meetings.addTodo("", "Of my own")
         try meetings.toggleTodo("", line: 0, text: "Of my own")
@@ -86,7 +86,7 @@ import Testing
         try FileManager.default.createDirectory(at: m, withIntermediateDirectories: true)
         try #"{"title":"Leads sync","startedAt":"2026-10-29T16:30:00.000Z"}"#.write(to: m.appendingPathComponent("meeting.json"), atomically: true, encoding: .utf8)
         try "# Old\n- **Date:** x\n\nFirst line of prose.\n".write(to: m.appendingPathComponent("summary.md"), atomically: true, encoding: .utf8)
-        try "- [ ] Do it — Alex\n".write(to: m.appendingPathComponent("todo.md"), atomically: true, encoding: .utf8)
+        try "- [ ] Do it — Jane\n".write(to: m.appendingPathComponent("todo.md"), atomically: true, encoding: .utf8)
 
         let tree = meetings.tree()
         #expect(tree.allMeetings.count == 1)
@@ -152,10 +152,10 @@ import Testing
             try text.write(to: dir.appendingPathComponent(file.rawValue), atomically: true, encoding: .utf8)
         }
         let sync = "Team/2026-11-09 1000 Weekly sync", review = "Design/2026-11-06 1400 Design review"
-        try write(sync, .summary, "## Launch plan\n\nAlex said the checklist is nearly done.\n")
-        try write(sync, .transcript, "**[00:00] Sam:** Morning.\n\n**[12:34] Alex:** For the offsite in March I think that we could all meet up at the Café Lumière, if the budget allows.\n")
+        try write(sync, .summary, "## Launch plan\n\nJane said the checklist is nearly done.\n")
+        try write(sync, .transcript, "**[00:00] John:** Morning.\n\n**[12:34] Jane:** For the offsite in March I think that we could all meet up at the Café Lumière, if the budget allows.\n")
         try write(review, .notes, "- [02:10] Ask about the colour tokens\n")
-        try write(review, .todo, "- [ ] Send the deck — Alex — [04:20]\n")
+        try write(review, .todo, "- [ ] Send the deck — Jane — [04:20]\n")
         let meetings = Meetings(root: root)
         let all = [(path: sync, label: "Weekly sync Team"), (path: review, label: "Design review Design")]
 
@@ -163,17 +163,17 @@ import Testing
         let cafe = meetings.search("cafe LUMIERE", in: all)
         #expect(cafe.map(\.path) == [sync])
         #expect(cafe.first?.file == .transcript && cafe.first?.stamp == "12:34")
-        #expect(cafe.first?.line.hasPrefix("Alex: …") == true && cafe.first?.line.contains("meet up at the Café Lumière") == true)
+        #expect(cafe.first?.line.hasPrefix("Jane: …") == true && cafe.first?.line.contains("meet up at the Café Lumière") == true)
         // A search for someone's name finds where they speak.
-        #expect(meetings.search("sam", in: all).first == SearchHit(path: sync, file: .transcript, line: "Sam: Morning.", stamp: "00:00"))
+        #expect(meetings.search("john", in: all).first == SearchHit(path: sync, file: .transcript, line: "John: Morning.", stamp: "00:00"))
         // Notes and to-dos are looked through as well, and a line is shown as plain text.
         #expect(meetings.search("tokens", in: all).first?.file == .notes)
-        #expect(meetings.search("deck", in: all).first == SearchHit(path: review, file: .todo, line: "Send the deck — Alex"))
+        #expect(meetings.search("deck", in: all).first == SearchHit(path: review, file: .todo, line: "Send the deck — Jane"))
         // Unless to-dos are turned off.
         #expect(meetings.search("deck", in: all, todos: false).isEmpty)
         #expect(meetings.search("tokens", in: all, todos: false).first?.file == .notes)
         // Words can be split between the title and the text, and every one of them is needed.
-        #expect(meetings.search("weekly checklist", in: all).first == SearchHit(path: sync, file: .summary, line: "Alex said the checklist is nearly done."))
+        #expect(meetings.search("weekly checklist", in: all).first == SearchHit(path: sync, file: .summary, line: "Jane said the checklist is nearly done."))
         #expect(meetings.search("weekly deck", in: all).isEmpty)
         // All in the title or folder: found, with no line to show.
         #expect(meetings.search("design review", in: all) == [SearchHit(path: review)])
