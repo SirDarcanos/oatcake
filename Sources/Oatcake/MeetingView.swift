@@ -53,6 +53,9 @@ struct MeetingView: View {
     /// edited, not each time the view is redrawn.
     @ViewState private var transcriptLines: [TranscriptLine] = []
     @ViewState private var rows: [Row] = []
+    /// The speakers Rename speakers… offers: only in a transcript Oatcake wrote.
+    @ViewState private var speakers: [MeetingSpeaker] = []
+    @ViewState private var renamingSpeakers = false
     /// The transcript's Markdown has been typed in since it was last parsed.
     @ViewState private var transcriptEdited = false
     @ViewState private var flash = -1
@@ -83,6 +86,11 @@ struct MeetingView: View {
             }
         }
         .toolbar { toolbar }
+        .sheet(isPresented: $renamingSpeakers) {
+            RenameSpeakersSheet(speakers: speakers) { renames in
+                model.library.renameSpeakers(path, renames)
+            }
+        }
         .onAppear {
             if let jump { tab = jump.tab }
             load()
@@ -244,6 +252,14 @@ struct MeetingView: View {
                     .disabled(model.jobs.summarising.contains(path) || (files?[.transcript] ?? "").trimmed.isEmpty)
                     .help("Write the summary or the to-dos again with the current instructions in Settings")
             }
+            if canRenameSpeakers {
+                Button {
+                    flush()
+                    renamingSpeakers = true
+                } label: { Label("Rename Speakers", systemImage: "person.2") }
+                    .disabled(model.jobs.summarising.contains(path))
+                    .help("Change who’s who in this meeting: the names in its transcript, summary and to-dos")
+            }
             let what = tab == .summary ? "summary and to-dos" : tab == .transcript ? "transcript" : "notes"
             Button { copy() } label: { Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") }
                 .help("Copy the \(what), formatted (as Markdown where only plain text can go)")
@@ -294,6 +310,13 @@ struct MeetingView: View {
         }
     }
 
+    /// A meeting saved without checking who's who has Name voices… instead, until Keep as is.
+    private var canRenameSpeakers: Bool {
+        guard !speakers.isEmpty else { return false }
+        guard let id = meta.recording else { return true }
+        return !model.jobs.unchecked.contains { $0.id == id }
+    }
+
     // MARK: Content
 
     private var granola: Bool { meta.source == "granola" || node.granola }
@@ -308,6 +331,7 @@ struct MeetingView: View {
             return l
         }
         transcriptLines = lines
+        speakers = meetingSpeakers(text)
         rows = lines.isEmpty ? text.components(separatedBy: "\n").map(\.trimmed).filter { !$0.isEmpty }.map { Row(text: $0) }
             : lines.map { Row(speaker: $0.speaker, stamp: $0.stamp, text: $0.text) }
     }
