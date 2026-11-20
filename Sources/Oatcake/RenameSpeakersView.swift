@@ -6,6 +6,8 @@ import SwiftUI
 
 struct RenameSpeakersSheet: View {
     let speakers: [MeetingSpeaker]
+    /// Whether to-dos are collected (Settings › General): while they're off, the sheet doesn't mention them.
+    var todos = true
     let rename: ([String: String]) -> Void
     @Environment(\.dismiss) private var dismiss
     @ViewState private var names: [String: String] = [:]
@@ -19,7 +21,7 @@ struct RenameSpeakersSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Rename speakers").font(.headline)
-            Text("Changes this meeting only: the names in its transcript, summary and to-dos. Give two speakers the same name to make them one. A voice Oatcake learnt from this call goes with its new name.")
+            Text("Changes this meeting only: the names in its \(todos ? "transcript, summary and to-dos" : "transcript and summary"). Give two speakers the same name to make them one. A voice Oatcake learnt from this call goes with its new name.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
