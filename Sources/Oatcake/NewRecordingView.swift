@@ -109,7 +109,7 @@ struct NewRecordingView: View {
             folder = parent.isEmpty ? topLevel : parent
         } else if event.seriesId != nil {
             folder = newFolder
-            // Folder names can't contain "/" or ":" ("Sam & Alex 1:1" becomes "Sam & Alex 1-1").
+            // Folder names can't contain "/" or ":" ("John & Jane 1:1" becomes "John & Jane 1-1").
             newName = event.title.replacingOccurrences(of: "[/:]", with: "-", options: .regularExpression)
         }
     }

@@ -61,13 +61,13 @@ struct TodosView: View {
                     TextField("Add a to-do, then Return", text: $draft)
                         .textFieldStyle(.plain)
                         .focused($addFocused)
-                        .help("Yours unless you name someone: Send the deck - Alex - due Fri, Nov 6")
+                        .help("Yours unless you name someone: Send the deck - Jane - due Fri, Nov 6")
                         .onSubmit(add)
                 }
                 .padding(.top, 22)
                 // How adding works, only while adding.
                 if addFocused {
-                    Text("Saved in your Meetings folder’s own todo.md, as yours unless you name someone: Send the deck - Alex - due Fri, Nov 6. To add one to a meeting, use the to-dos at the top of its summary.")
+                    Text("Saved in your Meetings folder’s own todo.md, as yours unless you name someone: Send the deck - Jane - due Fri, Nov 6. To add one to a meeting, use the to-dos at the top of its summary.")
                         .font(.caption).foregroundStyle(.secondary).padding(.top, 6)
                 }
                 ForEach(groups, id: \.key) { group in

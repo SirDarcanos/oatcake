@@ -45,12 +45,12 @@ import Testing
         // With the byte-order mark a spreadsheet leaves at the start.
         try ("\u{FEFF}" + """
             document_id,user_email,document_title,document_created,summary,notes,transcript
-            aaaaaaaa-1111-1111-1111-111111111111,sam@example.com,Weekly sync,2026-01-05T12:00:00.000Z,"## Decisions\n- Ship on the 4th",My own point,"Hello there
+            aaaaaaaa-1111-1111-1111-111111111111,john@example.com,Weekly sync,2026-01-05T12:00:00.000Z,"## Decisions\n- Ship on the 4th",My own point,"Hello there
             Shall we start?"
-            bbbbbbbb-2222-2222-2222-222222222222,sam@example.com,Weekly sync,2026-01-12T12:00:00.000Z,Short one.,,
-            cccccccc-3333-3333-3333-333333333333,sam@example.com,,2026-01-13T12:00:00.000Z,No title.,,
-            not-an-id,sam@example.com,Broken,2026-01-14T12:00:00.000Z,x,,
-            dddddddd-4444-4444-4444-444444444444,sam@example.com,No date,soon,x,,
+            bbbbbbbb-2222-2222-2222-222222222222,john@example.com,Weekly sync,2026-01-12T12:00:00.000Z,Short one.,,
+            cccccccc-3333-3333-3333-333333333333,john@example.com,,2026-01-13T12:00:00.000Z,No title.,,
+            not-an-id,john@example.com,Broken,2026-01-14T12:00:00.000Z,x,,
+            dddddddd-4444-4444-4444-444444444444,john@example.com,No date,soon,x,,
 
             """).write(to: csv, atomically: true, encoding: .utf8)
 
@@ -86,7 +86,7 @@ import Testing
 
         // Something that isn't an export says so.
         let other = work.appendingPathComponent("other.csv")
-        try "name,email\nSam,sam@example.com\n".write(to: other, atomically: true, encoding: .utf8)
+        try "name,email\nJohn,john@example.com\n".write(to: other, atomically: true, encoding: .utf8)
         #expect(throws: OatcakeError.self) { try importGranola(other, into: root) }
         #expect(throws: OatcakeError("Pick the .zip (or .csv) that Granola's export gave you.")) { try importGranola(work.appendingPathComponent("export.txt"), into: root) }
     }

@@ -7,30 +7,30 @@ import Testing
 
 @Suite struct ParseTests {
     @Test func todos() {
-        let md = "- [ ] Send the deck — Alex — due Fri, Nov 6 — [12:34]\n- [x] Book room\nnot a todo\n* [X] Done — Sam"
+        let md = "- [ ] Send the deck — Jane — due Fri, Nov 6 — [12:34]\n- [x] Book room\nnot a todo\n* [X] Done — John"
         let todos = parseTodos(md)
         #expect(todos.count == 3)
-        #expect(todos[0] == Todo(line: 0, done: false, text: "Send the deck", owner: "Alex", due: "Fri, Nov 6", stamp: "12:34"))
+        #expect(todos[0] == Todo(line: 0, done: false, text: "Send the deck", owner: "Jane", due: "Fri, Nov 6", stamp: "12:34"))
         #expect(todos[1].done && todos[1].text == "Book room")
-        #expect(todos[2].line == 3 && todos[2].owner == "Sam")
+        #expect(todos[2].line == 3 && todos[2].owner == "John")
         #expect(toggleTodo(md, line: 0).hasPrefix("- [x] Send the deck"))
         #expect(toggleTodo(md, line: 1).contains("- [ ] Book room"))
         // By what it says, when the file has changed since the list on screen was read: the line it was on is someone else's now.
         let shifted = "- [ ] New first\n" + md
-        #expect(toggleTodo(shifted, line: 0, text: "Send the deck") == "- [ ] New first\n- [x] Send the deck — Alex — due Fri, Nov 6 — [12:34]\n- [x] Book room\nnot a todo\n* [X] Done — Sam")
+        #expect(toggleTodo(shifted, line: 0, text: "Send the deck") == "- [ ] New first\n- [x] Send the deck — Jane — due Fri, Nov 6 — [12:34]\n- [x] Book room\nnot a todo\n* [X] Done — John")
         #expect(toggleTodo(shifted, line: 1, text: "Gone since") == nil)
     }
 
     @Test func typedTodos() {
-        #expect(typedTodo("Send the deck - due Fri, Nov 6", owner: "Sam") == "Send the deck — Sam — due Fri, Nov 6")
-        #expect(typedTodo("Send the deck - Alex - due Fri, Nov 6", owner: "Sam") == "Send the deck — Alex — due Fri, Nov 6")
+        #expect(typedTodo("Send the deck - due Fri, Nov 6", owner: "John") == "Send the deck — John — due Fri, Nov 6")
+        #expect(typedTodo("Send the deck - Jane - due Fri, Nov 6", owner: "John") == "Send the deck — Jane — due Fri, Nov 6")
         #expect(addTodo("- [ ] One\n\n", "Two") == "- [ ] One\n- [ ] Two\n")
         #expect(addTodo("", "Two") == "- [ ] Two\n")
     }
 
     @Test func transcripts() {
-        let lines = parseTranscript("**[00:05] Sam Lee:** Hello there\n\n[1:02:03] **Alex:** Hi\n[0:20] System audio (Kim): yes\n[0:21] Microphone: me")
-        #expect(lines.map(\.speaker) == ["Sam Lee", "Alex", "Kim", "Microphone"])
+        let lines = parseTranscript("**[00:05] John Smith:** Hello there\n\n[1:02:03] **Jane:** Hi\n[0:20] System audio (Jane Roe): yes\n[0:21] Microphone: me")
+        #expect(lines.map(\.speaker) == ["John Smith", "Jane", "Jane Roe", "Microphone"])
         #expect(lines[1].at == 3723)
         #expect(lines[2].stamp == "00:20")
     }
@@ -71,10 +71,10 @@ import Testing
     /// Only an older file's own header is taken off: a title with the lines older versions wrote
     /// under it (counted in a real Meetings folder: Date, Participants, Granola note, Granola folders).
     @Test func olderHeaders() {
-        #expect(stripHeader("# Old\n- **Date:** 2026-10-29\n- **Participants:** Sam, Alex\n\n---\n\n## Summary\nBody") == "## Summary\nBody")
+        #expect(stripHeader("# Old\n- **Date:** 2026-10-29\n- **Participants:** John, Jane\n\n---\n\n## Summary\nBody") == "## Summary\nBody")
         #expect(stripHeader("\n# Imported\n- **Granola note:** https://notes.granola.ai/d/x\n- **Granola folders:** Team\nText") == "Text")
         // A summary written to your own instructions keeps its title and its bullets, bold or not.
-        let own = "# Launch plan\n- **Decision:** ship on the 4th\n- **Owner:** Sam\n"
+        let own = "# Launch plan\n- **Decision:** ship on the 4th\n- **Owner:** John\n"
         #expect(stripHeader(own) == own && forReading(own) == own)
         #expect(stripHeader("# Launch plan\n\nWe agreed the dates.") == "# Launch plan\n\nWe agreed the dates.")
         #expect(previewOf("# Launch plan\n\nWe agreed the dates.") == "We agreed the dates.")
@@ -86,10 +86,10 @@ import Testing
     @Test func todosAcrossMeetings() {
         let day = { (d: Int) in gregorian.date(from: DateComponents(year: 2026, month: 11, day: d))! }
         let meeting = MeetingTodos(path: "Team/2026-11-02 1000 Sync", title: "Sync", startedAt: day(2).addingTimeInterval(36_000),
-                                   todo: "- [ ] Send the deck — Alex — due Nov 4 — [12:34]\n- [x] Book the room — due Nov 3\nnot a to-do\n- [ ] Think about it\n- [ ] Call Jo — due Friday\n")
-        let own = MeetingTodos(path: "", title: "To-dos", startedAt: nil, todo: "- [ ] Renew the domain — Sam\n")
+                                   todo: "- [ ] Send the deck — Jane — due Nov 4 — [12:34]\n- [x] Book the room — due Nov 3\nnot a to-do\n- [ ] Think about it\n- [ ] Call Jane — due Friday\n")
+        let own = MeetingTodos(path: "", title: "To-dos", startedAt: nil, todo: "- [ ] Renew the domain — John\n")
         let items = allTodoItems([own, meeting])
-        #expect(items.map(\.todo.text) == ["Renew the domain", "Send the deck", "Book the room", "Think about it", "Call Jo"])
+        #expect(items.map(\.todo.text) == ["Renew the domain", "Send the deck", "Book the room", "Think about it", "Call Jane"])
         #expect(items.map(\.id) == [":0", "Team/2026-11-02 1000 Sync:0", "Team/2026-11-02 1000 Sync:1", "Team/2026-11-02 1000 Sync:3", "Team/2026-11-02 1000 Sync:4"])
         // The 2nd was a Monday: "Friday" is the 6th.
         #expect(items.map(\.dueDate) == [nil, day(4), day(3), nil, day(6)])
