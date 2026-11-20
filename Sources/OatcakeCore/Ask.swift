@@ -21,7 +21,7 @@ private func askSystem(_ config: Config) -> String {
     [
         "You answer \(config.myName)'s questions about their meetings, from the meetings written out below. Each one starts with a tag like [M1].",
         "Use only what the meetings say, and name who said or decided each thing. A transcript line belongs to the person named at its start, so check who is speaking before you say that someone said or agreed to something.",
-        "After each point, cite where it comes from: the meeting's tag and the [mm:ss] time of the transcript line you rely on, like [M1 12:34], or the tag alone, like [M1], for something from a summary, notes or to-dos.",
+        "After each point, cite where it comes from: the meeting's tag and the [mm:ss] time of the transcript line you rely on, like [M1 12:34], or the tag alone, like [M1], for something from \(config.todosEnabled ? "a summary, notes or to-dos" : "a summary or notes").",
         "If the meetings below don't answer the question, say so rather than guessing. Answer in concise Markdown.",
         config.jargonLine,
     ].filter { !$0.isEmpty }.joined(separator: " ")
@@ -74,7 +74,7 @@ public func ask(_ config: Config, meeting rel: String, question: String, history
                 let reply = try await model.complete([system, ChatMessage("user", "\(open)\n\n\(tail)\n\n\(routeTask)")], schema: routeSchema, think: think, maxTokens: 4_096)
                 if let route = try? parseJsonObject(AskRoute.self, reply), route.beyond {
                     onStep("Looking through your other meetings")
-                    found = otherMeetings(meetings, others: others, besides: rel, phrases: route.search, tokens: extra)
+                    found = otherMeetings(meetings, others: others, besides: rel, phrases: route.search, tokens: extra, todos: config.todosEnabled)
                 }
             } catch {
                 // Stopped: stop. Anything else: answer from this meeting alone.
@@ -118,7 +118,7 @@ private func openMeetingText(_ config: Config, _ rel: String, _ files: MeetingFi
     let before = [
         heading(1, rel, files.meta, note: " (the meeting \(config.myName) has open)"),
         section("Summary", forReading(files.summary)),
-        section("To-dos ([x] = done)", files.todo),
+        config.todosEnabled ? section("To-dos ([x] = done)", files.todo) : nil,
         section("\(config.myName)'s own notes", files.notes),
     ].compactMap { $0 }.joined(separator: "\n\n")
     let (transcript, whole) = transcriptFor(files.transcript, question: question, tokens: max(500, tokens - LocalModels.tokens(in: before) - 50))
@@ -174,16 +174,17 @@ private func historyBlock(_ history: [AskExchange]) -> String {
  * The other meetings a question reaches for: those with one of the phrases in them (every word of
  * it, anywhere in the meeting), and the ones in the same folder as the open meeting, which is where
  * a series lives. The most phrases first, then the newest. Each is given as its summary, its to-dos
- * and the transcript lines that match, tagged [M2], [M3]… in the order returned.
+ * (unless `todos` is false: they're turned off) and the transcript lines that match, tagged [M2],
+ * [M3]… in the order returned.
  */
-func otherMeetings(_ meetings: Meetings, others: [TreeNode], besides rel: String, phrases: [String], tokens: Int) -> [(path: String, text: String)] {
+func otherMeetings(_ meetings: Meetings, others: [TreeNode], besides rel: String, phrases: [String], tokens: Int, todos: Bool = true) -> [(path: String, text: String)] {
     let phrases = phrases.map(\.trimmed).filter { !$0.isEmpty }.prefix(4)
     let folderOf = { (path: String) in (path as NSString).deletingLastPathComponent }
     let listed = others.map { (path: $0.path, label: "\($0.title ?? $0.name) \(folderOf($0.path))") }
     var score: [String: Int] = [:]
     var matched: [String: [String]] = [:]
     for phrase in phrases {
-        for hit in meetings.search(phrase, in: listed) {
+        for hit in meetings.search(phrase, in: listed, todos: todos) {
             score[hit.path, default: 0] += 10
             matched[hit.path, default: []].append(phrase)
         }
@@ -210,7 +211,7 @@ func otherMeetings(_ meetings: Meetings, others: [TreeNode], besides rel: String
         let text = [
             heading(found.count + 2, node.path, files.meta),
             section("Summary", forReading(files.summary)) ?? "Summary: none was written.",
-            section("To-dos ([x] = done)", files.todo),
+            todos ? section("To-dos ([x] = done)", files.todo) : nil,
             section("Transcript lines that match the search ([mm:ss] is the time into that call)", lines.joined(separator: "\n\n")),
         ].compactMap { $0 }.joined(separator: "\n\n")
         // Cut to its share of the room.
