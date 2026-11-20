@@ -208,8 +208,11 @@ them all to the Trash.
    (the raw message is behind Details) and shows **Write summary** to try again later.
    To write a summary or its to-dos again (after changing the instructions in Settings ›
    Summaries, say), choose **Regenerate › Regenerate summary** or **Regenerate to-dos** in the
-   Summary tab's toolbar and confirm. Only that part is asked for and replaced, edits and ticks
-   included; the rest of the meeting stays as it is. The old one stays until the new one is
+   Summary tab's toolbar and confirm. With summary templates set up (Settings › Summaries),
+   Regenerate summary lists them: the meeting's summary is written with the one you pick, and the
+   meeting keeps it for any summary written of it later. Only that part is asked for and
+   replaced, edits and ticks included; the rest of the meeting stays as it is. The old one
+   stays until the new one is
    ready, and stays if it fails or is changed somewhere else meanwhile. Your notes steer what the summary focuses
    on but aren't copied into it. A long turn in the transcript is
    broken at a pause about every half minute, each part with its own time.
@@ -293,8 +296,6 @@ None of this is built yet. It's what we'd like to add, in no fixed order.
 
 - A summary as soon as a call has been processed, before Who's who, with the names put right
   once you've confirmed them.
-- Templates for summaries (a one-to-one, a customer call, a stand-up), and writing a summary
-  again with a different one.
 - Asking for a change to a summary: "shorter", "add the numbers we agreed".
 - Your own notes worked into the summary, each point with where it came from in the transcript.
 - A brief before a call: what was agreed and what's still open from the last one with the same
@@ -528,6 +529,14 @@ Settings in the app (stored in `~/Library/Application Support/Oatcake/config.jso
   read the transcript. Change the headings, the level of detail or the language to suit you;
   **Restore Default** brings Oatcake's own back. To-dos are collected separately and aren't
   affected.
+- **Summary templates** (Settings › Summaries): other summary instructions, each with a name,
+  for the meetings that need a different summary (a one-to-one you lead, one with your own lead,
+  a team meeting). **Add Template** starts one as a copy of the summary instructions. Pick one for
+  a meeting from **Regenerate › Regenerate summary**; the meeting keeps it (in its `meeting.json`)
+  and every other meeting keeps the summary instructions. A meeting keeps its template by name:
+  once that template is renamed or deleted, the meeting is back on the summary instructions,
+  until a template is given that name again. The summary starts at the model's first `## `
+  heading: anything written before it is left out.
 - **Collect to-dos** (Settings › General): on to start with. Turned off, no to-dos are asked for
   when a summary is written, and the To-dos page, the sidebar's counts, each meeting's checklist,
   Regenerate to-dos and the to-do settings are hidden; Copy, Share, search and Ask leave to-dos

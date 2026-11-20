@@ -106,11 +106,15 @@ public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: 
 
     var outRel: String
     var out: URL
+    // Naming voices later keeps the summary template the meeting was regenerated with.
+    var template: String?
     if let existing {
         outRel = existing
         out = try resolveInside(config.meetingsRoot, existing)
         guard savedRecording(out) == rec.id else { throw OatcakeError("The meeting saved from this recording couldn’t be found.") }
-        if let kept = tryJSON(MeetingMeta.self, out.appendingPathComponent("meeting.json"))?.title?.trimmed, !kept.isEmpty { title = kept }
+        let kept = tryJSON(MeetingMeta.self, out.appendingPathComponent("meeting.json"))
+        if let keptTitle = kept?.title?.trimmed, !keptTitle.isEmpty { title = keptTitle }
+        template = kept?.template
     } else {
         let startedAt = parseISO(analysis.startedAt) ?? rec.startedAt
         let name = meetingFolderName(title: title, startedAt: startedAt)
@@ -135,10 +139,11 @@ public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: 
         var endedAt: String
         var participants: [String]
         var recording: String
+        var template: String?
     }
     try writeAtomic(out.appendingPathComponent("meeting.json"),
                     try encodeJSON(Meta(title: title, startedAt: analysis.startedAt, endedAt: analysis.endedAt,
-                                        participants: participants, recording: rec.id)) + "\n")
+                                        participants: participants, recording: rec.id, template: template)) + "\n")
 
     // Naming voices later: the summary and to-dos say the new names where they said the old ones.
     if existing != nil, let before = Recordings.savedInfo(rec.dir)?.names {
@@ -258,9 +263,19 @@ public func writeSummary(_ draft: SummaryDraft, config: Config, meeting rel: Str
 /// What Regenerate writes again: a meeting's summary, or its to-dos.
 public enum SummaryPart: Sendable { case summary, todos }
 
+/// Which instructions a summary is written with.
+public enum SummaryTemplateChoice: Hashable, Sendable {
+    /// The meeting's own: the template it was last regenerated with, or the summary instructions.
+    case meetings
+    /// Picked for Regenerate summary: a template, by name, or nil for the summary instructions.
+    case picked(String?)
+}
+
 /// Regenerate: puts a new draft of one part in place of the old one. `previous` is that part as it was
-/// when the model was asked. If it has changed since (edited somewhere else), nothing is written.
-public func writeRegenerated(_ part: SummaryPart, _ draft: SummaryDraft, config: Config, meeting rel: String, previous: String) throws {
+/// when the model was asked. If it has changed since (edited somewhere else), nothing is written. A
+/// summary written with a template picked for it keeps that template for the meeting from then on.
+public func writeRegenerated(_ part: SummaryPart, _ draft: SummaryDraft, config: Config, meeting rel: String, previous: String,
+                             template: SummaryTemplateChoice = .meetings) throws {
     let meetings = Meetings(root: config.meetingsRoot)
     let now = try meetings.read(rel)
     switch part {
@@ -268,6 +283,8 @@ public func writeRegenerated(_ part: SummaryPart, _ draft: SummaryDraft, config:
         guard now.summary == previous else { throw OatcakeError("The summary was changed while it was being regenerated.") }
         guard !draft.summary.trimmed.isEmpty else { throw OatcakeError("The model returned an empty summary.") }
         try meetings.write(rel, .summary, draft.summary)
+        // The summary is written by now: a meeting.json that can't be read only means the choice isn't kept.
+        if case .picked(let name) = template { try? meetings.setSummaryTemplate(rel, config.summaryTemplate(named: name)?.name) }
     case .todos:
         guard now.todo == previous else { throw OatcakeError("The to-dos were changed while they were being regenerated.") }
         if let problem = draft.todoProblem { throw OatcakeError(problem) }
@@ -276,15 +293,20 @@ public func writeRegenerated(_ part: SummaryPart, _ draft: SummaryDraft, config:
 }
 
 /// Asks the model for a meeting's summary and to-dos, or for just one of them. Nothing is written.
-public func draftSummary(_ config: Config, meeting rel: String, only part: SummaryPart? = nil) async throws -> SummaryDraft {
+public func draftSummary(_ config: Config, meeting rel: String, only part: SummaryPart? = nil,
+                         template: SummaryTemplateChoice = .meetings) async throws -> SummaryDraft {
     let meetings = Meetings(root: config.meetingsRoot)
     let files = try meetings.read(rel)
     guard !files.transcript.trimmed.isEmpty else { throw OatcakeError("This meeting has no transcript to summarise.") }
     let notes = parseNotes(files.notes).map { Note(at: $0.stamp.map(seconds), text: $0.text) }
+    let name: String? = switch template {
+    case .meetings: files.meta.template
+    case .picked(let name): name
+    }
     // With to-dos turned off (Settings › General), only the summary is asked for, so todo.md is left alone.
     let part = part ?? (config.todosEnabled ? nil : .summary)
     return try await summarise(config, title: titleOfMeeting(rel, files.meta), participants: files.meta.participants ?? [config.myName],
-                               notes: notes, transcript: files.transcript, only: part)
+                               notes: notes, transcript: files.transcript, only: part, summaryTask: config.summaryTask(template: name))
 }
 
 /// A paragraph of the transcript runs for about this long at most before the next pause starts a new one.
@@ -358,7 +380,8 @@ let todosSchema = #"{"type":"object","properties":{"todos":{"type":"array","item
  * has just read the same transcript. A call too long for the model to take in at once on this Mac
  * is done in parts, and the parts' notes are joined.
  */
-private func summarise(_ config: Config, title: String, participants: [String], notes: [Note], transcript: String, only: SummaryPart?) async throws -> SummaryDraft {
+private func summarise(_ config: Config, title: String, participants: [String], notes: [Note], transcript: String, only: SummaryPart?,
+                       summaryTask: String) async throws -> SummaryDraft {
     // The notes stay the note-taker's own (notes.md). Here they only tell the model what mattered.
     let notesBlock = notes.isEmpty ? "" : ([
         "\(config.myName) took these notes ([mm:ss] = time into the call; \"before the call\" = prep written",
@@ -369,7 +392,6 @@ private func summarise(_ config: Config, title: String, participants: [String], 
     let head = ["Meeting: \(title)", "Participants: \(participants.joined(separator: ", "))", config.jargonLine, notesBlock]
         .filter { !$0.isEmpty }.joined(separator: "\n")
     let system = ChatMessage("system", notesSystem)
-    let summaryTask = config.summaryTask
     let todosTask = config.todosTask
     let reasoning = config.llm.reasoning
     let overhead = LocalModels.tokens(in: head + summaryTask + todosTask) + replyTokens + 200

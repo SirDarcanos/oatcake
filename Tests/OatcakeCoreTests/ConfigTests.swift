@@ -66,6 +66,13 @@ import Testing
         #expect(saving.afterCall == .saveTranscript)
         let unknown = try JSONDecoder().decode(Config.self, from: Data(#"{"afterCall":"somethingNew"}"#.utf8))
         #expect(unknown.afterCall == .review)
+        // Summary templates: none to begin with, and they read back.
+        #expect(config.summaryTemplates.isEmpty)
+        let templates = [SummaryTemplate(name: "1:1 I lead", instructions: "Wins and blockers."), SummaryTemplate(name: "Team", instructions: "Decisions.")]
+        let withTemplates = try JSONDecoder().decode(Config.self, from: Data(encodeJSON(with(config) { $0.summaryTemplates = templates }).utf8))
+        #expect(withTemplates.summaryTemplates == templates)
+        #expect(withTemplates.summaryTask(template: " Team ") == "Decisions." && withTemplates.summaryTask(template: "team") == withTemplates.summaryTask)
+        #expect(withTemplates.summaryTask(template: nil) == defaultSummaryInstructions)
         // To-dos are collected unless you've turned them off, and that reads back.
         #expect(config.todosEnabled)
         let noTodos = try JSONDecoder().decode(Config.self, from: Data(encodeJSON(with(config) { $0.todosEnabled = false }).utf8))
