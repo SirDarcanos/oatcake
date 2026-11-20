@@ -242,7 +242,19 @@ struct MeetingView: View {
             }
             if tab == .summary, !(files?[.summary] ?? "").trimmed.isEmpty {
                 Menu {
-                    Button("Regenerate summary") { regenerate(.summary) }
+                    if templates.isEmpty {
+                        Button("Regenerate summary") { regenerate(.summary) }
+                    } else {
+                        // Ticked: what this meeting's summary is written with now.
+                        let current = model.config.summaryTemplate(named: meta.template)?.name
+                        Menu("Regenerate summary") {
+                            Toggle("Default", isOn: Binding(get: { current == nil }, set: { _ in regenerate(.summary, template: .picked(nil)) }))
+                            Divider()
+                            ForEach(templates, id: \.name) { t in
+                                Toggle(t.name, isOn: Binding(get: { current == t.name }, set: { _ in regenerate(.summary, template: .picked(t.name)) }))
+                            }
+                        }
+                    }
                     if model.config.todosEnabled { Button("Regenerate to-dos") { regenerate(.todos) } }
                 } label: {
                     // Named on the image too: a toolbar menu is read out by its image's name, "Refresh".
@@ -250,8 +262,11 @@ struct MeetingView: View {
                 }
                     .accessibilityLabel("Regenerate")
                     .disabled(model.jobs.summarising.contains(path) || (files?[.transcript] ?? "").trimmed.isEmpty)
-                    .help(model.config.todosEnabled ? "Write the summary or the to-dos again with the current instructions in Settings"
-                          : "Write the summary again with the current instructions in Settings")
+                    .help(model.config.todosEnabled
+                          ? (templates.isEmpty ? "Write the summary or the to-dos again with the current instructions in Settings"
+                             : "Write the summary (with a template, if you pick one) or the to-dos again")
+                          : (templates.isEmpty ? "Write the summary again with the current instructions in Settings"
+                             : "Write the summary again, with a template if you pick one"))
             }
             if canRenameSpeakers {
                 Button {
@@ -381,7 +396,7 @@ struct MeetingView: View {
                                 ModelError(raw: error, prefix: "Couldn’t regenerate the \(what). ")
                                 Text(part == .summary ? "Your previous summary was kept." : "Your previous to-dos were kept.")
                                 HStack(spacing: 10) {
-                                    Button("Try again") { regenerate(part) }
+                                    Button("Try again") { regenerate(part, template: model.jobs.regeneratingWith[path] ?? .meetings) }
                                         .disabled((files[.transcript] ?? "").trimmed.isEmpty)
                                     SettingsPaneLink(pane: "summaries", title: "Open Settings").buttonStyle(.link)
                                 }
@@ -567,11 +582,16 @@ struct MeetingView: View {
         }
     }
 
-    private func regenerate(_ part: SummaryPart) {
+    /// The summary templates a meeting can be regenerated with: named, and with instructions.
+    private var templates: [SummaryTemplate] {
+        model.config.summaryTemplates.filter { model.config.summaryTemplate(named: $0.name) != nil }
+    }
+
+    private func regenerate(_ part: SummaryPart, template: SummaryTemplateChoice = .meetings) {
         // Save edits before asking for a replacement; a failed save must not discard pending text.
         flush()
         guard pending.isEmpty else { return }
-        model.jobs.regenerate(part, path)
+        model.jobs.regenerate(part, path, template: template)
     }
 
     /// A meeting without its summary: it's being written now (after a save), or the model couldn't

@@ -434,6 +434,36 @@ import Testing
         #expect(!leavesOutSavedVoice(try #require(Recordings.get(id, recordings: recordings)), decisions))
     }
 
+    /// Naming a meeting's voices later writes its meeting.json again, and keeps the summary template
+    /// it was regenerated with.
+    @Test func templateSurvivesNamingLater() throws {
+        let fm = FileManager.default
+        let tmp = fm.temporaryDirectory.appendingPathComponent("oatcake-save-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: tmp) }
+        let recordings = tmp.appendingPathComponent("recordings"), root = tmp.appendingPathComponent("Meetings")
+        let voiceprints = tmp.appendingPathComponent("voiceprints.json")
+        let id = "2026-11-10T18-00-00-000Z"
+        let recDir = recordings.appendingPathComponent(id)
+        try fm.createDirectory(at: recDir, withIntermediateDirectories: true)
+        try #"{"title":"One-to-one","folder":"","startedAt":"2026-11-10T18:00:00.000Z"}"#.write(to: recDir.appendingPathComponent("call.json"), atomically: true, encoding: .utf8)
+        let analysis = Analysis(title: "One-to-one", startedAt: "2026-11-10T18:00:00.000Z", endedAt: "2026-11-10T18:30:00.000Z",
+                                lines: [Line(speaker: me, start: 1, end: 2, text: "How's it going?"), Line(speaker: "A", start: 5, end: 7, text: "Busy week.")],
+                                speakers: [SpeakerInfo(id: "A", seconds: 60, embedding: nil, suggestion: nil, quotes: [])],
+                                echoLinesRemoved: 0, me: nil, warnings: [], embeddingModel: voiceprintModel)
+        try encodeJSON(analysis).write(to: recDir.appendingPathComponent("analysis.json"), atomically: true, encoding: .utf8)
+        var config = Config.defaults()
+        config.myName = "John Doe"
+        config.outputDir = root.path
+        let rec = try #require(Recordings.get(id, recordings: recordings))
+        let saved = try saveMeeting(config, rec, decisions: suggestedDecisions(analysis), folder: "", unchecked: true, voiceprints: voiceprints)
+        let meetings = Meetings(root: root)
+        try meetings.setSummaryTemplate(saved, "1:1 I lead")
+        _ = try saveMeeting(config, try #require(Recordings.get(id, recordings: recordings)), decisions: ["A": .name("Jane Doe")],
+                            folder: "", into: saved, voiceprints: voiceprints)
+        let meta = try meetings.read(saved).meta
+        #expect(meta.template == "1:1 I lead" && meta.participants == ["John Doe", "Jane Doe"] && meta.recording == id)
+    }
+
     /// A meeting saved without checking that has since gone (to the Trash, say) takes its recording's
     /// clips and analysis with it at the next clear-up. A Meetings folder that isn't there at all (a
     /// drive that's unplugged) says nothing about one meeting, so nothing is cleared.

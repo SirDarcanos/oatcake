@@ -84,6 +84,61 @@ import Testing
         #expect(todos.todo == "- [ ] Ship it — John — due Friday — [00:00]\n")
     }
 
+    /// A template picked for Regenerate summary is what the model is told, and the meeting keeps it
+    /// once the summary is written: later summaries of it use it too. The default, a template that
+    /// has gone, or one with no instructions, means the summary instructions.
+    @Test func summaryTemplates() async throws {
+        let meetings = TestMeetings()
+        defer { meetings.remove() }
+        let rel = "Team/2026-11-09 1000 One-to-one"
+        try meetings.write(rel, .transcript, "**[00:00] John:** We agreed to ship on Friday.\n",
+                           meta: #"{"title":"One-to-one","recording":"2026-11-09T10-00-00-000Z"}"#)
+        try meetings.write(rel, .summary, "## Old\n")
+        let server = try await StandIn.model { _ in "## New\nShip on Friday.\n" }
+        var config = server.config
+        config.outputDir = meetings.root.path
+        config.summaryInstructions = "Write in Italian."
+        config.summaryTemplates = [SummaryTemplate(name: "1:1 I lead", instructions: "  List wins and blockers.\n"),
+                                   SummaryTemplate(name: "Empty", instructions: " ")]
+        let store = Meetings(root: meetings.root)
+        let asked = { server.requests.last?.messages.user ?? "" }
+
+        let draft = try await draftSummary(config, meeting: rel, only: .summary, template: .picked("1:1 I lead"))
+        #expect(asked().hasSuffix("List wins and blockers.") && !asked().contains("Italian"))
+        // Not kept until the summary is written, and not when it can't be (changed meanwhile).
+        #expect(try store.read(rel).meta.template == nil)
+        #expect(throws: (any Error).self) {
+            try writeRegenerated(.summary, draft, config: config, meeting: rel, previous: "## Something else\n", template: .picked("1:1 I lead"))
+        }
+        #expect(try store.read(rel).meta.template == nil)
+        try writeRegenerated(.summary, draft, config: config, meeting: rel, previous: "## Old\n", template: .picked("1:1 I lead"))
+        var meta = try store.read(rel).meta
+        #expect(meta.template == "1:1 I lead" && meta.recording == "2026-11-09T10-00-00-000Z" && meta.title == "One-to-one")
+
+        // Written again later (Write summary, names put right): the meeting's own template.
+        _ = try await draftSummary(config, meeting: rel)
+        #expect(server.requests.dropLast().last?.messages.user.hasSuffix("List wins and blockers.") == true)
+        // Regenerating to-dos leaves it alone.
+        try writeRegenerated(.todos, SummaryDraft(summary: "", todo: ""), config: config, meeting: rel, previous: "", template: .picked(nil))
+        #expect(try store.read(rel).meta.template == "1:1 I lead")
+
+        // Back to the default.
+        let plain = try await draftSummary(config, meeting: rel, only: .summary, template: .picked(nil))
+        #expect(asked().hasSuffix("Write in Italian."))
+        try writeRegenerated(.summary, plain, config: config, meeting: rel, previous: draft.summary, template: .picked(nil))
+        meta = try store.read(rel).meta
+        #expect(meta.template == nil && meta.recording == "2026-11-09T10-00-00-000Z")
+
+        // A template that has gone since, or has no instructions: the summary instructions, and none is kept.
+        try store.setSummaryTemplate(rel, "Deleted since")
+        _ = try await draftSummary(config, meeting: rel, only: .summary)
+        #expect(asked().hasSuffix("Write in Italian."))
+        _ = try await draftSummary(config, meeting: rel, only: .summary, template: .picked("Empty"))
+        #expect(asked().hasSuffix("Write in Italian."))
+        try writeRegenerated(.summary, plain, config: config, meeting: rel, previous: plain.summary, template: .picked("Empty"))
+        #expect(try store.read(rel).meta.template == nil)
+    }
+
     /// To-dos turned off: only the summary is asked for, and the meeting's todo.md is left as it was.
     @Test func noTodosWhenTurnedOff() async throws {
         let meetings = TestMeetings()

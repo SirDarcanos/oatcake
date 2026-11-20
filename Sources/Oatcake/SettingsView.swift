@@ -342,6 +342,7 @@ struct SettingsView: View {
         InstructionsSection(title: "Summary instructions", setting: \.summaryInstructions, standard: defaultSummaryInstructions,
                             applies: "Used for summaries written from now on.",
                             hint: "What the model is told to write once it has read the transcript. Change the headings, the level of detail or the language to suit you. To-dos are collected separately and aren’t affected.")
+        TemplatesSections()
         if model.config.todosEnabled {
             InstructionsSection(title: "To-do instructions", setting: \.todoInstructions, standard: defaultTodoInstructions,
                                 applies: "Used for to-dos collected from now on.",
@@ -396,6 +397,119 @@ private struct InstructionsSection: View {
             let custom = model.config[keyPath: setting].trimmed
             text = custom.isEmpty ? standard : custom
         }
+    }
+}
+
+/**
+ * Summary templates: other summary instructions, each with a name, for the meetings that need a
+ * different summary. One is picked for a meeting from its Regenerate menu, and kept for it.
+ */
+private struct TemplatesSections: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Section {
+            LabeledContent {
+                Button("Add Template") { add() }
+            } label: {
+                Text(model.config.summaryTemplates.isEmpty ? "None yet" : model.config.summaryTemplates.map(\.name).joined(separator: ", "))
+                Text("Pick one for a meeting from Regenerate › Regenerate summary.")
+            }
+        } header: {
+            Text("Summary templates")
+        } footer: {
+            Text("Other summary instructions, each with a name: for a one-to-one you lead, say, or one with your own lead. A meeting keeps the template you regenerate it with; the others use the summary instructions above. The summary starts at the model’s first ‘## ’ heading, so anything it writes before that is left out.")
+                .settingsHint()
+        }
+        ForEach(model.config.summaryTemplates, id: \.name) { template in
+            TemplateSection(template: template)
+        }
+    }
+
+    /// A new one starts as a copy of the summary instructions, named "New template" (or "New template 2"…).
+    private func add() {
+        var name = "New template"
+        var number = 2
+        while model.config.summaryTemplates.contains(where: { $0.name.trimmed.lowercased() == name.lowercased() }) {
+            name = "New template \(number)"
+            number += 1
+        }
+        model.saveConfig(with(model.config) { $0.summaryTemplates.append(SummaryTemplate(name: name, instructions: $0.summaryTask)) })
+    }
+}
+
+/// One summary template, to rename, edit or delete. Its instructions are saved as they're typed; its
+/// name when you press Return or leave the field, if no other template has it.
+private struct TemplateSection: View {
+    @Environment(AppModel.self) private var model
+    /// As saved.
+    let template: SummaryTemplate
+    @ViewState private var name = ""
+    @ViewState private var text = ""
+    @ViewState private var nameProblem: String?
+    @ViewState private var deleting = false
+    @FocusState private var nameFocused: Bool
+
+    var body: some View {
+        Section {
+            TextField("Name", text: $name)
+                .focused($nameFocused)
+                .onSubmit(saveName)
+                .onChange(of: nameFocused) { if !nameFocused { saveName() } }
+            if let nameProblem {
+                Text(nameProblem).settingsHint(.red)
+            }
+            TextEditor(text: $text)
+                .font(.system(.callout, design: .monospaced))
+                .frame(minHeight: 120)
+                .scrollContentBackground(.hidden)
+                .accessibilityLabel("Instructions for \(template.name)")
+                .onChange(of: text) { change { $0.instructions = text } }
+            LabeledContent {
+                Button("Delete…") { deleting = true }
+                    .alert("Delete the “\(template.name)” template?", isPresented: $deleting) {
+                        Button("Delete", role: .destructive) {
+                            model.saveConfig(with(model.config) { $0.summaryTemplates.removeAll { $0.name == template.name } })
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Summaries already written with it stay as they are. Those meetings are summarised with the summary instructions from now on, or with a template you give this name again.")
+                    }
+            } label: {
+                Text(text.trimmed.isEmpty ? "Without instructions, meetings use the summary instructions" : "Used for the meetings you regenerate with it")
+            }
+        } header: {
+            Text(template.name)
+        }
+        .onAppear {
+            name = template.name
+            text = template.instructions
+        }
+    }
+
+    private func change(_ edit: (inout SummaryTemplate) -> Void) {
+        var config = model.config
+        guard let i = config.summaryTemplates.firstIndex(where: { $0.name == template.name }) else { return }
+        edit(&config.summaryTemplates[i])
+        if config != model.config { model.saveConfig(config) }
+    }
+
+    private func saveName() {
+        let clean = name.trimmed
+        guard clean != template.name else {
+            nameProblem = nil
+            return
+        }
+        if clean.isEmpty {
+            nameProblem = "A template needs a name."
+        } else if model.config.summaryTemplates.contains(where: { $0.name != template.name && $0.name.trimmed.lowercased() == clean.lowercased() }) {
+            nameProblem = "There’s a template called “\(clean)” already."
+        } else {
+            nameProblem = nil
+            change { $0.name = clean }
+            return
+        }
+        name = template.name
     }
 }
 
