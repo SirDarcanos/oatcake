@@ -8,9 +8,9 @@
 #   Scripts/bundle.sh debug      debug build
 #
 # Signed with the "Oatcake Release" certificate when it's in a keychain (OATCAKE_SIGN_IDENTITY and
-# OATCAKE_SIGN_KEYCHAIN choose another), otherwise ad-hoc. macOS ties the recorder's permissions and
-# Oatcake's Keychain items to that identity: an ad-hoc build is a new app to macOS every time, and
-# only a release-signed copy can update itself. OATCAKE_REQUIRE_SIGNING=1 refuses to fall back to ad-hoc.
+# OATCAKE_SIGN_KEYCHAIN choose another), otherwise ad-hoc. macOS ties the recorder's permissions to
+# that identity: an ad-hoc build is a new app to macOS every time, and only a release-signed copy can
+# update itself. OATCAKE_REQUIRE_SIGNING=1 refuses to fall back to ad-hoc.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -96,9 +96,9 @@ if [[ -n "${OATCAKE_SIGN_KEYCHAIN:-}" ]]; then KEYCHAIN=(--keychain "$OATCAKE_SI
 #
 # Everything is signed for the hardened runtime, so macOS won't let another program on this Mac
 # load its own code into Oatcake or the recorder (and so borrow the recorder's microphone
-# permission, or Oatcake's Keychain items). The recorder says it uses the microphone, which the
-# hardened runtime asks it to, and so does Oatcake, because macOS counts the recorder's use as
-# Oatcake's (Resources/Oatcake.entitlements); llama.cpp's server may load the libraries that came with it.
+# permission). The recorder says it uses the microphone, which the hardened runtime asks it to,
+# and so does Oatcake, because macOS counts the recorder's use as Oatcake's
+# (Resources/Oatcake.entitlements); llama.cpp's server may load the libraries that came with it.
 for file in "${LLAMA_FILES[@]}"; do
     if [[ "$file" == llama-server ]]; then
         codesign --force --options runtime --entitlements Resources/Llama.entitlements --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$LLAMA/$file"

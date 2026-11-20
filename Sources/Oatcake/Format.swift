@@ -41,7 +41,7 @@ func sameAsFolder(_ title: String, _ folder: String) -> Bool {
 /// The path above a title, without its last part when that only repeats the title.
 func pathAbove(_ folder: String, _ title: String) -> String { folderPath(sameAsFolder(title, folder) ? parentOf(folder) : folder) }
 
-/// Is this owner you? "Sam" counts for "Sam Lee".
+/// Is this owner you? "John" counts for "John Smith".
 func isMe(_ owner: String?, _ myName: String) -> Bool {
     guard let owner = owner?.trimmed.lowercased(), !owner.isEmpty, !myName.isEmpty else { return false }
     return [myName.lowercased(), (myName.split(separator: " ").first.map(String.init) ?? myName).lowercased()].contains(owner)
@@ -82,7 +82,7 @@ func listedIn(_ folder: TreeNode?) -> [TreeNode] {
 
 // MARK: - People
 
-/// "Alex Kim" from an attendee, or from "alex.kim@…" when the invite has no name.
+/// "Jane Doe" from an attendee, or from "jane.doe@…" when the invite has no name.
 func attendeeName(_ a: CalendarEvent.Attendee) -> String {
     if let name = a.name, !name.isEmpty { return name }
     return (a.email.split(separator: "@").first.map(String.init) ?? a.email)
@@ -108,7 +108,7 @@ private let colorsKey = "personColors"
 /**
  * Each person keeps one colour everywhere and for good: the first time a name is seen it takes the
  * palette's least-used hue (in the order above, which spreads early picks around the wheel), and that
- * choice is remembered. Keyed by first name, so "Alex" and "Alex Kim" match.
+ * choice is remembered. Keyed by first name, so "Jane" and "Jane Doe" match.
  */
 private func hueFor(_ name: String, remember: Bool) -> Double {
     var all = (UserDefaults.standard.dictionary(forKey: colorsKey) as? [String: Int]) ?? [:]

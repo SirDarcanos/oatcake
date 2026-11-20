@@ -155,6 +155,12 @@ final class Library {
         refresh()
     }
 
+    /// Rename speakers…: other names for a saved meeting's speakers, in that meeting only.
+    func renameSpeakers(_ path: String, _ renames: [String: String]) {
+        attempt { try meetings.renameSpeakers(path, renames, me: config.myName) }
+        refresh()
+    }
+
     private func attempt(_ work: () throws -> Void) {
         do { try work() } catch { toast(error.localizedDescription, isError: true) }
     }

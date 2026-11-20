@@ -132,6 +132,8 @@ public struct Config: Codable, Equatable, Sendable {
     public var todosEnabled: Bool
     /// Google Calendar's names for blocks that aren't calls.
     public static let defaultIgnoredEvents = ["Focus time", "Out of office", "Working location", "Task"]
+    /// Events ignored one at a time from Upcoming, or a recurring one's whole series (isIgnored).
+    public var ignoredCalendarEvents: [IgnoredEvent] = []
 
     public var meetingsRoot: URL { URL(fileURLWithPath: outputDir, isDirectory: true) }
 
@@ -195,6 +197,7 @@ public struct Config: Codable, Equatable, Sendable {
         summaryInstructions = (try? c.decodeIfPresent(String.self, forKey: .summaryInstructions)) ?? base.summaryInstructions
         todoInstructions = (try? c.decodeIfPresent(String.self, forKey: .todoInstructions)) ?? base.todoInstructions
         ignoredEvents = (try? c.decodeIfPresent([String].self, forKey: .ignoredEvents)) ?? base.ignoredEvents
+        ignoredCalendarEvents = (try? c.decodeIfPresent([IgnoredEvent].self, forKey: .ignoredCalendarEvents)) ?? base.ignoredCalendarEvents
         afterCall = (try? c.decodeIfPresent(AfterCall.self, forKey: .afterCall)) ?? base.afterCall
         todosEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .todosEnabled)) ?? base.todosEnabled
     }
@@ -218,12 +221,13 @@ public struct Config: Codable, Equatable, Sendable {
         try c.encode(summaryInstructions, forKey: .summaryInstructions)
         try c.encode(todoInstructions, forKey: .todoInstructions)
         try c.encode(ignoredEvents, forKey: .ignoredEvents)
+        try c.encode(ignoredCalendarEvents, forKey: .ignoredCalendarEvents)
         try c.encode(afterCall, forKey: .afterCall)
         try c.encode(todosEnabled, forKey: .todosEnabled)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case myName, outputDir, asrModel, llm, keepAudio, mic, callReminders, updateCheck, callNotice, autoStop, liveTranscript, jargon, menuBarNextCall, summaryInstructions, todoInstructions, ignoredEvents, afterCall, todosEnabled
+        case myName, outputDir, asrModel, llm, keepAudio, mic, callReminders, updateCheck, callNotice, autoStop, liveTranscript, jargon, menuBarNextCall, summaryInstructions, todoInstructions, ignoredEvents, ignoredCalendarEvents, afterCall, todosEnabled
     }
 
     /// For the model: how to spell the names and terms you've listed, or "" when there are none.

@@ -30,18 +30,18 @@ import Testing
         SUMMARY:Planning
         DTSTART:20261110T100000Z
         DTEND:20261110T103000Z
-        ATTENDEE;CN=Alex Kim;PARTSTAT=ACCEPTED:mailto:alex@example.com
-        ATTENDEE;CN=Jo Park;PARTSTAT=DECLINED:mailto:jo@example.com
+        ATTENDEE;CN=Jane Doe;PARTSTAT=ACCEPTED:mailto:jane@example.com
+        ATTENDEE;CN=Jane Smith;PARTSTAT=DECLINED:mailto:jane.smith@example.com
         ATTENDEE;CUTYPE=RESOURCE;CN=London-6-Boardroom (10):mailto:room@resource.calendar.example.com
         END:VEVENT
         END:VCALENDAR
         """
         let event = try #require(parseCalendar(ics, from: parseISO("2026-11-10T00:00:00Z")!, to: parseISO("2026-11-11T00:00:00Z")!).first)
-        #expect(event.attendees.map(\.email) == ["alex@example.com", "jo@example.com", "room@resource.calendar.example.com"])
+        #expect(event.attendees.map(\.email) == ["jane@example.com", "jane.smith@example.com", "room@resource.calendar.example.com"])
         #expect(event.attendees.map(\.declined) == [nil, true, nil])
         #expect(event.attendees.map(\.resource) == [nil, nil, true])
         // A cache written before these were kept still reads.
-        let old = try JSONDecoder().decode(CalendarEvent.Attendee.self, from: Data(#"{"name":"Alex Kim","email":"alex@example.com"}"#.utf8))
+        let old = try JSONDecoder().decode(CalendarEvent.Attendee.self, from: Data(#"{"name":"Jane Doe","email":"jane@example.com"}"#.utf8))
         #expect(old == event.attendees[0] && old.declined == nil)
     }
 
@@ -68,6 +68,46 @@ import Testing
         var config = Config.defaults()
         config.ignoredEvents = []
         #expect(try JSONDecoder().decode(Config.self, from: Data(try encodeJSON(config).utf8)).ignoredEvents == [])
+    }
+
+    /// Events ignored from Upcoming: one occurrence, or every occurrence of a recurring event. Another
+    /// meeting with the same title isn't touched, and an ignored occurrence is forgotten once it has ended.
+    @Test func eventsIgnoredFromUpcoming() throws {
+        let from = parseISO("2026-11-01T00:00:00Z")!, to = parseISO("2026-12-01T00:00:00Z")!
+        // Two weekly meetings with the same title, and a one-off.
+        let weekly = feed("DTSTART:20261110T100000Z", "DTEND:20261110T103000Z", "RRULE:FREQ=WEEKLY;COUNT=3")
+        let events = parseCalendar(weekly, from: from, to: to)
+            + parseCalendar(weekly.replacingOccurrences(of: "UID:e", with: "UID:other"), from: from, to: to)
+            + parseCalendar(feed("DTSTART:20261125T150000Z", "DTEND:20261125T160000Z").replacingOccurrences(of: "UID:e", with: "UID:once"), from: from, to: to)
+        #expect(events.count == 7)
+        let ours = events.filter { $0.seriesId == "e" }, oneOff = try #require(events.first { $0.seriesId == nil })
+        func kept(_ ignored: [IgnoredEvent]) -> [String] { events.filter { !isIgnored($0, ignored) }.map(\.id) }
+
+        // One occurrence: only that one.
+        let one = [IgnoredEvent.occurrence(ours[1])]
+        #expect(kept(one) == events.map(\.id).filter { $0 != ours[1].id })
+        // The series, from any occurrence: all of ours, none of the other meeting with the same title.
+        let series = [try #require(IgnoredEvent.series(of: ours[2]))]
+        #expect(kept(series) == events.filter { $0.seriesId != "e" }.map(\.id))
+        // A one-off has no series, and can be ignored on its own.
+        #expect(IgnoredEvent.series(of: oneOff) == nil)
+        #expect(kept([.occurrence(oneOff)]) == events.map(\.id).filter { $0 != oneOff.id })
+        // An occurrence's ID is never taken for a series ID, or the other way round.
+        #expect(!isIgnored(ours[0], [IgnoredEvent(id: "e", series: false, title: "Sync")]))
+        #expect(!isIgnored(ours[0], [IgnoredEvent(id: ours[0].id, series: true, title: "Sync")]))
+
+        // An occurrence is forgotten once it has ended; a series is kept.
+        let all = one + series + [.occurrence(oneOff)]
+        #expect(withoutEnded(all, now: parseISO("2026-11-17T10:29:00Z")!) == all)
+        #expect(withoutEnded(all, now: parseISO("2026-11-17T10:30:00Z")!) == series + [.occurrence(oneOff)])
+        #expect(withoutEnded(all, now: parseISO("2027-01-01T00:00:00Z")!) == series)
+        #expect(series[0].covers(IgnoredEvent.series(of: ours[0])!) && !series[0].covers(one[0]))
+
+        // Kept in the settings; older settings have none.
+        var config = Config.defaults()
+        config.ignoredCalendarEvents = all
+        #expect(try JSONDecoder().decode(Config.self, from: Data(try encodeJSON(config).utf8)).ignoredCalendarEvents == all)
+        #expect(try JSONDecoder().decode(Config.self, from: Data("{}".utf8)).ignoredCalendarEvents == [])
     }
 
     /// A call that finishes early and another in its slot: the second isn't named after the first.
@@ -274,7 +314,7 @@ import Testing
         #expect(CalendarCache(checkedAt: "2026-11-10T10:59:59Z").isStale(now: now))
 
         let event = { (reply: String) in
-            parseCalendar(self.feed("DTSTART:20261110T100000Z", "DTEND:20261110T103000Z", "ATTENDEE;CN=Alex Kim;PARTSTAT=\(reply):mailto:alex@example.com"),
+            parseCalendar(self.feed("DTSTART:20261110T100000Z", "DTEND:20261110T103000Z", "ATTENDEE;CN=Jane Doe;PARTSTAT=\(reply):mailto:jane@example.com"),
                           from: parseISO("2026-11-01T00:00:00Z")!, to: parseISO("2026-11-30T00:00:00Z")!)[0]
         }
         let accepted = event("ACCEPTED"), declined = event("DECLINED")

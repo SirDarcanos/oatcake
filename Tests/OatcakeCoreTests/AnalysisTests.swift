@@ -25,45 +25,45 @@ import Testing
 
     /// A name is only suggested when it was said: a small model asked for one will sometimes invent it.
     @Test func suggestedNames() async throws {
-        let transcript = "Sam Taylor (recorder): Priya, where are we with pricing?\nSpeaker A: Nearly there.\nSpeaker B: I agree with Priya."
-        let reply = #"{"speakers":[{"speaker":"Speaker A","name":"Priya","quote":"Priya, where are we"},{"speaker":"B","name":"Jordan Lee","quote":null},{"speaker":"C","name":"Sam","quote":"x"},{"speaker":"Z","name":"Priya","quote":"x"}]}"#
-        let names = namesIn(reply, unknown: ["A", "B", "C"], transcript: transcript, myName: "Sam Taylor")
+        let transcript = "John Doe (recorder): Joe Bloggs, where are we with pricing?\nSpeaker A: Nearly there.\nSpeaker B: I agree with Joe Bloggs."
+        let reply = #"{"speakers":[{"speaker":"Speaker A","name":"Joe Bloggs","quote":"Joe Bloggs, where are we"},{"speaker":"B","name":"Richard Roe","quote":null},{"speaker":"C","name":"John","quote":"x"},{"speaker":"Z","name":"Joe Bloggs","quote":"x"}]}"#
+        let names = namesIn(reply, unknown: ["A", "B", "C"], transcript: transcript, myName: "John Doe")
         // B's name was never said, C's is your own, and Z wasn't asked about.
-        #expect(names == ["A": Suggestion(name: "Priya", how: .transcript, detail: "Priya, where are we")])
-        #expect(namesIn(#"{"speakers":[{"speaker":"A","name":"null","quote":"null"},{"speaker":"B","name":"Speaker B","quote":null}]}"#, unknown: ["A", "B"], transcript: transcript, myName: "Sam Taylor").isEmpty)
-        // Said means said as a word: "Dan" isn't in "abundant", and "Ann" isn't in "announce". A name in two parts is.
-        let said = "Sam Taylor (recorder): Jean-Luc, the evidence is abundant.\nSpeaker A: I will announce it.\nSpeaker B: Fine."
-        let made = #"{"speakers":[{"speaker":"A","name":"Dan","quote":null},{"speaker":"B","name":"Ann","quote":null},{"speaker":"C","name":"Jean-Luc","quote":"Jean-Luc, the evidence"}]}"#
-        #expect(namesIn(made, unknown: ["A", "B", "C"], transcript: said, myName: "Sam Taylor").mapValues(\.name) == ["C": "Jean-Luc"])
+        #expect(names == ["A": Suggestion(name: "Joe Bloggs", how: .transcript, detail: "Joe Bloggs, where are we")])
+        #expect(namesIn(#"{"speakers":[{"speaker":"A","name":"null","quote":"null"},{"speaker":"B","name":"Speaker B","quote":null}]}"#, unknown: ["A", "B"], transcript: transcript, myName: "John Doe").isEmpty)
+        // Said means said as a word: "Smith" isn't in "blacksmith", and "Roe" isn't in "throes". A name in two parts is.
+        let said = "John Doe (recorder): Joe Bloggs, the blacksmith is here.\nSpeaker A: The work is in its final throes.\nSpeaker B: Fine."
+        let made = #"{"speakers":[{"speaker":"A","name":"Smith","quote":null},{"speaker":"B","name":"Roe","quote":null},{"speaker":"C","name":"Joe Bloggs","quote":"Joe Bloggs, the blacksmith"}]}"#
+        #expect(namesIn(made, unknown: ["A", "B", "C"], transcript: said, myName: "John Doe").mapValues(\.name) == ["C": "Joe Bloggs"])
 
         // From a processed recording: the voice nobody recognised gets its name, one that was recognised keeps its own.
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-names-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
-        let known = Suggestion(name: "Alex Kim", how: .voice, detail: "voice match 0.81")
+        let known = Suggestion(name: "Jane Doe", how: .voice, detail: "voice match 0.81")
         let analysis = Analysis(title: "Pricing", startedAt: "2026-11-10T14:00:00.000Z", endedAt: "2026-11-10T14:25:00.000Z",
-                                lines: [Line(speaker: me, start: 1, end: 3, text: "Priya, where are we with pricing?"), Line(speaker: "A", start: 4, end: 6, text: "Nearly there."),
+                                lines: [Line(speaker: me, start: 1, end: 3, text: "Joe Bloggs, where are we with pricing?"), Line(speaker: "A", start: 4, end: 6, text: "Nearly there."),
                                         Line(speaker: "B", start: 7, end: 9, text: "Good.")],
                                 speakers: [SpeakerInfo(id: "A", seconds: 40, embedding: nil, suggestion: nil, quotes: []),
                                            SpeakerInfo(id: "B", seconds: 30, embedding: nil, suggestion: known, quotes: [])],
                                 echoLinesRemoved: 0, me: nil, warnings: [], embeddingModel: voiceprintModel)
         try encodeJSON(analysis).write(to: dir.appendingPathComponent("analysis.json"), atomically: true, encoding: .utf8)
         #expect(hasUnnamedVoices(dir))
-        let server = try await StandIn.model { _ in #"{"speakers":[{"speaker":"A","name":"Priya","quote":"Priya, where are we"},{"speaker":"B","name":"Priya","quote":null}]}"# }
+        let server = try await StandIn.model { _ in #"{"speakers":[{"speaker":"A","name":"Joe Bloggs","quote":"Joe Bloggs, where are we"},{"speaker":"B","name":"Joe Bloggs","quote":null}]}"# }
         await suggestNames(dir, config: server.config)
         let named = try readJSON(Analysis.self, dir.appendingPathComponent("analysis.json"))
-        #expect(named.speakers.map(\.suggestion?.name) == ["Priya", "Alex Kim"] && named.warnings.isEmpty && !hasUnnamedVoices(dir))
+        #expect(named.speakers.map(\.suggestion?.name) == ["Joe Bloggs", "Jane Doe"] && named.warnings.isEmpty && !hasUnnamedVoices(dir))
         let asked = try #require(server.requests.first)
-        #expect(asked.messages.user.contains("Sam Taylor (recorder): Priya, where are we with pricing?\nSpeaker A: Nearly there.\nAlex Kim: Good."))
+        #expect(asked.messages.user.contains("John Doe (recorder): Joe Bloggs, where are we with pricing?\nSpeaker A: Nearly there.\nJane Doe: Good."))
         #expect(asked.messages.user.contains("Unidentified speakers: Speaker A\n") && asked.json["response_format"] != nil)
         #expect(asked.json["temperature"] as? Double == 0.6)
 
-        // The model is shown "Alex Kim:" before the recognised voice's lines. That's a label, not something
-        // said: it doesn't make Alex Kim a name the other voice can be given.
+        // The model is shown "Jane Doe:" before the recognised voice's lines. That's a label, not something
+        // said: it doesn't make Jane Doe a name the other voice can be given.
         try encodeJSON(analysis).write(to: dir.appendingPathComponent("analysis.json"), atomically: true, encoding: .utf8)
-        let echoes = try await StandIn.model { _ in #"{"speakers":[{"speaker":"A","name":"Alex Kim","quote":null}]}"# }
+        let echoes = try await StandIn.model { _ in #"{"speakers":[{"speaker":"A","name":"Jane Doe","quote":null}]}"# }
         await suggestNames(dir, config: echoes.config)
-        #expect(try readJSON(Analysis.self, dir.appendingPathComponent("analysis.json")).speakers.map(\.suggestion?.name) == [nil, "Alex Kim"])
+        #expect(try readJSON(Analysis.self, dir.appendingPathComponent("analysis.json")).speakers.map(\.suggestion?.name) == [nil, "Jane Doe"])
 
         // A model that can't be reached is noted for the review screen, and the analysis is left as it was.
         try encodeJSON(analysis).write(to: dir.appendingPathComponent("analysis.json"), atomically: true, encoding: .utf8)

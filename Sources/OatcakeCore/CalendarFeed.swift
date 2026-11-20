@@ -110,6 +110,50 @@ public func ignoredEvent(_ title: String, _ ignored: [String]) -> Bool {
     }
 }
 
+/**
+ * An event you've told Oatcake to ignore from Upcoming: one occurrence, or every occurrence of a
+ * recurring event. Kept in config.json and only there: the calendar isn't changed and nobody else
+ * sees it. Upcoming only shows events that haven't ended, so ignoring a series from one of its
+ * occurrences is ignoring that one and the ones after it.
+ *
+ * Two changes on the calendar's side bring one back: an occurrence the organiser moves gets a new ID
+ * (its ID is the event's UID and start), and Google's "this and following events" edit gives the rest
+ * of a series a new UID.
+ */
+public struct IgnoredEvent: Codable, Equatable, Hashable, Sendable, Identifiable {
+    /// The occurrence's ID (CalendarEvent.id), or for a series its seriesId.
+    public var id: String
+    /// Every occurrence of a recurring event, not just one.
+    public var series: Bool
+    /// What Settings › Calendar lists it as.
+    public var title: String
+    /// When the occurrence starts and ends; nil for a series. Once it has ended it's forgotten.
+    public var start: String?
+    public var end: String?
+
+    public static func occurrence(_ e: CalendarEvent) -> IgnoredEvent {
+        IgnoredEvent(id: e.id, series: false, title: e.title, start: e.start, end: e.end)
+    }
+
+    /// nil for an event that doesn't recur.
+    public static func series(of e: CalendarEvent) -> IgnoredEvent? {
+        e.seriesId.map { IgnoredEvent(id: $0, series: true, title: e.title, start: nil, end: nil) }
+    }
+
+    /// The same choice: the same occurrence, or the same series.
+    public func covers(_ other: IgnoredEvent) -> Bool { id == other.id && series == other.series }
+}
+
+/// Whether Upcoming's Ignore covers this event: the occurrence itself, or its whole series.
+public func isIgnored(_ event: CalendarEvent, _ ignored: [IgnoredEvent]) -> Bool {
+    ignored.contains { $0.series ? $0.id == event.seriesId : $0.id == event.id }
+}
+
+/// Without ignored occurrences that have ended: there's nothing left of them to ignore.
+public func withoutEnded(_ ignored: [IgnoredEvent], now: Date) -> [IgnoredEvent] {
+    ignored.filter { $0.series || (parseISO($0.end) ?? .distantFuture) > now }
+}
+
 /// Video-call services, by the exact host (or parent domain) their links use.
 private let callHosts: [(name: String, pattern: String)] = [
     ("Google Meet", #"^meet\.google\.com$"#),

@@ -15,8 +15,12 @@ final class CalendarController {
 
     /// nil when no calendar address is set.
     var cache: CalendarCache?
-    /// The calendar's events that can be calls: without the ones Settings › Calendar leaves out.
-    var events: [CalendarEvent] { (cache?.events ?? []).filter { !ignoredEvent($0.title, config.ignoredEvents) } }
+    /// The calendar's events that can be calls: without the ones Settings › Calendar leaves out by
+    /// title, or the ones ignored from Upcoming.
+    var events: [CalendarEvent] {
+        let config = config
+        return (cache?.events ?? []).filter { !ignoredEvent($0.title, config.ignoredEvents) && !isIgnored($0, config.ignoredCalendarEvents) }
+    }
     /// The time, moved on every half minute: what Upcoming's countdowns are worked out from.
     var now = Date()
     var fetching = false
