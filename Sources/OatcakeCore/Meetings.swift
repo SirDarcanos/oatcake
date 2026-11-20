@@ -147,12 +147,13 @@ public final class Meetings: @unchecked Sendable {
      * The meetings that have every word of `query`, in the order given. A word can be in a meeting's
      * `label` (what the list shows for it: its title and folder) or anywhere in its summary, to-dos,
      * notes or transcript. Case and accents don't matter. A hit carries the first line with a word that
-     * the label doesn't have, so the list can show why the meeting was found.
+     * the label doesn't have, so the list can show why the meeting was found. With `todos` false (to-dos
+     * turned off in Settings), todo.md isn't looked in.
      */
-    public func search(_ query: String, in meetings: [(path: String, label: String)]) -> [SearchHit] {
+    public func search(_ query: String, in meetings: [(path: String, label: String)], todos: Bool = true) -> [SearchHit] {
         let words = foldedForSearch(query).split(whereSeparator: \.isWhitespace).map(String.init)
         guard !words.isEmpty else { return [] }
-        let order: [MeetingFile] = [.summary, .todo, .notes, .transcript]
+        let order: [MeetingFile] = todos ? [.summary, .todo, .notes, .transcript] : [.summary, .notes, .transcript]
         return meetings.compactMap { meeting in
             guard let dir = try? resolveInside(root, meeting.path) else { return nil }
             let label = foldedForSearch(meeting.label)

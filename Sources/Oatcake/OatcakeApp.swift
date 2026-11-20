@@ -260,7 +260,7 @@ struct DetailView: View {
                     blank
                 }
             case .todos:
-                TodosView()
+                if model.config.todosEnabled { TodosView() } else { blank }
             case .new(let event, let key):
                 NewRecordingView(event: event).id(key)
             case .live:

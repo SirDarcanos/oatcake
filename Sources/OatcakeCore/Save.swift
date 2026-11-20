@@ -303,6 +303,8 @@ public func draftSummary(_ config: Config, meeting rel: String, only part: Summa
     case .meetings: files.meta.template
     case .picked(let name): name
     }
+    // With to-dos turned off (Settings › General), only the summary is asked for, so todo.md is left alone.
+    let part = part ?? (config.todosEnabled ? nil : .summary)
     return try await summarise(config, title: titleOfMeeting(rel, files.meta), participants: files.meta.participants ?? [config.myName],
                                notes: notes, transcript: files.transcript, only: part, summaryTask: config.summaryTask(template: name))
 }

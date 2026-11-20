@@ -141,8 +141,8 @@ struct MeetingListView: View {
         try? await Task.sleep(for: .milliseconds(150))
         guard !Task.isCancelled else { return }
         let all = listedIn(root).map { (path: $0.path, label: label($0)) }
-        let meetings = model.library.meetings
-        let hits = await Task.detached { meetings.search(search, in: all) }.value
+        let meetings = model.library.meetings, todos = model.config.todosEnabled
+        let hits = await Task.detached { meetings.search(search, in: all, todos: todos) }.value
         if !Task.isCancelled { found = (search, hits) }
     }
 

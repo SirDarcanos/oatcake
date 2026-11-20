@@ -73,6 +73,10 @@ import Testing
         #expect(withTemplates.summaryTemplates == templates)
         #expect(withTemplates.summaryTask(template: " Team ") == "Decisions." && withTemplates.summaryTask(template: "team") == withTemplates.summaryTask)
         #expect(withTemplates.summaryTask(template: nil) == defaultSummaryInstructions)
+        // To-dos are collected unless you've turned them off, and that reads back.
+        #expect(config.todosEnabled)
+        let noTodos = try JSONDecoder().decode(Config.self, from: Data(encodeJSON(with(config) { $0.todosEnabled = false }).utf8))
+        #expect(!noTodos.todosEnabled)
     }
 
     /// Settings that can't be read aren't quietly replaced by the first change made after them.

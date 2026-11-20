@@ -228,7 +228,8 @@ them all to the Trash.
    meeting's `todo.md`, and under Open it leaves the list (it's under Done if you didn't mean it). Add a to-do under a meeting's Summary and it goes in that meeting's
    `todo.md`; add one on the To-dos page and it goes in the Meetings folder's own `todo.md`,
    owned by you unless you name someone. Type owner and due date after dashes:
-   `Send the deck - Jane - due Fri, Nov 6`. The middle column's width drags, like the
+   `Send the deck - Jane - due Fri, Nov 6`. If you keep your tasks somewhere else, turn off
+   **Collect to-dos** in Settings › General (see Settings). The middle column's width drags, like the
    sidebar's. Organise meetings by dragging them onto folders, or
    right-click to rename or trash; Finder and the app stay in step. Renaming a meeting changes
    its title (in `meeting.json`) and its folder's name, which keeps its date.
@@ -536,6 +537,12 @@ Settings in the app (stored in `~/Library/Application Support/Oatcake/config.jso
   once that template is renamed or deleted, the meeting is back on the summary instructions,
   until a template is given that name again. The summary starts at the model's first `## `
   heading: anything written before it is left out.
+- **Collect to-dos** (Settings › General): on to start with. Turned off, no to-dos are asked for
+  when a summary is written, and the To-dos page, the sidebar's counts, each meeting's checklist,
+  Regenerate to-dos and the to-do settings are hidden; Copy, Share, search and Ask leave to-dos
+  out. Each meeting's `todo.md` is left as it is, so turning it back on brings them back. The
+  summary still doesn't list action items (Summary instructions say so), so with this off they
+  aren't kept anywhere unless you change those instructions.
 - **To-do instructions** (Settings › Summaries): what the model is told counts as a to-do.
   Oatcake's own keep it to what somebody said they'd do after the call, and leave out what was
   only discussed, what was asked and not taken on, what was done during the call, and small

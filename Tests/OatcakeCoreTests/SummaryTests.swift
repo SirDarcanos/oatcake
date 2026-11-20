@@ -139,6 +139,30 @@ import Testing
         #expect(try store.read(rel).meta.template == nil)
     }
 
+    /// To-dos turned off: only the summary is asked for, and the meeting's todo.md is left as it was.
+    @Test func noTodosWhenTurnedOff() async throws {
+        let meetings = TestMeetings()
+        defer { meetings.remove() }
+        let rel = "Team/2026-11-09 1000 Weekly sync"
+        try meetings.write(rel, .transcript, "**[00:00] John:** I will ship it on Friday.\n")
+        try meetings.write(rel, .todo, "- [x] Saved before — John\n")
+        let server = try await StandIn.model { request in
+            request.json["response_format"] == nil
+                ? "## Shipping\n- Friday.\n"
+                : #"{"todos":[{"task":"ship it","owner":"John","due":"Friday","at":"[00:00]"}]}"#
+        }
+        var config = server.config
+        config.outputDir = meetings.root.path
+        config.todosEnabled = false
+        try await writeSummary(config, meeting: rel)
+        #expect(server.requests.count == 1 && server.requests[0].json["response_format"] == nil)
+        let files = try Meetings(root: meetings.root).read(rel)
+        #expect(files.summary == "## Shipping\n- Friday.\n" && files.todo == "- [x] Saved before — John\n")
+        // Regenerate to-dos (hidden while they're off) still asks for them if it's asked.
+        _ = try await draftSummary(config, meeting: rel, only: .todos)
+        #expect(server.requests.count == 2 && server.requests[1].json["response_format"] != nil)
+    }
+
     @Test func summaryPieces() {
         // Anything before the first heading goes, and a code fence around the lot.
         #expect(summaryBody("Sure!\n\n## Launch\n- Done.\n") == "## Launch\n- Done.")
