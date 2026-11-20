@@ -53,6 +53,9 @@ struct MeetingView: View {
     /// edited, not each time the view is redrawn.
     @ViewState private var transcriptLines: [TranscriptLine] = []
     @ViewState private var rows: [Row] = []
+    /// The speakers Rename speakers… offers: only in a transcript Oatcake wrote.
+    @ViewState private var speakers: [MeetingSpeaker] = []
+    @ViewState private var renamingSpeakers = false
     /// The transcript's Markdown has been typed in since it was last parsed.
     @ViewState private var transcriptEdited = false
     @ViewState private var flash = -1
@@ -83,6 +86,11 @@ struct MeetingView: View {
             }
         }
         .toolbar { toolbar }
+        .sheet(isPresented: $renamingSpeakers) {
+            RenameSpeakersSheet(speakers: speakers) { renames in
+                model.library.renameSpeakers(path, renames)
+            }
+        }
         .onAppear {
             if let jump { tab = jump.tab }
             load()
@@ -244,6 +252,16 @@ struct MeetingView: View {
                     .disabled(model.jobs.summarising.contains(path) || (files?[.transcript] ?? "").trimmed.isEmpty)
                     .help("Write the summary or the to-dos again with the current instructions in Settings")
             }
+            if canRenameSpeakers {
+                Button {
+                    // A failed save keeps its text pending; renaming then would have it written back over the new names.
+                    flush()
+                    guard pending.isEmpty else { return }
+                    renamingSpeakers = true
+                } label: { Label("Rename Speakers", systemImage: "person.2") }
+                    .disabled(model.jobs.summarising.contains(path))
+                    .help("Change who’s who in this meeting: the names in its transcript, summary and to-dos")
+            }
             let what = tab == .summary ? "summary and to-dos" : tab == .transcript ? "transcript" : "notes"
             Button { copy() } label: { Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") }
                 .help("Copy the \(what), formatted (as Markdown where only plain text can go)")
@@ -294,6 +312,13 @@ struct MeetingView: View {
         }
     }
 
+    /// A meeting saved without checking who's who has Name voices… instead, until Keep as is.
+    private var canRenameSpeakers: Bool {
+        guard !speakers.isEmpty else { return false }
+        guard let id = meta.recording else { return true }
+        return !model.jobs.unchecked.contains { $0.id == id }
+    }
+
     // MARK: Content
 
     private var granola: Bool { meta.source == "granola" || node.granola }
@@ -308,6 +333,7 @@ struct MeetingView: View {
             return l
         }
         transcriptLines = lines
+        speakers = meetingSpeakers(text)
         rows = lines.isEmpty ? text.components(separatedBy: "\n").map(\.trimmed).filter { !$0.isEmpty }.map { Row(text: $0) }
             : lines.map { Row(speaker: $0.speaker, stamp: $0.stamp, text: $0.text) }
     }
@@ -436,7 +462,7 @@ struct MeetingView: View {
     private func granolaNotice(_ files: [FileKey: String]) -> String {
         let transcript = files[.transcript] ?? ""
         let plain = transcriptLines.isEmpty && !transcript.trimmed.isEmpty
-        // The raw file: parsing turns "System audio (Alex)" into plain "Alex".
+        // The raw file: parsing turns "System audio (Jane)" into plain "Jane".
         let guessed = transcript.range(of: #"(?m)^\[[\d:]+\]\s+System audio \("#, options: .regularExpression) != nil
         let sidesOnly = transcript.range(of: #"(?m)^\[[\d:]+\]\s+System audio:"#, options: .regularExpression) != nil
         return ["Imported from Granola.",
@@ -511,7 +537,7 @@ struct MeetingView: View {
                     Image(systemName: "circle").font(.system(size: 15)).foregroundStyle(.quaternary)
                     TextField("Add a to-do, then Return", text: $newTodo)
                         .textFieldStyle(.plain)
-                        .help("Add an owner or due date with dashes: Send the deck - Alex - due Fri, Nov 6")
+                        .help("Add an owner or due date with dashes: Send the deck - Jane - due Fri, Nov 6")
                         .onSubmit {
                             guard !newTodo.trimmed.isEmpty else { return }
                             let typed = typedTodo(newTodo)
