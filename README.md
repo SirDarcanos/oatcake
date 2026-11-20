@@ -2,694 +2,78 @@
 
 A Mac app that records a call, transcribes it on this Mac, tells the other voices apart,
 lets you check who said what, and writes a summary built around the notes you took
-during the call.
+during the call. The speech models and the language model run on your Mac, so nothing from a call
+leaves it, unless you point Oatcake at a model server of your own on your network.
+
+## What it does
+
+- **Records a call**: your microphone and everything the Mac plays, with notes you type during
+  it, each stamped with its time, and a [live transcript](docs/how-it-works.md#live-transcript)
+  beside them. It [notices calls](docs/how-it-works.md#calls-are-noticed) starting and ending.
+- **Works from your calendar**: the next calls in the sidebar and the
+  [menu bar](docs/how-it-works.md#the-menu-bar), a reminder before each, **Join the call**, prep
+  notes, and a folder for each recurring meeting. [Calendar](docs/settings.md#calendar)
+- **Transcribes and tells the voices apart on this Mac**, and recognises people it has heard
+  before. [Process](docs/how-it-works.md#2-process)
+- **Who's who**: a [check of who said what](docs/how-it-works.md#3-review-whos-who) before a call
+  is saved, or [saving straight away](docs/how-it-works.md#saving-without-whos-who) and naming
+  the voices later. [Rename Speakers](docs/how-it-works.md#rename-speakers) puts a name right in a
+  saved meeting.
+- **Summaries and to-dos** written by a language model on this Mac, steered by your notes, with
+  your own instructions and [templates](docs/how-it-works.md#regenerate-and-summary-templates).
+  [To-dos](docs/how-it-works.md#to-dos) from every meeting gather on one page, or can be turned
+  off.
+- **Meetings as folders** of Markdown in a folder you choose, organised by dragging, searched, and
+  copied or shared formatted. [Save](docs/how-it-works.md#4-save)
+- **[Ask](docs/how-it-works.md#5-ask)** questions about a meeting or across them.
+- **[Imports](docs/importing.md)** from Granola and Quill, and
+  **[updates itself](docs/updates.md)** from signed releases.
+
+[Features](docs/features.md) lists everything Oatcake does.
 
 ## Install
 
-Needs an Apple Silicon Mac on macOS 15 or later (FluidAudio's diariser hits a Core ML bug that
-Apple fixed in macOS 15). Oatcake isn't notarised by Apple, so macOS won't open a copy downloaded
-with a browser until you allow it. There are two ways to install it.
-
-**From Terminal.** Paste this:
+Needs an Apple Silicon Mac on macOS 15 or later. Paste this into Terminal:
 
 ```sh
 curl -fsSL https://github.com/a8cteam51/oatcake/releases/latest/download/install.sh | sh
 ```
 
-It downloads the latest release, checks its checksum and that it's signed with Oatcake's own
-release certificate, puts Oatcake in Applications (or `~/Applications` if you can't write there)
-and opens it. The installer comes from the release itself. Files that
-curl downloads don't get macOS's quarantine flag, so there's no warning to get past. Run it again
-any time to reinstall.
-
-**By hand.**
-
-1. Download `Oatcake-v…-arm64.zip` from the
-   [latest release](https://github.com/a8cteam51/oatcake/releases/latest) and open it to unzip it.
-2. Drag Oatcake into your Applications folder and open it. macOS says it couldn't check Oatcake
-   for malware and doesn't open it. Choose Done, not Move to Trash.
-3. Open System Settings › Privacy & Security, scroll down to Security, and click **Open Anyway**
-   beside the note about Oatcake.
-4. Open Oatcake again and choose **Open Anyway**. macOS remembers this, and Oatcake updates itself
-   from then on (if it's in a folder you can't write to, Settings › Updates gives the install
-   line instead).
-
-Either way, the first recording asks for microphone and system-audio permission for
-Oatcake. The first recording after updating from a version before 0.5.0 asks once more (see Security for why).
-There's nothing to sign in to and no key to paste: the models run on your Mac,
-and Oatcake fetches them itself, into `~/Library/Application Support/Oatcake/models`. Both start
-downloading when you start your first recording: the language model that writes summaries (Qwen3
-8B, 5.0 GB, on a Mac with 16 GB of memory or more; Qwen3 4B, 2.5 GB, on one with 8 GB) and the
-speech models (about 500 MB; with the live transcript turned off they wait until the call is
-processed). The call's screen shows how far the download has got, and Settings › Summaries can
-start it ahead of time (**Download Now**) or stop it. Oatcake checks there's room on the disk
-first. See Speech models and Language model.
-
-### Before you record
-
-Tell the people on the call that you're recording. Oatcake records their side of it, writes down
-what they say and, once you've put a name to a voice, keeps a fingerprint of that voice on your
-Mac so it can recognise them next time (Settings › People lists them, and **Forget** removes
-one). Whether you need their agreement depends on where you and they are; asking costs nothing.
-
-## How it works
-
-```mermaid
-flowchart TD
-    subgraph record["1 · Record: OatcakeRecorder helper app"]
-        mic["Your microphone<br/>mic.pcm"]
-        sys["Everything the Mac plays<br/>system.pcm"]
-        notes["Your notes<br/>notes.json"]
-    end
-
-    subgraph process["2 · Process: speech models on this Mac's Neural Engine (FluidAudio)"]
-        asr["Silero VAD finds speech,<br/>Parakeet turns it into text"]
-        voices["pyannote finds speaker turns,<br/>WeSpeaker fingerprints each voice<br/>→ speakers A, B, C…"]
-        combine["Who said what<br/>call-audio text split by speaker turns;<br/>mic lines that echo the call dropped"]
-        match["Voiceprint match against<br/>people you've confirmed before"]
-        prints[("voiceprints.json")]
-    end
-
-    guess["Qwen3, on this Mac: suggests names for voices<br/>with no match, from the transcript"]
-    review["3 · Review (you)<br/>listen to clips, confirm names,<br/>merge or mark mixed"]
-    summary["Qwen3, on this Mac: writes the summary and to-dos<br/>from the transcript, focused by your notes"]
-    folder["4 · Meeting folder<br/>summary.md · todo.md · transcript.md · notes.md · meeting.json"]
-
-    mic --> asr
-    sys --> asr
-    sys --> voices
-    asr --> combine
-    voices --> combine
-    voices --> match
-    prints --> match
-    combine --> guess
-    match --> guess
-    guess --> review
-    review -.->|"saves voices with 30 s+ of speech"| prints
-    review --> summary
-    notes --> summary
-    summary --> folder
-    notes --> folder
-
-    classDef llm fill:#f6e7d8,stroke:#c26a2e,color:#000
-    class guess,summary llm
-```
-
-Everything runs on this Mac, and nothing from a call is sent anywhere. Silero, Parakeet, pyannote
-and WeSpeaker are small speech models (Parakeet is 0.6B parameters), run on the Neural Engine
-through [FluidAudio](https://github.com/FluidInference/FluidAudio)'s Core ML builds: they turn
-audio into text and voices into fingerprints, take no prompts, and can't write anything else. The
-two orange steps are the only language model: Qwen3, which Oatcake downloads once and runs itself
-with [llama.cpp](https://github.com/ggml-org/llama.cpp) (see Language model). It only ever sees
-text (the transcript and your notes), never audio. You can point Oatcake at a model server of
-your own, on your Mac or your network, instead.
-
-The window has three columns: the sidebar (a recording in progress, Upcoming from your
-calendar, Needs review, and your folders, then any meetings at the top level, listed by their
-call's title), the meetings in the selected folder, and the meeting itself. A one-off call with
-no folder of its own is saved at the top level; drag it onto a folder to file it. Settings (⌘,)
-is its own window, in panes; changes apply as you make them.
-⌘N starts a new recording, ⌥⌘F searches every meeting from the box above the meeting list (its
-title, folder, summary, to-dos, notes and transcript; a meeting found by its text shows the line
-with the words and opens there), and ⌘F finds words in the transcript you're reading. ⇧⌘N makes a
-folder and ⌘R refreshes the calendar; all of these are in the File and Edit menus. ⌘- or
-⇧-click selects several meetings in the list, and right-click or File › Move to Trash (⌘⌫) moves
-them all to the Trash.
-
-1. **Record.** New recording, or click an event under Upcoming. Pick the folder (a calendar
-   event picks the folder named like it, or the one its earlier meetings are in, or offers a
-   new one for a recurring event); leave
-   the title blank to use the folder's name. The screen shows the event's attendees, the
-   open to-dos from the last meeting in that folder (ticking one updates its `todo.md`),
-   and takes prep notes, which open the call's notes: type them one at a time or paste a
-   list, which becomes a note per line. They're kept for that call until it's recorded, so
-   you can write them ahead and come back. Your microphone is recorded as you;
-   everything the Mac plays (Zoom, Meet, Slack, anything) is recorded as the other people.
-   During the call, write one point per line: each is stamped with the time you started
-   typing it, and every line stays editable. The recorder is a small helper app
-   (`Sources/OatcakeRecorder`) inside Oatcake; macOS asks for microphone and system-audio
-   permission in Oatcake's name, once; if it hasn't started after a few seconds, the live screen says
-   to look for that prompt. Pick the microphone on the record screen, from the mic button
-   during the call, or in Settings: "Same as Mac" follows System Settings › Sound; a chosen
-   mic is used until it's unplugged, then the Mac's input until it's back. Changing mic
-   mid-call carries on recording, with the switch filled with silence so your track stays
-   lined up with the call. You're warned after 30 seconds of a silent mic or no call audio, on
-   the call's screen and with a notification, since you're probably looking at the call. The
-   silent-mic notification comes once a recording, and once more if you change microphone (a
-   headset that cuts out room noise is silent whenever you aren't talking); the call's screen
-   goes on saying so for as long as the mic is silent. If
-   the recorder stops or never starts (no permission, a full disk), Oatcake notices within a
-   couple of seconds, says so the same two ways, and keeps and processes whatever was
-   recorded. Stop asks first, and so does quitting Oatcake while a call is being recorded,
-   analysed or summarised.
-
-   Beside your notes, **Transcript** shows the call as it's said, a moment after each pause
-   (a second helper, `Oatcake --live`, transcribes the audio as the recorder writes it). Your
-   lines are yours; each line from the call side gets an obviously made-up name, a different
-   one every time ("Mystery Guest", "Captain Placeholder"…), until the call is over and the
-   voices are told apart.
-   Settings › General turns the live transcript off.
-
-   **Calls are noticed.** When a calling app or a browser starts using your microphone and
-   nothing is being recorded, a notification offers **Start recording** (under the calendar
-   event happening now, if there is one). When a recording has had a calling app on the
-   microphone, and that app has let go and the call audio has been quiet for 15 seconds, a
-   notification says the call seems to have ended; 30 seconds later the recording stops and
-   starts processing, unless you choose **Keep recording** (on the notification or the call's
-   screen) or the call comes back. Music still playing, or a call you're only muted on, keeps
-   it going. Oatcake tells which apps have a microphone open from Core Audio
-   (`Sources/OatcakeCore/CallDetector.swift`); it doesn't listen until you record. Both are
-   switches in Settings › General.
-
-   While a call is being recorded the **menu bar** shows its running time, with Stop (which asks first) in its
-   menu. (The menu bar item is drawn by a third helper, `Oatcake --menu-bar`, a menu-bar-only
-   app: macOS doesn't show a Dock app's menu bar menu while another app is in full screen.)
-   A recording started from a calendar event keeps the event's **Join the call** button on
-   its screen, for when you press record before joining.
-2. **Process (on this Mac, in the background).** Parakeet transcribes both tracks. The call
-   audio is split into voices by FluidAudio's batch diariser (pyannote segmentation, WeSpeaker
-   fingerprints, VBx clustering). It runs as a helper process (`Oatcake --analyse`), so a
-   problem there can't take the window or a recording in progress with it. Mic lines that repeat the call audio (speaker echo) are
-   dropped. Known voices are recognised from saved voiceprints; other names are suggested
-   from the conversation by the summary model, quoting the words that gave it away. The
-   recording waits under Needs review with its step (1–5); a failure shows the reason, with
-   Try again and Discard.
-3. **Review (Who's who).** Change the title or the folder it's saved in if you want to. One card
-   per voice: play its clips, confirm or type the name, or pick one of the people on the call's
-   calendar invite (each is offered until they've been given a voice)
-   (with where the suggestion came from), merge it into another voice or into you, mark
-   it as mixed ("Several people"), or leave it out when it isn't part of the call (people
-   talking in the background, say): its lines then stay out of the transcript, the summary and
-   the to-dos. Unnamed voices are saved as "Voice 1", "Voice 2"… The
-   transcript beside it updates as you name voices. Confirmed voices with 30+ seconds of
-   speech are saved, so they're recognised next time.
-
-   **Or skip it.** Settings › General › **After a call** can save each call as soon as it's
-   processed, instead of waiting here: **Save with a summary**, or **Save the transcript only**
-   (no summary or to-dos). Voices Oatcake is sure it recognises from before keep their names
-   (a closer match than this screen asks for, since nobody is looking), and every other voice
-   is "Voice 1", "Voice 2"…, whatever the model guessed from the conversation: a guess, or a
-   match that wasn't sure enough, waits on the voice's card as a suggestion. No voice is
-   remembered from names nobody checked. The meeting says it was saved without checking who's who: **Name voices…** opens
-   this screen for it, and **Update meeting** writes its transcript and `meeting.json` again in
-   place, puts the new names where the old ones were in its summary and to-dos (as whole words:
-   each "Voice N" stands for one voice, so it's an exact swap wherever the model wrote it that
-   way), and leaves your notes and its title as they are. Name them while the summary is still
-   being written and it's written again from the named transcript. **Keep as is** keeps the
-   names it has. If a call can't be saved by itself, it waits here as usual.
-4. **Save.** The meeting is a folder in the folder you picked:
-   `2026-11-05 1400 Weekly sync/` with `summary.md`, `todo.md` (action items, as
-   `- [ ] Task — Owner — due Fri, Oct 30 — [12:34]`), `transcript.md`, `notes.md` (your own
-   notes, untouched; prep notes have no time) and `meeting.json` (title, times,
-   participants). Saving doesn't involve the summary model: the meeting is written straight
-   away with its transcript and notes, and its summary and to-dos are written in the background
-   and appear in the meeting when they're ready. If the summary can't be written (the model's
-   download was interrupted, a server of your own that's down), the meeting says why in plain words
-   (the raw message is behind Details) and shows **Write summary** to try again later.
-   To write a summary or its to-dos again (after changing the instructions in Settings ›
-   Summaries, say), choose **Regenerate › Regenerate summary** or **Regenerate to-dos** in the
-   Summary tab's toolbar and confirm. With summary templates set up (Settings › Summaries),
-   Regenerate summary lists them: the meeting's summary is written with the one you pick, and the
-   meeting keeps it for any summary written of it later. Only that part is asked for and
-   replaced, edits and ticks included; the rest of the meeting stays as it is. The old one
-   stays until the new one is
-   ready, and stays if it fails or is changed somewhere else meanwhile. Your notes steer what the summary focuses
-   on but aren't copied into it. A long turn in the transcript is
-   broken at a pause about every half minute, each part with its own time.
-   Tabs: Summary (with the meeting's to-dos at the top), Transcript and My notes (⌘1–⌘3),
-   each Rendered or as editable Markdown from the switch at the top right of the note (saved as
-   you type; Summary shows `todo.md` and `summary.md`). **Copy** puts the tab you're on (the summary with its to-dos, the transcript,
-   or your notes) on the clipboard under the meeting's title and date, formatted for Google Docs,
-   Pages or mail and as Markdown for anything that only takes plain text, and **Share**
-   sends the same text with Mail, Messages or another app. Tick to-dos off in place; a due date can be a date ("Fri, Oct 30") or a day as it was said ("Friday", "tomorrow", "end of the week"), counted from the day of the meeting; a to-do's time jumps to that moment in the
-   transcript. **To-dos** at the top of the sidebar gathers every meeting's to-dos (open
-   and overdue counts beside it): Open / Done / All, grouped by due date, folder or owner,
-   filtered by owner ("Mine" is your name from Settings). Ticking one there updates that
-   meeting's `todo.md`, and under Open it leaves the list (it's under Done if you didn't mean it). Add a to-do under a meeting's Summary and it goes in that meeting's
-   `todo.md`; add one on the To-dos page and it goes in the Meetings folder's own `todo.md`,
-   owned by you unless you name someone. Type owner and due date after dashes:
-   `Send the deck - Jane - due Fri, Nov 6`. If you keep your tasks somewhere else, turn off
-   **Collect to-dos** in Settings › General (see Settings). The middle column's width drags, like the
-   sidebar's. Organise meetings by dragging them onto folders, or
-   right-click to rename or trash; Finder and the app stay in step. Renaming a meeting changes
-   its title (in `meeting.json`) and its folder's name, which keeps its date.
-   **Rename Speakers** in a meeting's toolbar puts a wrong name right after the meeting is saved,
-   or names a "Voice 2": it lists the transcript's speakers, each with their first words, and a
-   field for another name. Only that meeting changes: the transcript's labels (never what was
-   said), the names in its summary and to-dos, and its people in `meeting.json`. Two names can
-   swap, and giving two speakers one name makes them one; "Several people" stays as it is. The
-   fingerprint saved from that call goes with the name, so the next call isn't recognised as the
-   wrong person too. It stays only when the new name is the old one spelt out ("John" → "John
-   Allen") and the voice clearly matches their other calls (Settings › People renames a person
-   everywhere). A meeting saved without
-   checking who's who has **Name voices…** instead.
-5. **Ask.** The lozenge at the bottom of a meeting takes questions about it ("what did we
-   decide about hiring?") or across meetings ("when did Jane first raise the launch date?").
-   The model on your Mac is given the meeting you have open, whole: its summary, to-dos, your
-   notes and the transcript. It's first asked whether the question reaches beyond that meeting.
-   When it does, Oatcake searches your other meetings for the names and topics the model gives,
-   looks at the earlier meetings in the same folder, and adds their summaries, to-dos and the
-   transcript lines that match. The model never opens a file or runs anything itself. Answers
-   link to the meetings they draw on, and a time in an answer opens the transcript at that moment.
-   An answer is one piece of text: select any stretch of it, or all of it, and copy.
-   Web links in an answer are shown as text, not made clickable. Follow-ups continue the same conversation,
-   which stays open as you move between meetings, until New chat. The first question about a call
-   takes longest, while the model reads it; follow-ups about the same call are quicker.
-
-## Importing from Granola
-
-Export your notes from Granola (it gives you a `.zip` holding a CSV), then in Oatcake open
-Settings › Storage › **Import from Granola…** and pick the `.zip` (or the CSV inside it). Each
-note becomes a meeting folder with `summary.md`, `transcript.md`, `notes.md` (when Granola kept
-your notes) and `meeting.json`, under a **Granola** folder in your Meetings folder. Notes that
-share a title, like a weekly meeting, are grouped in a subfolder named after it; drag folders
-wherever you like afterwards. Each meeting remembers its Granola note, so importing the same
-export again (or a newer one) skips meetings that are already there, wherever you've moved them.
-
-Granola's export has no speaker names or timestamps in its transcripts, so they show as plain
-paragraphs, and it has no participants or end times. The import is in
-`Sources/OatcakeCore/Granola.swift`.
-
-## Importing from Quill
-
-Make a backup in Quill (it gives you a `QuillBackup-<date>.zip`), then in Oatcake open
-Settings › Storage › **Import from Quill…** and pick the `.zip`. Each meeting becomes a meeting
-folder under a **Quill** folder, with meetings that share a title grouped in a subfolder as for
-Granola. The folder holds:
-
-- `transcript.md`, with times and speakers: your microphone is you, and voices on the call carry
-  the names Quill matched to them, or "Voice 1", "Voice 2"…
-- `summary.md`, made from Quill's notes on the meeting, if it wrote any.
-- `audio.m4a`, the combined recording, whatever **Keep call audio** is set to. Quill's separate
-  mic and system tracks are left out.
-- `meeting.json`, with the start and end times and the people named in the transcript.
-
-Quill's search index (`vector_store.db`), contacts, threads and settings aren't imported, and
-neither is a meeting with nothing in it (no words, notes or recording). Importing again skips
-meetings already there. The import is in `Sources/OatcakeCore/Quill.swift`.
-
-## What's next
-
-None of this is built yet. It's what we'd like to add, in no fixed order.
-
-**Notes**
-
-- A summary as soon as a call has been processed, before Who's who, with the names put right
-  once you've confirmed them.
-- Asking for a change to a summary: "shorter", "add the numbers we agreed".
-- Your own notes worked into the summary, each point with where it came from in the transcript.
-- A brief before a call: what was agreed and what's still open from the last one with the same
-  people.
-
-**During a call**
-
-- Ask while the call is still going.
-- Names beside the call side of the live transcript.
-- Pause and resume.
-- Meetings in a room: telling apart the voices on your microphone, as the call side is today.
-
-**Finding things**
-
-- Saved questions for Ask, and choosing the folder or person it looks through.
-- A page for each person: the meetings they were in and the to-dos they own.
-- A way for other tools and assistants to read your meetings (an MCP server over the Meetings
-  folder).
-
-**Transcription**
-
-- Jargon given to the speech model too, so the transcript itself spells names as you wrote them.
-- More languages, and calls that move between them.
-
-**Setting up**
-
-- A notarised download, so macOS opens Oatcake without the warning or the Terminal line.
-
-## Updates
-
-Oatcake looks for a new release 20 seconds after it opens and then once a day (Settings ›
-Updates can turn that off, and has Check Now). A new release shows in the sidebar above
-Settings; **Update** asks, then downloads it, checks it, and quits and reopens Oatcake on the new
-version. It won't start while a call is being recorded, analysed or saved: it says so, and you
-try again afterwards. Nothing is installed until you click.
-
-Each release carries `latest.json`, a manifest naming the version and its zip (address,
-SHA-256, size), signed with Oatcake's Ed25519 release key. Oatcake checks that signature
-against the public keys it ships (`Update.publicKeys`), checks the zip's size and
-checksum, unpacks it with `ditto`, checks it's Oatcake at that version, and checks the new app
-is signed with the same certificate as the running one (`codesign --verify --deep --strict -R`
-with the running app's designated requirement). The new copy is staged next to the installed
-one; a small detached script waits for Oatcake to quit, swaps the two, and opens it. Its log is
-`~/Library/Application Support/Oatcake/update.log`. The mechanics are in
-`Sources/OatcakeCore/Update.swift`.
-
-A copy that can't replace itself says why in Settings: a development copy, one macOS is running
-from a quarantined download (move it to Applications), one built without the release
-certificate, or one in a folder you can't write to. For the last two it offers the install line
-instead. Oatcake also remembers the newest release it has been offered, and treats a feed that
-later names an older one as an error rather than as "up to date".
-
-## Build from source
-
-Needs Xcode's command line tools (`xcode-select --install`, Swift 6.2 or later); Xcode itself
-isn't needed.
-
-```sh
-swift build                  # debug build of everything
-swift test                   # the core's tests (Tests/OatcakeCoreTests, a file for each area)
-Scripts/bundle.sh            # build/Oatcake.app, release build, recorder and llama.cpp inside
-Scripts/bundle.sh debug      # the same, debug build
-```
-
-`Scripts/bundle.sh` signs with the "Oatcake Release" certificate when that's in your keychain,
-and ad-hoc otherwise. macOS ties the recorder's microphone and system-audio permission to the
-signature: an ad-hoc build is a new app to macOS every time (so it asks again), and only a
-release-signed copy can update itself. The Dock badge counts
-recordings waiting under Needs review. The icon is `assets/icon.svg`; `assets/Oatcake.icns` is
-built from `assets/icon.png` with `iconutil`.
-
-`Scripts/bundle.sh` also puts llama.cpp's server in the app: one fixed build from llama.cpp's
-releases, downloaded once into `.build/llama` and checked against its SHA-256. A copy run straight
-from `swift build` has no llama.cpp beside it; point `OATCAKE_LLAMA_DIR` at a folder that holds
-`llama-server` and its libraries (`build/Oatcake.app/Contents/Resources/llama` will do).
-
-To try a build without touching your own recordings, settings and voiceprints, point it at
-another data folder (and set a different Meetings folder in its Settings):
-
-```sh
-open -n --env OATCAKE_DATA_DIR=/tmp/oatcake-test build/Oatcake.app
-```
-
-With only the command line tools, SwiftUI's `@State` macro isn't available (its plugin ships with
-Xcode), so views use the `State` property wrapper through the `ViewState` alias.
-
-## Releasing
-
-Bump the version and push its tag:
-
-```sh
-Scripts/version.sh patch     # or minor; commits VERSION and tags v0.5.1
-git push --follow-tags
-```
-
-The Release workflow (`.github/workflows/release.yml`) waits for its approver, then runs the
-tests and builds the app on a GitHub Mac runner, and only then puts the release certificate on
-the runner and signs the app, the recorder and llama.cpp's server with it, for the hardened
-runtime (it stops if any of them ends up signed any other way). It zips the app, writes and signs
-`latest.json` (`Scripts/sign-manifest.swift`) with the commit subjects since the previous tag as
-notes, attaches the zip, `latest.json` and `install.sh` to a new GitHub release, and checks the
-public feed serves them. It stops if the tag doesn't match `VERSION`. Running it by hand from the
-Actions tab builds and signs without releasing.
-
-Who can release is settled on GitHub, not in the workflow file:
-
-- The job runs in the **release** environment, which holds the secrets below, lets itself be
-  used only from `trunk` and from `v*` tags, and waits for a named approver before it starts. A
-  branch can change its own copy of the workflow, but it can't read the secrets or sign anything.
-- A ruleset keeps `v*` tags from being made, moved or deleted by anyone but the repository's
-  admins.
-- The install line fetches `install.sh` from the latest release, so what it runs was approved
-  with that release. The copy on `trunk` is the next release's.
-- Every pull request is built and tested by the Test workflow (`.github/workflows/test.yml`),
-  which has no secrets.
-
-The release environment needs three secrets:
-
-- `OATCAKE_SIGNING_P12` and `OATCAKE_SIGNING_P12_PASSWORD`: the "Oatcake Release" code-signing
-  identity (a self-signed certificate valid until 2046), base64-encoded `.p12` and its password.
-  It isn't from Apple, so it doesn't satisfy Gatekeeper; what matters is that every release
-  carries the same one, so permissions survive updates and installed copies accept the next
-  release.
-- `OATCAKE_UPDATE_KEY`: the Ed25519 private key that signs `latest.json` (base64 PKCS#8 DER).
-  `swift Scripts/sign-manifest.swift keygen` makes a new pair.
-
-Keep copies of the certificate and the update key somewhere safe outside GitHub (secrets can't be
-read back). If the certificate is lost, installed copies won't accept releases signed with a new
-one and need the install line once. To replace the update key, add the new public key to
-`Update.publicKeys`, release, and only then sign with the new key.
-
-To build release-signed copies locally (so a rebuilt recorder keeps its permissions), import the
-`.p12` into your login keychain; `Scripts/bundle.sh` then uses it. To try an update before
-publishing it, serve a folder holding a zip and its `latest.json` and start Oatcake with
-`OATCAKE_UPDATE_FEED=http://127.0.0.1:8000/latest.json`; `install.sh` takes `OATCAKE_FEED` the
-same way. With either, the zip is fetched from beside the manifest.
-
-Four more environment variables help when trying things out: `OATCAKE_DATA_DIR` points a
-development copy at another data folder, with its own saved calendar address;
-`OATCAKE_LLAMA_DIR` names the folder llama.cpp's server is in, for a copy that isn't a bundle;
-`OATCAKE_CALENDAR_URL` gives it a calendar address without saving one (a local `.ics` served over
-HTTP will do); and `OATCAKE_CALL_APPS` names a file listing the apps to treat as on a call, one
-per line, so the call notice and the automatic stop can be tried without making a call.
-
-## Speech models
-
-FluidAudio is pinned to an exact version in `Package.swift`, with only its diarisation trait
-(no text-to-speech, no prebuilt text-normalisation library). The models come from
-FluidInference's Hugging Face repositories at fixed commits (`SpeechModels.pinnedRevisions`;
-FluidAudio pins the diarisation models itself), so a change to a repository can't change what
-Oatcake runs. Updating either is a deliberate change: bump it, then check transcripts and
-speaker separation on a known meeting.
-
-| Model | Used for | Licence |
-| --- | --- | --- |
-| Silero VAD | finding speech | MIT |
-| Parakeet TDT 0.6B v2 | English transcription (default) | CC-BY-4.0 |
-| Parakeet Ultra (post-trained v3) | 25 European languages | CC-BY-4.0 |
-| pyannote community-1 (segmentation and its WeSpeaker-based embedding) | speaker turns and voice fingerprints | CC-BY-4.0 |
-
-## Language model
-
-Summaries, to-dos, name suggestions and Ask's answers come from one model, run on this Mac.
-
-| Model | For | Download | Licence |
-| --- | --- | --- | --- |
-| Qwen3 8B (Q4_K_M) | Macs with 16 GB of memory or more; the default there | 5.0 GB | Apache-2.0 |
-| Qwen3 4B (Q4_K_M) | Macs with 8 GB; fine on short calls, loses detail on long ones | 2.5 GB | Apache-2.0 |
-
-- **Where it comes from.** Qwen's own GGUF files on Hugging Face, at a fixed revision, checked
-  against their SHA-256 before use (`LocalModels` in `Sources/OatcakeCore/LocalModel.swift`). A
-  download that's interrupted carries on from where it stopped. Settings › Summaries shows how far
-  it has got, downloads it on request and removes it.
-- **What runs it.** llama.cpp's server, inside Oatcake.app (MIT; the build is named in
-  `Scripts/bundle.sh`). Oatcake starts it when there's something to write, on 127.0.0.1 at a port
-  picked for the occasion, with a key made up each time so that a web page or another account on
-  the Mac can't use it, and stops it after ten minutes with nothing to do, which gives its memory
-  back.
-- **How it's asked.** As Qwen advises for these models: its own sampling settings, never greedy
-  decoding and room for a long reply. Whether it reasons before it replies is set for each task
-  (Settings › Summaries): on to start with for summaries, name suggestions and Ask, where it
-  measured better (decisions given to the right person, fewer invented names, answers that keep
-  to the question), and off for to-dos, which lost detail with it. The summary and the to-dos are
-  two requests about the same transcript, each with its task after the transcript; the to-dos,
-  the name suggestions and Ask's first step come back as JSON the server holds to a schema, sent
-  as it's written: the model fills in the fields in the schema's order, and a to-do's task has to
-  come before its time (time first, it makes a to-do of every few minutes of the call). The
-  summary's instructions are yours to change, and so is what counts as a to-do (Settings › Summaries).
-- **How much it reads at once.** As little as the job needs, up to what this Mac's memory allows
-  (the 8B takes about 5 GB plus 0.14 GB for every thousand tokens; an hour's call is around
-  12,000). Qwen3 reads 32,768 tokens natively; a longer call stretches that with YaRN, by no more
-  than it needs. A call too long for this Mac is summarised in parts, which are then joined.
-- **A model of your own.** Any server with the same chat API on this Mac or your network (Ollama,
-  LM Studio, your own llama.cpp). Oatcake only talks to a local address, and sends no key.
-
-Changing the model or llama.cpp's build is a deliberate change, like the speech models: change the
-revision and checksum together, then check summaries, to-dos and names on a known call.
-
-## Moving from the Electron version (0.3 and earlier)
-
-0.4.0 is the same app rebuilt in Swift, with the same bundle ID, certificate and update feed, so
-0.3.0 updates to it (or to any later version) in place. The first launch, once:
-
-- moves the calendar address from `secrets.json` (Electron's encrypted store) into
-  `private.json`, then deletes `secrets.json`;
-- drops the keys for the Anthropic API and for an OpenAI-compatible service, if you'd saved
-  either: summaries are written by a model on your Mac now. Settings that named Claude become the
-  model recommended for your Mac; a model server on your own Mac or network carries over;
-- deletes the old sherpa-onnx models (about 700 MB) and Electron's `Chromium` cache folder;
-- keeps everything else as it was: `config.json`, the Meetings folder, recordings waiting for
-  review, and `calendar.json`.
-
-Voice fingerprints come from a different model now, so `voiceprints.json` keeps the names it
-knows (they're still offered in review) but not their old fingerprints: each person is
-recognised again after one saved call. A recording analysed by the old version but not yet
-saved can still be reviewed and saved; its fingerprints aren't kept. Avatar colours start
-afresh.
-
-## Settings
-
-Settings in the app (stored in `~/Library/Application Support/Oatcake/config.json`):
-
-- **Language model** (Settings › Summaries): what writes summaries and to-dos, suggests names and
-  answers questions. Qwen3 8B or Qwen3 4B, which Oatcake downloads and runs on this Mac (the one
-  that suits its memory is chosen to start with, and marked), or a model server of your own:
-  Ollama, LM Studio or another with the same chat API (`http://localhost:11434/v1` for Ollama).
-  Its address has to be this Mac, a machine on your network or a private IP address, and no key
-  is sent to it. **Download Now** fetches the chosen model straight away rather than at your first
-  call, **Remove** deletes it, and **Test** asks it for one word. See Language model.
-- **Summary instructions** (Settings › Summaries): what the model is told to write once it has
-  read the transcript. Change the headings, the level of detail or the language to suit you;
-  **Restore Default** brings Oatcake's own back. To-dos are collected separately and aren't
-  affected.
-- **Summary templates** (Settings › Summaries): other summary instructions, each with a name,
-  for the meetings that need a different summary (a one-to-one you lead, one with your own lead,
-  a team meeting). **Add Template** starts one as a copy of the summary instructions. Pick one for
-  a meeting from **Regenerate › Regenerate summary**; the meeting keeps it (in its `meeting.json`)
-  and every other meeting keeps the summary instructions. A meeting keeps its template by name:
-  once that template is renamed or deleted, the meeting is back on the summary instructions,
-  until a template is given that name again. The summary starts at the model's first `## `
-  heading: anything written before it is left out.
-- **Collect to-dos** (Settings › General): on to start with. Turned off, no to-dos are asked for
-  when a summary is written, and the To-dos page, the sidebar's counts, each meeting's checklist,
-  Regenerate to-dos and the to-do settings are hidden; Copy, Share, search and Ask leave to-dos
-  out. Each meeting's `todo.md` is left as it is, so turning it back on brings them back. The
-  summary still doesn't list action items (Summary instructions say so), so with this off they
-  aren't kept anywhere unless you change those instructions.
-- **To-do instructions** (Settings › Summaries): what the model is told counts as a to-do.
-  Oatcake's own keep it to what somebody said they'd do after the call, and leave out what was
-  only discussed, what was asked and not taken on, what was done during the call, and small
-  talk. Make it stricter or looser, or keep it to your own action items; **Restore Default**
-  brings Oatcake's own back. The shape of each to-do (task, owner, due date, time) isn't part of it.
-- **Reasoning** (Settings › Summaries): whether the model thinks a task through before it
-  replies, with a switch each for summaries, to-dos, name suggestions and Ask. On is slower and
-  not always better; it starts on for everything except to-dos. The switches are for Oatcake's
-  own models: a server of yours decides for itself.
-- **Speech to text** (Settings › Transcription): Parakeet English, or Parakeet for 25 European
-  languages (`SpeechModels.asr`); FluidAudio runs other models too.
-- **Keep call audio** (Settings › Storage): off by default; audio is deleted once a meeting is
-  saved. When on, the call's audio (both sides, mixed) is saved in the meeting's folder as
-  `audio.m4a`.
-- **Live transcript**, **Offer to record when a call starts**, **Stop recording when the call
-  ends:** all on by default (Settings › General); see Record above.
-- **After a call** (Settings › General): wait for you to check who's who (the default), or save
-  each call once it's processed, with a summary or with the transcript only; see Review above.
-- **Jargon** (Settings › Summaries): names, products and acronyms, separated by commas. The
-  summary model is told to spell them as written, in summaries, to-dos, name suggestions and Ask's
-  answers. Transcripts keep what the speech model heard.
-- **People:** the voices Oatcake recognises. **Rename** one ("John" to "John Smith") to change the
-  name it suggests from now on; renaming to a name that's already there makes them one person.
-  **Forget** stops it recognising them. Meetings already saved keep the names they were saved
-  with.
-- **Calendar:** paste your calendar's private iCal address (Google Calendar › Settings › your
-  calendar › Integrate calendar › "Secret address in iCal format"). It's kept in `private.json`
-  in Oatcake's data folder, which only your user account can read, not in `config.json`, and
-  Settings shows only that one is saved. (0.4.0 to 0.5.2 kept it in your login Keychain, which
-  asked for your login password after every update; the first launch of a later version moves
-  it, asking that one last time.) Oatcake fetches it once an hour, or when you press ↻ next
-  to Upcoming, and keeps events from yesterday to two weeks
-  ahead in `calendar.json`. Upcoming in the sidebar lists the rest of today and tomorrow
-  (events you declined are left out). So are events that aren't calls: ones whose titles start
-  with a name in Settings › Calendar › Events that aren't calls ("Focus time", "Out of office",
-  "Working location" and "Task" to begin with), as whole words, or that have "Oatcake ignore"
-  anywhere in the title. They're kept out of the menu bar and reminders too. iCal doesn't say
-  which events are Google's focus-time or out-of-office blocks, so a block renamed to something
-  else still appears, and a call whose title starts with one of those names doesn't. A call you
-  can't rename (someone else's recurring meeting) can be ignored on its own: right-click it in
-  Upcoming for **Ignore This Event**, or for a recurring one **Ignore This One** or **Ignore This
-  and Following Events**. That's kept in `config.json`, nothing changes in your calendar, and
-  Settings › Calendar › Ignored events brings one back. An occurrence its organiser moves shows
-  again (its ID includes its start), and so does the rest of a series changed with Google's "this
-  and following events" (that gives it a new UID). Clicking an
-  event starts a new recording named after it, in
-  the folder with the same name or path ("John & Jane 1:1" finds "John & Jane 1-1", "Product –
-  Weekly sync" finds "Product › Weekly sync"), or offers a new folder for a recurring event
-  with none; "Join the call" opens its Meet, Zoom or Teams link (only links on those services'
-  own domains count, so a look-alike address is never opened). A failed
-  fetch keeps the last events and turns ↻ red; hover it for the reason.
-- **Show my next call in the menu bar** (on by default, with a calendar connected): Oatcake's
-  oatcake with the time until it starts, and what's coming up in its menu (click one to record it). With this on,
-  closing Oatcake's window leaves it running in the menu bar, so reminders and call notices keep
-  working; its menu reopens the window or quits.
-- **Remind me before calls** (on by default): 5 minutes before each timed event, a notification
-  with **Open call and start note taking**. The button opens the call link when the event has
-  one, starts recording it (in the folder named like the
-  event; a new folder for a recurring event without one, ":" and "/" becoming "-"), and
-  brings Oatcake forward on the live notes. Clicking the notification itself opens New
-  recording for the event. macOS asks once whether Oatcake may send notifications; the
-  packaged app asks for Alerts, so reminders stay up until dealt with.
-
-## Security
-
-- Every path the window acts on is checked to stay inside the Meetings folder or the recordings
-  folder. The Meetings folder itself is only changed through the folder picker. The app itself
-  never records: the recorder app captures audio on its own.
-- Summaries and answers are drawn as Markdown with any HTML shown as text. Links in Ask's answers
-  to anything but a meeting are shown as text, not made clickable.
-- Speech models are fetched from pinned commits (see Speech models).
-- The language model and the program that runs it are fixed builds, each checked against its
-  SHA-256 before use. Its server listens only on this Mac's own address, at a port picked each
-  time, behind a key made up each time, and is told nothing but text: it can't open files, run
-  commands or reach the network through Oatcake. A model server of your own has to be at a local
-  address (see Language model).
-- What's said on a call ends up in front of the model, so its replies are treated as text from a
-  stranger: a suggested name is only offered if it was said in the call, to-dos and Ask's first
-  step are held to a fixed shape, and links are handled as above.
-- Updates are installed only from a `latest.json` signed with Oatcake's release key, only if the
-  zip matches its checksum, and only if the new app carries the running app's code-signing
-  identity (see Updates).
-- Files Oatcake rewrites (meeting Markdown, config, voiceprints, calendar) are written to a
-  new temporary file and renamed into place, never through an existing file or link.
-- `OatcakeRecorder.app` is what uses the microphone and system-audio permissions (macOS gives
-  them to Oatcake, which it is inside), so it records only for Oatcake. As it starts it connects to a socket Oatcake gave it, checks from the system's own
-  record of the process at the other end that it is Oatcake, signed with the recorder's own
-  certificate, and asks whether Oatcake wants this recording; Oatcake says yes once, for a
-  recording it has just started. Anything else that launches the recorder gets an error and no
-  audio (`RecorderGate` in `Sources/RecorderContract`, `RecorderDoor` in the core). A development
-  build signed ad-hoc skips the check: it has no certificate to check against, and no saved
-  permissions to guard.
-- Recorders before 0.5.0 had no such check, and macOS gives the permissions to Oatcake itself
-  (the recorder is inside it), remembered against Oatcake's code-signing requirement: until
-  0.5.0, "this identifier, this certificate", which every earlier release meets. So from 0.5.0 the
-  requirement also says "0.5.0 or later", and the first time that version opens it withdraws the
-  two permissions (`tccutil reset Microphone` and `AudioCapture`, for Oatcake and for the
-  recorder's own identifier), to be given again to itself.
-  That's why the first recording after updating asks once more. An earlier copy of Oatcake
-  started by something else then no longer records quietly: macOS asks first, in Oatcake's name.
-  It can't tell you which copy is asking, so if that question appears when you haven't just
-  started a recording, choose Don't Allow. Either answer replaces what macOS remembers for
-  Oatcake, so afterwards run `tccutil reset Microphone local.oatcake` in Terminal and allow it
-  again at your next recording.
-- Oatcake itself is signed as using the microphone (`Resources/Oatcake.entitlements`) although
-  only the recorder opens it: macOS counts the recorder's use as Oatcake's, and under the hardened
-  runtime it won't ask for the permission at all without that.
-- The app, the recorder and llama.cpp's server are signed for the hardened runtime, so another
-  program on your Mac can't load its own code into them to borrow the recorder's permissions.
-- Once a meeting is saved, the recording's working folder in Oatcake's own data folder is
-  deleted: the audio, the analysis with its voice fingerprints, and the working copy of your
-  notes. With **Keep call audio** on, the audio goes into the meeting's own folder as
-  `audio.m4a` first, so it's in one place and goes to the Trash with the meeting. A meeting saved
-  without checking who's who (After a call) keeps its analysis and voice clips there, but not the
-  call's full tracks, until its voices are named, you choose Keep as is, or the meeting itself
-  goes (to the Trash, or deleted in Finder; that's noticed at launch and after the next save).
-- Recording one call at a time is enforced by the app. If Oatcake crashes mid-call, the recorder
-  carries on for up to ten minutes; opening Oatcake again in that time picks the recording up,
-  and after it the recorder finishes by itself. A recorder that has gone is noticed within a
-  couple of seconds and what it captured is kept, so nothing is left recording unseen or stuck.
-- Who can publish a release, and what the install line runs, are covered under Releasing.
-
-## Accuracy
-
-On two AMI meetings with four known speakers (ES2004a and IS1009a, 14–17 minutes each),
-FluidAudio found all four people both times and gave 76–78% of speech to the right voice; the
-Electron version's sherpa-onnx pipeline found five at 59% on the same audio and scoring.
-Voiceprints from one meeting scored 0.85–0.95 against the same person in another (ES2004c) and
-at most 0.34 against anyone else; a match needs 0.6 and a lead of 0.1 over the next person.
-Expect to merge a split voice now and then, and to mark a voice "mixed" when two people sound
-alike.
-
-## Layout
-
-- `Sources/OatcakeRecorder/` — system-audio + mic recorder (helper app)
-- `Sources/RecorderContract/` — the files the recorder and Oatcake pass between them, and the
-  check that the recorder only records for Oatcake
-- `Sources/OatcakeCore/` — recordings, speech pipeline, voiceprints, the language model and its
-  download, summaries, meeting folders, calendar, Granola and Quill imports, Ask, updates
-- `Sources/Oatcake/` — the app (SwiftUI); `--analyse` runs the analysis helper, `--live` the live
-  transcript's and `--menu-bar` the menu bar item's
-- `Tests/OatcakeCoreTests/` — tests, a file for each area, including the calendar against
-  ical.js's output
-- `Scripts/` — bundling, versioning, signing `latest.json`
+[Install](docs/install.md) covers installing by hand, what the installer checks, the first
+recording's permissions and the model downloads, and what to tell the people on your calls.
+
+## Documentation
+
+- [Features](docs/features.md): everything Oatcake does, in one list.
+- [Install](docs/install.md): the Terminal line, installing by hand, the
+  [first recording](docs/install.md#first-recording) and
+  [before you record](docs/install.md#before-you-record).
+- [How it works](docs/how-it-works.md): the pipeline, [the window](docs/how-it-works.md#the-window),
+  and each step: [record](docs/how-it-works.md#1-record),
+  [process](docs/how-it-works.md#2-process), [review](docs/how-it-works.md#3-review-whos-who),
+  [save](docs/how-it-works.md#4-save) and [ask](docs/how-it-works.md#5-ask).
+- [Settings](docs/settings.md), pane by pane: [General](docs/settings.md#general),
+  [Calendar](docs/settings.md#calendar), [People](docs/settings.md#people),
+  [Transcription](docs/settings.md#transcription), [Summaries](docs/settings.md#summaries),
+  [Storage](docs/settings.md#storage) and [Updates](docs/settings.md#updates).
+- [Importing from Granola and Quill](docs/importing.md).
+- [Speech and language models](docs/models.md): [speech models](docs/models.md#speech-models),
+  [the language model](docs/models.md#language-model) and [accuracy](docs/models.md#accuracy).
+- [Updates](docs/updates.md): how Oatcake checks for and installs a new release.
+- [Security](docs/security.md): what stays on your Mac, and what's checked.
+- [Moving from the Electron version](docs/moving-from-electron.md) (0.3 and earlier).
+- [What's next](docs/whats-next.md): what we'd like to add.
+- [Development](docs/development.md): [building from source](docs/development.md#build-from-source),
+  [trying a build](docs/development.md#trying-a-build) and the
+  [code's layout](docs/development.md#layout).
+- [Releasing](docs/releasing.md): versioning, the Release workflow and its secrets.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-GPL-3.0-or-later (`LICENSE`). The recorder's audio tap and the echo check are adapted from
+GPL-3.0-or-later ([LICENSE](LICENSE)). The recorder's audio tap and the echo check are adapted from
 OpenWhispr, under its MIT license; FluidAudio is Apache-2.0; llama.cpp, inside the app, is MIT
-(`THIRD_PARTY_NOTICES.md`).
+([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).

@@ -8,7 +8,7 @@ name: Release
 # The job runs in the "release" environment, which holds the secrets and waits for its approver:
 # a branch's own copy of this file can't read them, and nothing is signed without that approval.
 #
-# Secrets, in the release environment (README › Releasing):
+# Secrets, in the release environment (docs/releasing.md):
 #   OATCAKE_SIGNING_P12, OATCAKE_SIGNING_P12_PASSWORD  the "Oatcake Release" code-signing identity
 #   OATCAKE_UPDATE_KEY                                 the Ed25519 key that signs latest.json
 on:

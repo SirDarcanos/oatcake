@@ -1,0 +1,114 @@
+# Features
+
+Everything Oatcake does today, with a link to where each is described. Planned work is in
+[What's next](whats-next.md).
+
+## Recording
+
+- Records your microphone as you and everything the Mac plays (Zoom, Meet, Slack, a browser) as
+  the other people, through a small helper app that only records for Oatcake.
+  [Record](how-it-works.md#1-record)
+- Notes during the call, one point per line, each stamped with the time you started typing it and
+  editable afterwards. [Record](how-it-works.md#1-record)
+- Prep notes typed or pasted before the call, carried into its notes.
+  [Record](how-it-works.md#1-record)
+- The open to-dos from the latest earlier meeting in the same folder on the record screen, to tick
+  off.
+  [Record](how-it-works.md#1-record)
+- Live transcript beside your notes, transcribed on the Mac as the call goes.
+  [Live transcript](how-it-works.md#live-transcript)
+- Microphone choice, following the Mac's or a chosen mic, changeable mid-call without a gap in the
+  recording. [Record](how-it-works.md#1-record)
+- Warnings for a silent microphone, no call audio, or a recorder that stopped or never started, on
+  screen and as notifications; what was recorded is kept. [Record](how-it-works.md#1-record)
+- An offer to record when a calling app starts using the microphone, and an automatic stop when
+  the call ends, with **Keep recording**. [Calls are noticed](how-it-works.md#calls-are-noticed)
+- The running time and **Stop Recording…** in the menu bar, including over full-screen apps.
+  [The menu bar](how-it-works.md#the-menu-bar)
+- A recording carries on if Oatcake crashes, and is picked up if it opens again within ten minutes.
+  [Security](security.md)
+
+## Calendar
+
+- Your calendar's next calls under Upcoming in the sidebar, from its private iCal address.
+  [Calendar settings](settings.md#calendar)
+- Clicking a call opens New recording for it, in the folder named like it or a new one for a
+  recurring meeting. [Calendar settings](settings.md#calendar)
+- **Join the call** for Meet, Zoom and Teams links. [Calendar settings](settings.md#calendar)
+- A reminder 5 minutes before each call, whose button opens the call and starts recording.
+  [Calendar settings](settings.md#calendar)
+- Your next call in the menu bar, with what's coming up in its menu.
+  [The menu bar](how-it-works.md#the-menu-bar)
+- Events that aren't calls left out by their title ("Focus time", "Out of office"…) or by "Oatcake
+  ignore" in the title. [Calendar settings](settings.md#calendar)
+- One event, one occurrence, or a series from then on ignored from Upcoming's right-click menu,
+  and brought back from Settings. [Calendar settings](settings.md#calendar)
+- The calendar's address kept in a file only your account can read.
+  [Security](security.md)
+
+## Transcription and voices
+
+- Transcription on the Mac's Neural Engine, in English or 25 European languages.
+  [Process](how-it-works.md#2-process), [Speech models](models.md#speech-models)
+- The call side split into voices, with your microphone's echo of the call dropped.
+  [Process](how-it-works.md#2-process)
+- Voices recognised from earlier calls by their fingerprints, and names suggested from the
+  conversation for the rest. [Process](how-it-works.md#2-process)
+- Who's who: play each voice's clips, name it (or pick someone from the invite), merge voices,
+  mark one as several people, or leave out one that isn't part of the call.
+  [Review](how-it-works.md#3-review-whos-who)
+- Saving straight after processing instead, with a summary or the transcript only, and naming the
+  voices later. [Saving without Who's who](how-it-works.md#saving-without-whos-who)
+- **Rename Speakers** for a saved meeting: put a wrong name right, name a "Voice 2", swap two
+  names or make two speakers one. [Rename Speakers](how-it-works.md#rename-speakers)
+- People Oatcake recognises listed in Settings, to rename or forget. [People](settings.md#people)
+
+## Summaries and to-dos
+
+- A summary and to-dos written by a language model on this Mac, steered by your notes, in the
+  background after the meeting is saved. [Save](how-it-works.md#4-save),
+  [Language model](models.md#language-model)
+- Your own summary instructions, to-do instructions and jargon. [Summaries](settings.md#summaries)
+- Summary templates for different kinds of meeting, picked per meeting.
+  [Regenerate and summary templates](how-it-works.md#regenerate-and-summary-templates)
+- Regenerate the summary or the to-dos alone. [Regenerate and summary
+  templates](how-it-works.md#regenerate-and-summary-templates)
+- **Write summary** to try again when one couldn't be written. [Save](how-it-works.md#4-save)
+- To-dos with owners and due dates, ticked off in the meeting; a to-do's time opens the transcript
+  there. [To-dos](how-it-works.md#to-dos)
+- A To-dos page gathering every meeting's, by due date, folder or owner, with your own list
+  besides. [To-dos](how-it-works.md#to-dos)
+- To-dos can be turned off altogether. [General](settings.md#general)
+- Qwen3 8B or 4B, downloaded and run by Oatcake, or a model server of your own on your Mac or
+  network. [Language model](models.md#language-model)
+
+## Meetings
+
+- Each meeting a folder of Markdown (`summary.md`, `todo.md`, `transcript.md`, `notes.md`) and
+  `meeting.json` in a Meetings folder you choose, kept in step with Finder.
+  [Save](how-it-works.md#4-save)
+- Summary, Transcript and My notes tabs, each rendered or as editable Markdown.
+  [Reading and editing](how-it-works.md#reading-and-editing)
+- **Copy** and **Share**, formatted for documents and mail and as Markdown.
+  [Reading and editing](how-it-works.md#reading-and-editing)
+- Folders within folders, meetings dragged between them, several at a time; rename, Show in
+  Finder and Move to Trash. [Organising meetings](how-it-works.md#organising-meetings)
+- Search across every meeting, and find in the transcript you're reading.
+  [The window](how-it-works.md#the-window)
+- Bigger and smaller text. [The window](how-it-works.md#the-window)
+- The call's audio kept with the meeting, if you choose. [Storage](settings.md#storage)
+
+## Ask
+
+- Questions about the meeting you have open or across all of them, answered by the model on this
+  Mac, with links to the meetings and times it drew on. [Ask](how-it-works.md#5-ask)
+- Follow-ups in the same conversation, as you move between meetings. [Ask](how-it-works.md#5-ask)
+
+## Getting started and staying up to date
+
+- Install with one Terminal line, or by hand. [Install](install.md)
+- Import from Granola's export and Quill's backup. [Importing](importing.md)
+- Updates from signed releases, checked daily and installed when you choose.
+  [Updates](updates.md)
+- Moving from the Electron version (0.3 and earlier) in place.
+  [Moving from Electron](moving-from-electron.md)
