@@ -1,0 +1,265 @@
+# How it works
+
+```mermaid
+flowchart TD
+    subgraph record["1 · Record: OatcakeRecorder helper app"]
+        mic["Your microphone<br/>mic.pcm"]
+        sys["Everything the Mac plays<br/>system.pcm"]
+        notes["Your notes<br/>notes.json"]
+    end
+
+    subgraph process["2 · Process: speech models on this Mac's Neural Engine (FluidAudio)"]
+        asr["Silero VAD finds speech,<br/>Parakeet turns it into text"]
+        voices["pyannote finds speaker turns,<br/>WeSpeaker fingerprints each voice<br/>→ speakers A, B, C…"]
+        combine["Who said what<br/>call-audio text split by speaker turns;<br/>mic lines that echo the call dropped"]
+        match["Voiceprint match against<br/>people you've confirmed before"]
+        prints[("voiceprints.json")]
+    end
+
+    guess["Qwen3, on this Mac: suggests names for voices<br/>with no match, from the transcript"]
+    review["3 · Review (you)<br/>listen to clips, confirm names,<br/>merge, mark mixed or leave out"]
+    summary["Qwen3, on this Mac: writes the summary and to-dos<br/>from the transcript, focused by your notes"]
+    folder["4 · Meeting folder<br/>summary.md · todo.md · transcript.md · notes.md · meeting.json"]
+
+    mic --> asr
+    sys --> asr
+    sys --> voices
+    asr --> combine
+    voices --> combine
+    voices --> match
+    prints --> match
+    combine --> guess
+    match --> guess
+    guess --> review
+    review -.->|"saves voices with 30 s+ of speech"| prints
+    review --> summary
+    notes --> summary
+    summary --> folder
+    notes --> folder
+
+    classDef llm fill:#f6e7d8,stroke:#c26a2e,color:#000
+    class guess,summary llm
+```
+
+Everything runs on this Mac, and nothing from a call is sent anywhere. Silero, Parakeet, pyannote
+and WeSpeaker are small speech models (Parakeet is 0.6B parameters), run on the Neural Engine
+through [FluidAudio](https://github.com/FluidInference/FluidAudio)'s Core ML builds: they turn
+audio into text and voices into fingerprints, take no prompts, and can't write anything else. The
+two orange steps are the only language model: Qwen3, which Oatcake downloads once and runs itself
+with [llama.cpp](https://github.com/ggml-org/llama.cpp) (see [Language model](models.md#language-model)). It only ever sees
+text (the transcript and your notes), never audio. You can point Oatcake at a model server of
+your own, on your Mac or your network, instead.
+
+## The window
+
+The window has three columns: the sidebar (a recording in progress, To-dos, Upcoming from your
+calendar, Needs review, and your folders, then any meetings at the top level, listed by their
+call's title), the meetings in the selected folder, and the meeting itself. A one-off call with no
+folder of its own is saved at the top level; drag it onto a folder to file it. Clicking the
+Meetings heading lists every meeting, and an empty folder offers **Record here**. Settings (⌘,) is
+its own window, in panes; changes apply as you make them (see [Settings](settings.md)).
+
+⌘N starts a new recording, ⌥⌘F searches every meeting from the box above the meeting list (its
+title, folder, summary, to-dos, notes and transcript; a meeting found by its text shows the line
+with the words and opens there), and ⌘F finds words in the transcript you're reading. ⇧⌘N makes a
+folder and ⌘R refreshes the calendar; all of these are in the File and Edit menus. View › Bigger
+Text (⌘+), Smaller Text (⌘-) and Actual Size (⌘0) change the size of what you read and type:
+summaries, transcripts, notes and answers.
+
+Closing the window quits Oatcake, unless a call is being recorded or the menu bar is showing your
+next call: then it stays in the menu bar. Work that's still going (a call being analysed, a summary
+being written, an import, a model downloading) keeps it open until it's done, and then it quits.
+The Dock icon brings the window back.
+
+## 1. Record
+
+New recording, or click an event under Upcoming. Pick the folder (a calendar event picks the
+folder named like it, or the one its earlier meetings are in, or offers a new one for a recurring
+event); leave the title blank to use the folder's name. The screen shows the event's attendees
+and its **Join the call** button, the open to-dos from the latest earlier meeting in that folder
+that has any (ticking one updates its `todo.md`), and takes prep notes, which open the call's
+notes: type them one at a time or paste a list, which becomes a note per line. They're kept for
+that call until it's recorded (for up to 30 days), so you can write them ahead and come back.
+
+Your microphone is recorded as you; everything the Mac plays (Zoom, Meet, Slack, anything) is
+recorded as the other people. During the call, write one point per line: each is stamped with the
+time you started typing it, and every line stays editable. The recorder is a small helper app
+(`Sources/OatcakeRecorder`) inside Oatcake; macOS asks for microphone and system-audio permission
+in Oatcake's name, once; if it hasn't started after a few seconds, the live screen says to look
+for that prompt. Until the recorder has sent any audio, **Cancel** throws the recording away (and
+**Close** does, if it never starts); either asks first if you've typed notes.
+
+Pick the microphone on the record screen, from the mic button during the call, or in Settings ›
+General: "Same as Mac" follows System Settings › Sound; a chosen mic is used until it's unplugged,
+then the Mac's input until it's back. Changing mic mid-call carries on recording, with the switch
+filled with silence so your track stays lined up with the call.
+
+You're warned after 30 seconds of a silent mic or no call audio, on the call's screen and with a
+notification, since you're probably looking at the call (the no-call-audio notification only
+while a calling app has the microphone: dictating on your own, there's no call audio to miss). The
+silent-mic notification comes once a recording, and once more if you change microphone (a headset
+that cuts out room noise is silent whenever you aren't talking); the call's screen goes on saying
+so for as long as the mic is silent. If the recorder stops or never starts (no permission, a full
+disk), Oatcake notices (within a couple of seconds once it stops, or after 15 seconds of not
+starting), says so the same two ways, and keeps and processes whatever was recorded. Stop asks
+first, and so does quitting Oatcake while a call is being recorded, analysed or summarised, or
+meetings are being imported.
+
+### Live transcript
+
+Beside your notes, **Transcript** shows the call as it's said, a moment after each pause (a second
+helper, `Oatcake --live`, transcribes the audio as the recorder writes it). Your lines are yours;
+each line from the call side gets an obviously made-up name, a different one every time ("Mystery
+Guest", "Captain Placeholder"…), until the call is over and the voices are told apart. Settings ›
+General turns the live transcript off.
+
+### Calls are noticed
+
+When a calling app or a browser starts using your microphone and nothing is being recorded, a
+notification offers **Start recording** (under the calendar event happening now, if there is
+one). When a recording has had a calling app on the microphone, and that app has let go and the
+call audio has been quiet for 15 seconds, a notification says the call seems to have ended; 30
+seconds later the recording stops and starts processing, unless you choose **Keep recording** (on
+the notification or the call's screen) or the call comes back. Music still playing, or a call
+you're only muted on, keeps it going. Oatcake tells which apps have a microphone open from Core
+Audio (`Sources/OatcakeCore/CallDetector.swift`); it doesn't listen until you record. Both are
+switches in Settings › General.
+
+### The menu bar
+
+While a call is being recorded the menu bar shows its running time, with **Stop Recording…**
+(which asks first) in its menu. Otherwise, with a calendar connected, it shows the time until your
+next call (Settings › Calendar › Show my next call in the menu bar), and its menu lists up to six calls
+coming up today and tomorrow (click one for its New recording screen), **New Recording…**, **Open
+Oatcake** and **Quit Oatcake**. The menu bar item is drawn by a third helper, `Oatcake
+--menu-bar`, a menu-bar-only app: macOS doesn't show a Dock app's menu bar menu while another app
+is in full screen.
+
+A recording started from a calendar event keeps the event's **Join the call** button on its
+screen, for when you press record before joining.
+
+## 2. Process
+
+On this Mac, in the background. Parakeet transcribes both tracks. The call audio is split into
+voices by FluidAudio's batch diariser (pyannote segmentation, WeSpeaker fingerprints, VBx
+clustering). It runs as a helper process (`Oatcake --analyse`), so a problem there can't take the
+window or a recording in progress with it. Mic lines that repeat the call audio (speaker echo) are
+dropped. Known voices are recognised from saved voiceprints; other names are suggested from the
+conversation by the summary model, quoting the words that gave it away. The recording waits under
+Needs review with its step (1–5), and the Dock icon's badge counts the recordings waiting there. A
+failure shows the reason, with **Try again** and **Discard…**; **Discard…** is in the toolbar while
+it's processing and on Who's who as well.
+
+## 3. Review (Who's who)
+
+Change the title or the folder it's saved in if you want to. One card per voice: play its clips,
+confirm or type the name, or pick one of the people on the call's calendar invite (each is offered
+until they've been given a voice) (with where the suggestion came from), merge it into another
+voice or into you, mark it as mixed ("Several people"), or leave it out when it isn't part of the
+call (people talking in the background, say): its lines then stay out of the transcript, the
+summary and the to-dos. **Put back** undoes leaving one out, and **Undo** a merge. Unnamed voices
+are saved as "Voice 1", "Voice 2"… The transcript beside it updates as you name voices. Confirmed
+voices with 30+ seconds of speech are saved, so they're recognised next time.
+
+### Saving without Who's who
+
+Settings › General › **After a call** can save each call as soon as it's processed, instead of
+waiting here: **Save with a summary**, or **Save the transcript only** (no summary or to-dos).
+Voices Oatcake is sure it recognises from before keep their names (a closer match than this screen
+asks for, since nobody is looking), and every other voice is "Voice 1", "Voice 2"…, whatever the
+model guessed from the conversation: a guess, or a match that wasn't sure enough, waits on the
+voice's card as a suggestion. No voice is remembered from names nobody checked.
+
+The meeting says it was saved without checking who's who: **Name voices…** opens this screen for
+it, and **Update meeting** writes its transcript and `meeting.json` again in place, puts the new
+names where the old ones were in its summary and to-dos (as whole words: each "Voice N" stands for
+one voice, so it's an exact swap wherever the model wrote it that way), and leaves your notes and
+its title as they are. Name them while the summary is still being written and it's written again
+from the named transcript. **Keep as is** keeps the names it has. If a call can't be saved by
+itself, it waits here as usual.
+
+## 4. Save
+
+The meeting is a folder in the folder you picked: `2026-11-05 1400 Weekly sync/` with
+`summary.md`, `todo.md` (action items, as `- [ ] Task — Owner — due Fri, Oct 30 — [12:34]`),
+`transcript.md`, `notes.md` (your own notes, untouched; prep notes have no time) and
+`meeting.json` (title, times, participants). A long turn in the transcript is broken at a pause
+about every half minute, each part with its own time.
+
+Saving doesn't involve the summary model: the meeting is written straight away with its transcript
+and notes, and its summary and to-dos are written in the background and appear in the meeting when
+they're ready. Your notes steer what the summary focuses on but aren't copied into it. If the
+summary can't be written (the model's download was interrupted, a server of your own that's down),
+the meeting says why in plain words (the raw message is behind Details) and shows **Write summary**
+to try again later.
+
+### Reading and editing
+
+Tabs: Summary (with the meeting's to-dos at the top), Transcript and My notes (⌘1–⌘3), each
+Rendered or as editable Markdown from the switch at the top right of the note (saved as you type;
+Summary shows `todo.md` and `summary.md`). **Copy** puts the tab you're on (the summary with its
+to-dos, the transcript, or your notes) on the clipboard under the meeting's title and date,
+formatted for Google Docs, Pages or mail and as Markdown for anything that only takes plain text,
+and **Share** sends the same text with Mail, Messages or another app.
+
+### Regenerate and summary templates
+
+To write a summary or its to-dos again (after changing the instructions in Settings › Summaries,
+say), choose **Regenerate › Regenerate summary** or **Regenerate to-dos** in the Summary tab's
+toolbar and confirm. With [summary templates](settings.md#summaries) set up, Regenerate summary
+lists them: the meeting's summary is written with the one you pick, and the meeting keeps it for
+any summary written of it later. Only that part is asked for and replaced, edits and ticks
+included; the rest of the meeting stays as it is. The old one stays until the new one is ready,
+and stays if it fails or is changed somewhere else meanwhile.
+
+### To-dos
+
+Tick to-dos off in place; a due date can be a date ("Fri, Oct 30") or a day as it was said
+("Friday", "tomorrow", "end of the week"), counted from the day of the meeting; a to-do's time
+jumps to that moment in the transcript. **To-dos** at the top of the sidebar gathers every
+meeting's to-dos (open and overdue counts beside it): Open / Done / All, grouped by due date,
+folder or owner, filtered by owner ("Mine" is your name from Settings). Ticking one there updates
+that meeting's `todo.md`, and under Open it leaves the list (it's under Done if you didn't mean
+it). Add a to-do under a meeting's Summary and it goes in that meeting's `todo.md`; add one on the
+To-dos page and it goes in the Meetings folder's own `todo.md`, owned by you unless you name
+someone. Type owner and due date after dashes: `Send the deck - Jane - due Fri, Nov 6`. If you keep
+your tasks somewhere else, turn off [Collect to-dos](settings.md#general) in Settings › General.
+
+### Organising meetings
+
+Organise meetings by dragging them onto folders; ⌘-click or ⇧-click selects several, and they all
+move. Right-click a meeting for **Rename…**, **Show in Finder** or **Move to Trash**, or several for
+**Show in Finder** or **Move to Trash** (⌘⌫ in the File menu does the same); **Show in Finder** is in the meeting's toolbar too. Renaming
+a meeting changes its title (in `meeting.json`) and its folder's name, which keeps its date.
+Folders can hold folders: right-click one for **New Folder Inside…**, **Rename…**, **Show in
+Finder** or **Move to Trash** (which asks first if it holds meetings). Finder and the app stay in
+step. The middle column's width drags, like the sidebar's.
+
+### Rename Speakers
+
+**Rename Speakers** in a meeting's toolbar puts a wrong name right after the meeting is saved, or
+names a "Voice 2": it lists the transcript's speakers, each with their first words, and a field for
+another name. Only that meeting changes: the transcript's labels (never what was said), the names
+in its summary and to-dos, and its people in `meeting.json`. Two names can swap, and giving two
+speakers one name makes them one; "Several people" stays as it is. The fingerprint saved from that
+call goes with the name, so the next call isn't recognised as the wrong person too. It stays only
+when the new name is the old one spelt out ("John" → "John Smith") and the voice clearly matches
+their other calls (Settings › People renames a person everywhere). A meeting saved without checking
+who's who has **Name voices…** instead.
+
+## 5. Ask
+
+The lozenge at the bottom of a meeting takes questions about it ("what did we decide about
+hiring?") or across meetings ("when did Jane first raise the launch date?"); an empty chat offers
+three to start with. The model on your Mac is given the meeting you have open: its summary,
+to-dos, your notes and the transcript (all of it, or for a call too long for that, the parts
+nearest the question). It's first asked whether the question reaches beyond that meeting. When it
+does, Oatcake searches your other meetings for the names and topics the model gives, favours the
+other meetings in the same folder, and adds their summaries, to-dos and the transcript lines that
+match. The model never opens a file or runs anything itself. Answers link to the meetings they
+draw on, and a time in an answer opens the transcript at that moment. An answer is one piece of
+text: select any stretch of it, or all of it, and copy. Web links in an answer are shown as text,
+not made clickable. Follow-ups continue the same conversation, which stays open as you move
+between meetings, until **New chat**. **Stop** ends an answer early, and Esc or **Hide** puts the
+chat away. The first question about a call takes longest, while the model reads it; follow-ups
+about the same call are quicker.

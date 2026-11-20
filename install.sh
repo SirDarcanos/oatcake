@@ -1,6 +1,7 @@
 #!/bin/sh
 # Oatcake installer: downloads the latest release, checks it, puts it in Applications and opens it.
-# Run it again any time to reinstall or upgrade; installed copies also update themselves.
+# Run it again any time to upgrade (OATCAKE_REINSTALL=1 reinstalls the same version); installed
+# copies also update themselves.
 #
 #   curl -fsSL https://github.com/a8cteam51/oatcake/releases/latest/download/install.sh | sh
 #
