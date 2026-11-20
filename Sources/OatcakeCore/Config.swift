@@ -143,6 +143,8 @@ public struct Config: Codable, Equatable, Sendable {
     public var ignoredEvents: [String]
     /// Google Calendar's names for blocks that aren't calls.
     public static let defaultIgnoredEvents = ["Focus time", "Out of office", "Working location", "Task"]
+    /// Events ignored one at a time from Upcoming, or a recurring one's whole series (isIgnored).
+    public var ignoredCalendarEvents: [IgnoredEvent] = []
 
     public var meetingsRoot: URL { URL(fileURLWithPath: outputDir, isDirectory: true) }
 
@@ -207,6 +209,7 @@ public struct Config: Codable, Equatable, Sendable {
         todoInstructions = (try? c.decodeIfPresent(String.self, forKey: .todoInstructions)) ?? base.todoInstructions
         summaryTemplates = (try? c.decodeIfPresent([SummaryTemplate].self, forKey: .summaryTemplates)) ?? base.summaryTemplates
         ignoredEvents = (try? c.decodeIfPresent([String].self, forKey: .ignoredEvents)) ?? base.ignoredEvents
+        ignoredCalendarEvents = (try? c.decodeIfPresent([IgnoredEvent].self, forKey: .ignoredCalendarEvents)) ?? base.ignoredCalendarEvents
         afterCall = (try? c.decodeIfPresent(AfterCall.self, forKey: .afterCall)) ?? base.afterCall
     }
 
@@ -230,11 +233,12 @@ public struct Config: Codable, Equatable, Sendable {
         try c.encode(todoInstructions, forKey: .todoInstructions)
         try c.encode(summaryTemplates, forKey: .summaryTemplates)
         try c.encode(ignoredEvents, forKey: .ignoredEvents)
+        try c.encode(ignoredCalendarEvents, forKey: .ignoredCalendarEvents)
         try c.encode(afterCall, forKey: .afterCall)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case myName, outputDir, asrModel, llm, keepAudio, mic, callReminders, updateCheck, callNotice, autoStop, liveTranscript, jargon, menuBarNextCall, summaryInstructions, todoInstructions, summaryTemplates, ignoredEvents, afterCall
+        case myName, outputDir, asrModel, llm, keepAudio, mic, callReminders, updateCheck, callNotice, autoStop, liveTranscript, jargon, menuBarNextCall, summaryInstructions, todoInstructions, summaryTemplates, ignoredEvents, ignoredCalendarEvents, afterCall
     }
 
     /// For the model: how to spell the names and terms you've listed, or "" when there are none.

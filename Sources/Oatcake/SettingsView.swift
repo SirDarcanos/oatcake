@@ -152,6 +152,28 @@ struct SettingsView: View {
             Text("Separated by commas. Events whose titles start with one of these, or have “Oatcake ignore” anywhere in them, are left out of Upcoming, the menu bar and reminders. Capitals don’t matter, and “Task” doesn’t leave out “Taskforce sync”.")
                 .settingsHint()
         }
+        // Ignored one at a time from Upcoming's right-click menu. Only shown once there are some.
+        let ignored = withoutEnded(model.config.ignoredCalendarEvents, now: Date())
+        if !ignored.isEmpty {
+            Section {
+                ForEach(ignored) { item in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.title)
+                            Text(item.series ? "This and following events" : parseISO(item.start).map { "\(shortWeekday($0)) \(hhmm($0))" } ?? "Once")
+                                .settingsHint()
+                        }
+                        Spacer()
+                        Button("Stop Ignoring") { model.stopIgnoring(item) }
+                    }
+                }
+            } header: {
+                Text("Ignored events")
+            } footer: {
+                Text("Right-click an event in Upcoming to ignore it. Only Oatcake leaves it out: it stays in your calendar. An event its organiser moves shows again, and so does the rest of a series changed with “this and following events”.")
+                    .settingsHint()
+            }
+        }
     }
 
     @ViewBuilder private var transcription: some View {
@@ -635,7 +657,7 @@ private struct ImportRow: View {
 }
 
 /**
- * The calendar's private address. It's kept in the Keychain and never shown again, so a saved one
+ * The calendar's private address. It's kept in private.json and never shown again, so a saved one
  * shows as a hint ("Saved · calendar.google.com"). A new value saves on Return, on leaving the
  * field, or after a pause in typing.
  */
@@ -647,7 +669,7 @@ private struct SecretField: View {
     @ViewState private var shown = false
     @ViewState private var described = (saved: false, hint: "")
     @ViewState private var pause: Task<Void, Never>?
-    /// Why the last save or removal didn't work (the Keychain refused), shown under the field.
+    /// Why the last save or removal didn't work (the file couldn't be written), shown under the field.
     @ViewState private var problem: String?
     @ViewState private var removing = false
     @FocusState private var focused: Bool

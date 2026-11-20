@@ -357,7 +357,7 @@ private func namesFromTranscript(_ config: Config, title: String, lines: [Line],
     }
     let head = ["Meeting title: \(title)", config.jargonLine].filter { !$0.isEmpty }.joined(separator: "\n")
     let task = """
-        Some speakers are only labelled "Speaker A", "Speaker B" and so on. For each of them, find their real name if the transcript gives it away: when someone says a name while asking a question and the very next line is that speaker answering, the name is theirs; or they introduce themselves ("Alex here"). Take a name only from words in the transcript. If nothing in the transcript shows the name, the name is null; never guess and never invent one.
+        Some speakers are only labelled "Speaker A", "Speaker B" and so on. For each of them, find their real name if the transcript gives it away: when someone says a name while asking a question and the very next line is that speaker answering, the name is theirs; or they introduce themselves ("Jane here"). Take a name only from words in the transcript. If nothing in the transcript shows the name, the name is null; never guess and never invent one.
         Unidentified speakers: \(unknown.map { "Speaker \($0)" }.joined(separator: ", "))
         Reply as JSON: {"speakers": [{"speaker": "A", "name": the name or null, "quote": the few words from the transcript that show it, or null}]}.
         """
@@ -397,7 +397,7 @@ func namesIn(_ reply: String, unknown: [String], transcript: String, myName: Str
         var speakers: [Guess]
     }
     guard let parsed = try? parseJsonObject(Reply.self, reply) else { return [:] }
-    // Whole words: "Dan" isn't said by a transcript that has "abundant" in it.
+    // Whole words: "Smith" isn't said by a transcript that has "blacksmith" in it.
     func words(_ text: String) -> [Substring] { foldedForSearch(text).split { !$0.isLetter && !$0.isNumber } }
     let heard = Set(words(transcript))
     let mine = Set(foldedForSearch(myName).split(separator: " "))
