@@ -6,7 +6,7 @@ let package = Package(
     platforms: [.macOS(.v15)],
     dependencies: [
         // Speech models on the Neural Engine. Only the Diarizer trait: no text-to-speech and no
-        // prebuilt text-normalisation library. Pinned exactly; see README › Speech models.
+        // prebuilt text-normalisation library. Pinned exactly; see docs/models.md › Speech models.
         .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.18.3", traits: ["Diarizer"]),
     ],
     targets: [

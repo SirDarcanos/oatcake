@@ -27,7 +27,7 @@ main() {
     set -eu
     REPO="a8cteam51/oatcake"
     BUNDLE_ID="local.oatcake"
-    # The "Oatcake Release" certificate every release is signed with (README › Releasing). A new
+    # The "Oatcake Release" certificate every release is signed with (docs/releasing.md). A new
     # certificate means a new fingerprint here, in the same release.
     CERTIFICATE='certificate leaf = H"1d0c58271ef4c8fff761e1d137e4a4d5b1f28a4d"'
     FEED="${OATCAKE_FEED:-https://github.com/$REPO/releases/latest/download/latest.json}"
