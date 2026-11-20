@@ -224,6 +224,16 @@ struct SidebarView: View {
                 Button { model.newRecording(event) } label: { eventRow(event, next: next, now: now) }
                     .buttonStyle(.plain)
                     .help("\(event.title) · \(hhmm(event.startDate))–\(hhmm(event.endDate))\(event.callLink.map { " · " + (callApp($0) ?? "") } ?? "")")
+                    // A call you won't record that you can't rename or decline (someone else's
+                    // recurring meeting): only Oatcake stops showing it.
+                    .contextMenu {
+                        if event.seriesId != nil {
+                            Button("Ignore This One") { model.ignore(event, series: false) }
+                            Button("Ignore This and Following Events") { model.ignore(event, series: true) }
+                        } else {
+                            Button("Ignore This Event") { model.ignore(event, series: false) }
+                        }
+                    }
             }
             if let message = calendarMessage(calendar, events: events) {
                 Text(message).font(.callout).foregroundStyle(calendar.error != nil && calendar.updatedAt == nil ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))

@@ -331,6 +331,21 @@ final class AppModel {
         recording.settingsChanged(saved)
     }
 
+    /// Upcoming's Ignore: this occurrence, or with `series` every occurrence of its recurring event, is
+    /// left out of Upcoming, the menu bar, reminders and call notices. Only in Oatcake: the calendar
+    /// isn't changed. Settings › Calendar lists them, to bring one back. Ones that have ended are
+    /// forgotten as this is saved.
+    func ignore(_ event: CalendarEvent, series: Bool) {
+        guard let item = series ? IgnoredEvent.series(of: event) : .occurrence(event) else { return }
+        saveConfig(with(config) { $0.ignoredCalendarEvents = withoutEnded($0.ignoredCalendarEvents, now: Date()).filter { !$0.covers(item) } + [item] })
+        toast(series ? "“\(event.title)” is ignored from now on. Settings › Calendar can bring it back."
+                     : "“\(event.title)”, \(shortWeekday(event.startDate)) \(hhmm(event.startDate)), is ignored. Settings › Calendar can bring it back.")
+    }
+
+    func stopIgnoring(_ item: IgnoredEvent) {
+        saveConfig(with(config) { $0.ignoredCalendarEvents = withoutEnded($0.ignoredCalendarEvents, now: Date()).filter { !$0.covers(item) } })
+    }
+
     /// Saves the microphone choice and switches any running recording to it.
     func setMic(_ mic: MicChoice?) {
         var c = config
