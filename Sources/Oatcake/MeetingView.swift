@@ -87,7 +87,7 @@ struct MeetingView: View {
         }
         .toolbar { toolbar }
         .sheet(isPresented: $renamingSpeakers) {
-            RenameSpeakersSheet(speakers: speakers) { renames in
+            RenameSpeakersSheet(speakers: speakers, todos: model.config.todosEnabled) { renames in
                 model.library.renameSpeakers(path, renames)
             }
         }
