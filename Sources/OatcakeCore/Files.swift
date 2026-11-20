@@ -11,6 +11,8 @@ public enum Paths {
     public static let config = data.appendingPathComponent("config.json")
     public static let calendar = data.appendingPathComponent("calendar.json")
     public static let prep = data.appendingPathComponent("prep.json")
+    /// The calendar's private address (Secrets). Not "secrets.json": that's the Electron version's file.
+    public static let secretFile = data.appendingPathComponent("private.json")
     public static let updateLog = data.appendingPathComponent("update.log")
 }
 

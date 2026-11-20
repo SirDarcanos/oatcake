@@ -316,7 +316,7 @@ struct SettingsView: View {
                             hint: "What the model is told to write once it has read the transcript. Change the headings, the level of detail or the language to suit you. To-dos are collected separately and aren’t affected.")
         InstructionsSection(title: "To-do instructions", setting: \.todoInstructions, standard: defaultTodoInstructions,
                             applies: "Used for to-dos collected from now on.",
-                            hint: "What the model is told counts as a to-do. Make it stricter or looser, or keep it to your own action items (“Only list what Sam agreed to do”). Each to-do still comes with its owner, due date and time in the call.")
+                            hint: "What the model is told counts as a to-do. Make it stricter or looser, or keep it to your own action items (“Only list what John agreed to do”). Each to-do still comes with its owner, due date and time in the call.")
     }
 }
 
@@ -521,7 +521,7 @@ private struct ImportRow: View {
 }
 
 /**
- * The calendar's private address. It's kept in the Keychain and never shown again, so a saved one
+ * The calendar's private address. It's kept in private.json and never shown again, so a saved one
  * shows as a hint ("Saved · calendar.google.com"). A new value saves on Return, on leaving the
  * field, or after a pause in typing.
  */
@@ -533,7 +533,7 @@ private struct SecretField: View {
     @ViewState private var shown = false
     @ViewState private var described = (saved: false, hint: "")
     @ViewState private var pause: Task<Void, Never>?
-    /// Why the last save or removal didn't work (the Keychain refused), shown under the field.
+    /// Why the last save or removal didn't work (the file couldn't be written), shown under the field.
     @ViewState private var problem: String?
     @ViewState private var removing = false
     @FocusState private var focused: Bool

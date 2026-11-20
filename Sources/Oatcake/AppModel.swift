@@ -130,7 +130,7 @@ final class AppModel {
     }
 
     func start() {
-        // Left by the Electron version: its secrets move into the Keychain, its speech models and
+        // Left by the Electron version: its secrets move into private.json, its speech models and
         // Chromium caches go. Once: after that there's nothing of its to find. (A secret that couldn't
         // be moved stays in its file, and this is tried again at the next launch.)
         if !UserDefaults.standard.bool(forKey: "electronCleanUpDone") {
@@ -140,6 +140,10 @@ final class AppModel {
             if !FileManager.default.fileExists(atPath: Paths.data.appendingPathComponent("secrets.json").path) {
                 UserDefaults.standard.set(true, forKey: "electronCleanUpDone")
             }
+        }
+        // Kept in the Keychain by 0.4.0 to 0.5.2: the calendar's address moves to private.json, once.
+        if movesFromKeychain, !UserDefaults.standard.bool(forKey: keychainMoveDone), Secrets.moveFromKeychain() {
+            UserDefaults.standard.set(true, forKey: keychainMoveDone)
         }
         Secrets.forgetRetired()
         // The recording permissions given to earlier versions are withdrawn, to be asked for again by
@@ -347,12 +351,23 @@ final class AppModel {
         refresh()
     }
 
+    /// Whether this copy moves the calendar's address out of the Keychain. Not a development copy
+    /// pointed at another data folder: it would copy your real address into that folder, and its
+    /// flag (in the UserDefaults it shares with your own copy) would stop your own copy's move.
+    private var movesFromKeychain: Bool { ProcessInfo.processInfo.environment["OATCAKE_DATA_DIR"] == nil }
+    private let keychainMoveDone = "secretsMovedFromKeychain"
+
     /// Saves (or, with "", removes) a secret. Returns why it couldn't, for Settings to show beside the field.
     @discardableResult
     func setSecret(_ name: SecretName, _ value: String) -> String? {
         let before = Secrets.get(name)
         var problem: String?
-        do { try Secrets.set(name, value) } catch { problem = error.localizedDescription }
+        do {
+            try Secrets.set(name, value)
+            // What you save or remove here settles the move from the Keychain: an address you removed
+            // mustn't come back from there at the next launch.
+            if movesFromKeychain { UserDefaults.standard.set(true, forKey: keychainMoveDone) }
+        } catch { problem = error.localizedDescription }
         if name == .calendar, Secrets.get(.calendar) != before { calendar.addressChanged() }
         return problem
     }
