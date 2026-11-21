@@ -160,17 +160,17 @@ public func renameVoice(_ name: String, to newName: String, file: URL = Paths.vo
     try prints.save(file)
 }
 
-/**
- * Settings › People › Merge Into: two people Oatcake recognises are one, under `other`'s name, with
- * both sets of fingerprints (the newest kept, as renaming to a name that's there does). Both have to
- * still be known, so a name forgotten meanwhile isn't quietly renamed instead.
- */
 /// How many fingerprints two people would have once merged, before the newest are kept: one per call.
 public func mergedFingerprints(_ name: String, into other: String, file: URL = Paths.voiceprints) -> Int {
     let people = Voiceprints.load(file).people
     return Set((people[name]?.samples ?? []).map(\.call) + (people[other]?.samples ?? []).map(\.call)).count
 }
 
+/**
+ * Settings › People › Merge Into: two people Oatcake recognises are one, under `other`'s name, with
+ * both sets of fingerprints (the newest kept, as renaming to a name that's there does). Both have to
+ * still be known, so a name forgotten meanwhile isn't quietly renamed instead.
+ */
 public func mergeVoice(_ name: String, into other: String, file: URL = Paths.voiceprints) throws {
     guard name != other else { throw OatcakeError("Pick someone else to merge \(name) into.") }
     let people = Voiceprints.load(file).people
