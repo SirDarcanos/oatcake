@@ -134,8 +134,9 @@ func chooseColor(_ index: Int?, for name: String) {
     UserDefaults.standard.set(UserDefaults.standard.integer(forKey: colorsChangedKey) + 1, forKey: colorsChangedKey)
 }
 
-/// A chosen colour goes with the name when someone is renamed in Settings › People, unless the new
-/// name has one. The old name keeps it too: meetings already saved still use that name.
+/// A chosen colour goes with the name when someone is renamed or merged into someone else in Settings ›
+/// People, unless the name they now go by has one. The old name keeps it too: meetings already saved
+/// still use that name.
 func carryChosenColor(from old: String, to new: String) {
     guard let index = chosenColor(old), chosenColor(new) == nil else { return }
     chooseColor(index, for: new)

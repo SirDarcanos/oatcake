@@ -86,7 +86,7 @@ Click someone's avatar to choose their colour from the palette's twelve: it's th
 in avatars and in names in transcripts. Oatcake otherwise gives each first name a colour the first
 time it sees it, so a colour you choose is kept for the full name, and two people called Jane can
 have different ones. **Use the colour Oatcake gave them** goes back to that. Renaming someone takes
-their chosen colour with them.
+their chosen colour with them, and so does merging them into someone who hasn't one.
 
 ## Models
 
