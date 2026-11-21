@@ -111,7 +111,7 @@ public enum LocalModels {
     }
 }
 
-public let modelNotDownloadedMessage = "The language model isn’t downloaded yet. Settings › Summaries shows how far it has got, and can start it again."
+public let modelNotDownloadedMessage = "The language model isn’t downloaded yet. Settings › Models shows how far it has got, and can start it again."
 
 /// Downloads a model's file, carrying on from where an earlier attempt stopped, and checks it's the
 /// file that was expected before putting it in place.

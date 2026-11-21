@@ -4,7 +4,7 @@
 import Foundation
 
 /// What a local model's address gets when it isn't local (settings from a version that allowed any address).
-public let notLocalMessage = "A model server of your own has to be on this Mac or your own network, and this address isn’t. Change it in Settings › Summaries, or choose one of Oatcake’s own models there."
+public let notLocalMessage = "A model server of your own has to be on this Mac or your own network, and this address isn’t. Change it in Settings › Models, or choose one of Oatcake’s own models there."
 
 /**
  * Whether a model server's address is on this Mac or your own network: localhost, a name with no
@@ -193,7 +193,7 @@ public func explainModelError(_ raw: String) -> String {
     }
     if e.contains("model") && (e.contains("not found") || e.contains("does not exist") || e.contains("not exist")) {
         let model = firstMatch(try! NSRegularExpression(pattern: #""model"\s*:\s*"([^"]+)""#), raw)?[1]
-        return "The model\(model.map { " “\($0)”" } ?? "") isn’t on that server. Check its name in Settings › Summaries."
+        return "The model\(model.map { " “\($0)”" } ?? "") isn’t on that server. Check its name in Settings › Models."
     }
     if e.contains("could not connect") || e.contains("couldn’t connect") || e.contains("offline") || e.contains("timed out") || e.contains("hostname") || e.contains("connection") {
         return "The model couldn’t be reached. If it’s a server of your own, check that it’s running."

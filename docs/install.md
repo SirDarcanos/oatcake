@@ -46,7 +46,7 @@ when you start your first recording: the language model that writes summaries (Q
 on a Mac with 16 GB of memory or more; Qwen3 4B, 2.5 GB, on one with 8 GB) and the speech models
 that write the live transcript. The ones that tell voices apart follow when the call is processed
 (the speech models come to about 500 MB in all; with the live transcript turned off, all of them
-wait until then). The call's screen shows how far the download has got, and Settings › Summaries
+wait until then). The call's screen shows how far the download has got, and Settings › Models
 can start it ahead of time (**Download Now**) or stop it. Oatcake checks there's room on the disk
 first. See [Speech models](models.md#speech-models) and [Language model](models.md#language-model).
 

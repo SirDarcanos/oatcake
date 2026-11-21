@@ -17,8 +17,8 @@ struct SettingsView: View {
             Form { general }.formStyle(.grouped).tabItem { Label("General", systemImage: "gearshape") }.tag("general")
             Form { calendar }.formStyle(.grouped).tabItem { Label("Calendar", systemImage: "calendar") }.tag("calendar")
             Form { PeopleSection() }.formStyle(.grouped).tabItem { Label("People", systemImage: "person.2") }.tag("people")
-            Form { transcription }.formStyle(.grouped).tabItem { Label("Transcription", systemImage: "waveform") }.tag("transcription")
-            Form { llmSection; reasoningSection; instructionsSections; jargonSection }.formStyle(.grouped).tabItem { Label("Summaries", systemImage: "text.alignleft") }.tag("summaries")
+            Form { transcription; llmSection }.formStyle(.grouped).tabItem { Label("Models", systemImage: "cpu") }.tag("models")
+            Form { jargonSection; outputSections }.formStyle(.grouped).tabItem { Label("Summaries", systemImage: "text.alignleft") }.tag("summaries")
             Form { storage }.formStyle(.grouped).tabItem { Label("Storage", systemImage: "folder") }.tag("storage")
             Form { UpdatesSection() }.formStyle(.grouped).tabItem { Label("Updates", systemImage: "arrow.down.circle") }.tag("updates")
         }
@@ -32,6 +32,8 @@ struct SettingsView: View {
         // Looked at again whenever a pane is shown: it may have been changed in System Settings meanwhile.
         .task(id: pane) { notificationsOff = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .denied }
         .onAppear {
+            // Speech to text was once a pane of its own, now part of Models.
+            if pane == "transcription" { pane = "models" }
             jargon = model.config.jargon.joined(separator: ", ")
             ignoredEvents = model.config.ignoredEvents.joined(separator: ", ")
             // The Electron version's names for the two transcription choices read as the new ones.
@@ -43,15 +45,21 @@ struct SettingsView: View {
     @ViewBuilder private var general: some View {
         let config = model.config
         Section("You") {
-            TextField("Your name", text: bind(\.myName))
-            Text("Labels your microphone track in every transcript.").settingsHint()
+            TextField(text: bind(\.myName), prompt: Text("Your name")) {
+                Text("Your name")
+                Text("Labels your microphone track in every transcript.")
+            }
         }
 
         Section("Recording") {
-            LabeledContent("Microphone") { MicPicker(devices: devices ?? []).frame(width: 270) }
-            if let devices {
-                let hint = micHint(config.mic, devices)
-                Text(hint.text).settingsHint(hint.color)
+            LabeledContent {
+                MicPicker(devices: devices ?? []).frame(width: 270)
+            } label: {
+                Text("Microphone")
+                if let devices {
+                    let hint = micHint(config.mic, devices)
+                    Text(hint.text).foregroundStyle(hint.color)
+                }
             }
             Toggle(isOn: bind(\.liveTranscript)) {
                 Text("Live transcript")
@@ -86,7 +94,7 @@ struct SettingsView: View {
         Section("To-dos") {
             Toggle(isOn: bind(\.todosEnabled)) {
                 Text("Collect to-dos")
-                Text("Each summary comes with the to-dos agreed in the call, listed in the meeting and on the To-dos page. Turned off, none are collected, and the To-dos page and checklists are hidden. To-dos already saved stay in each meeting’s todo.md, for if you turn this back on.")
+                Text("Each summary comes with the to-dos agreed in the call. Turned off, none are collected and the To-dos page is hidden; saved ones stay in each meeting’s todo.md.")
             }
         }
     }
@@ -100,18 +108,21 @@ struct SettingsView: View {
     }
 
     @ViewBuilder private var storage: some View {
-        Section("Storage") {
+        Section {
             LabeledContent {
                 Button("Choose…") { model.chooseMeetingsFolder() }
             } label: {
                 Text("Meetings folder")
                 Text(shortPath(model.config.outputDir)).font(.system(.caption, design: .monospaced)).help(model.config.outputDir)
             }
-            Text("Choosing another folder doesn’t move anything: meetings already in the old one stay where they are.").settingsHint()
             Toggle(isOn: bind(\.keepAudio)) {
                 Text("Keep call audio after saving")
                 Text("When off, the audio is deleted once a meeting is saved. The transcript, notes and summary stay.")
             }
+        } header: {
+            Text("Storage")
+        } footer: {
+            Text("Choosing another Meetings folder doesn’t move anything: meetings already in the old one stay where they are.").settingsHint()
         }
         Section("Import") {
             ImportRow(source: "Granola", hint: "Pick the .zip from Granola’s export. Each note becomes a meeting; ones already here are skipped.",
@@ -123,11 +134,9 @@ struct SettingsView: View {
 
     @ViewBuilder private var calendar: some View {
         Section {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Private iCal address")
-                SecretField(name: .calendar, placeholder: "https://calendar.google.com/calendar/ical/…/basic.ics")
-                Text(calendarStatus).settingsHint(model.calendar.cache?.error != nil ? .red : .secondary)
-            }
+            SecretField(name: .calendar, title: "Private iCal address", status: calendarStatus,
+                        statusColor: model.calendar.cache?.error != nil ? .red : .secondary,
+                        placeholder: "https://calendar.google.com/calendar/ical/…/basic.ics")
             Toggle(isOn: bind(\.callReminders)) {
                 Text("Remind me before calls")
                 Text("5 minutes before each call, a notification with a button that opens the call and starts recording, ready for notes.")
@@ -196,7 +205,7 @@ struct SettingsView: View {
             .pickerStyle(.radioGroup)
             .labelsHidden()
         } header: {
-            Text("Transcription")
+            Text("Speech to text")
         } footer: {
             Text("Runs on your Mac. Audio never leaves it for transcription.").settingsHint()
         }
@@ -305,27 +314,8 @@ struct SettingsView: View {
         } header: {
             Text("Language model")
         } footer: {
-            Text("Writes summaries and to-dos, suggests names and answers questions. It runs on this Mac, and nothing from your calls is sent anywhere. A summary takes a little while to write; the transcript and your notes are saved first.")
+            Text("Writes summaries, to-dos and drafts for sharing, suggests names and answers questions. It runs on this Mac; nothing from your calls is sent anywhere.")
                 .settingsHint()
-        }
-    }
-
-    /// Whether the model thinks each task through first. For Oatcake's own models: a server of yours
-    /// decides for itself.
-    @ViewBuilder private var reasoningSection: some View {
-        if LocalModels.find(model.config.llm.model) != nil {
-            Section {
-                Toggle("Summaries", isOn: bindLlm(\.reasoning.summary))
-                if model.config.todosEnabled { Toggle("To-dos", isOn: bindLlm(\.reasoning.todos)) }
-                Toggle("Name suggestions", isOn: bindLlm(\.reasoning.names))
-                Toggle("Ask", isOn: bindLlm(\.reasoning.ask))
-                Toggle("Drafts for sharing", isOn: bindLlm(\.reasoning.sharing))
-            } header: {
-                Text("Reasoning")
-            } footer: {
-                Text("With reasoning on, the model thinks a task through before it replies. That takes longer and isn’t always better. When Oatcake was tested, summaries gave decisions to the right person more reliably with it, names were made up less often and answers kept to the question, but to-dos lost detail. So it starts on for everything except to-dos.")
-                    .settingsHint()
-            }
         }
     }
 
@@ -337,38 +327,104 @@ struct SettingsView: View {
         return isLocalEndpoint(llm.own.baseUrl) ? nil : "The endpoint has to be on this Mac or your own network."
     }
 
-    /// What the model is told when it writes a summary and when it collects to-dos. Yours to change;
-    /// Oatcake's own comes back with one button.
-    @ViewBuilder private var instructionsSections: some View {
-        InstructionsSection(title: "Summary instructions", setting: \.summaryInstructions, standard: defaultSummaryInstructions,
-                            applies: "Used for summaries written from now on.",
-                            hint: "What the model is told to write once it has read the transcript. Change the headings, the level of detail or the language to suit you. To-dos are collected separately and aren’t affected.")
+    /**
+     * One section for each thing the model writes: its instructions (Oatcake's own until you change
+     * them) beside its reasoning switch, so everything about one output is in one place.
+     */
+    @ViewBuilder private var outputSections: some View {
+        Section {
+            InstructionsRow(title: "Summary instructions", setting: \.summaryInstructions, standard: defaultSummaryInstructions,
+                            applies: "Used for summaries written from now on.")
+            reasoningToggle(\.summary, detail: "Slower, but in Oatcake’s tests decisions went to the right person more reliably.")
+        } header: {
+            Text("Summary")
+        } footer: {
+            Text("What the model writes once it has read the transcript. Change the headings, the level of detail or the language.").settingsHint()
+        }
         TemplatesSections()
         if model.config.todosEnabled {
-            InstructionsSection(title: "To-do instructions", setting: \.todoInstructions, standard: defaultTodoInstructions,
-                                applies: "Used for to-dos collected from now on.",
-                                hint: "What the model is told counts as a to-do. Make it stricter or looser, or keep it to your own action items (“Only list what John agreed to do”). Each to-do still comes with its owner, due date and time in the call.")
+            Section {
+                InstructionsRow(title: "To-do instructions", setting: \.todoInstructions, standard: defaultTodoInstructions,
+                                applies: "Used for to-dos collected from now on.")
+                reasoningToggle(\.todos, detail: "Slower, and in Oatcake’s tests to-dos lost detail, so it starts off.")
+            } header: {
+                Text("To-dos")
+            } footer: {
+                Text("What counts as a to-do. Each still comes with its owner, due date and time in the call.").settingsHint()
+            }
         }
-        InstructionsSection(title: "Draft for sharing instructions", setting: \.sharingInstructions, standard: defaultSharingInstructions,
-                            applies: "Used for drafts written from now on.",
-                            hint: "What the model is told when it turns a meeting’s summary and to-dos into a draft for sharing (Draft for Sharing… in a meeting). It reads only the summary and to-dos as they are, not the transcript or your notes.")
+        Section {
+            InstructionsRow(title: "Draft for sharing instructions", setting: \.sharingInstructions, standard: defaultSharingInstructions,
+                            applies: "Used for drafts written from now on.")
+            reasoningToggle(\.sharing, detail: "Slower. It starts on, as for summaries.")
+        } header: {
+            Text("Draft for sharing")
+        } footer: {
+            Text("Draft for Sharing… in a meeting rewrites its \(model.config.todosEnabled ? "summary and to-dos" : "summary") for other people. It doesn’t read the transcript or your notes.").settingsHint()
+        }
+        Section {
+            reasoningToggle(\.names, title: "Name suggestions", detail: "Slower, but in Oatcake’s tests names were made up less often.")
+            reasoningToggle(\.ask, title: "Ask", detail: "Slower, but in Oatcake’s tests answers kept to the question more.")
+        } header: {
+            Text("Reasoning for name suggestions and Ask")
+        }
+    }
+
+    /**
+     * Whether the model thinks a task through before it replies. Only Oatcake's own models are told:
+     * a server of yours decides for itself, so the switch is shown but can't be changed.
+     */
+    private func reasoningToggle(_ task: WritableKeyPath<LlmConfig.Reasoning, Bool>, title: String = "Reasoning", detail: String) -> some View {
+        let own = LocalModels.find(model.config.llm.model) == nil
+        let reasoning: WritableKeyPath<LlmConfig, LlmConfig.Reasoning> = \.reasoning
+        return Toggle(isOn: bindLlm(reasoning.appending(path: task))) {
+            Text(title)
+            Text(own ? "A model server of your own decides this for itself." : "The model thinks it through before replying. \(detail)")
+        }
+        .disabled(own)
     }
 }
 
-/// One of the model's sets of instructions, to edit. Saved as it's typed.
-private struct InstructionsSection: View {
+/**
+ * One of the model's sets of instructions, as a row saying whose they are. Edit… opens them below it,
+ * saved as they're typed; Restore Default… brings Oatcake's own back.
+ */
+private struct InstructionsRow: View {
     @Environment(AppModel.self) private var model
     let title: String
     let setting: WritableKeyPath<Config, String>
     /// Oatcake's own wording.
     let standard: String
     let applies: String
-    let hint: String
     @ViewState private var text = ""
+    @ViewState private var editing = false
     @ViewState private var restoring = false
 
     var body: some View {
-        Section {
+        LabeledContent {
+            HStack {
+                // It only does anything when the instructions have been changed, and then it asks: they're yours.
+                if editing {
+                    Button("Restore Default…") { restoring = true }.disabled(text.trimmed == standard.trimmed)
+                        .alert("Restore Oatcake’s own \(title.lowercased())?", isPresented: $restoring) {
+                            Button("Restore Default", role: .destructive) { text = standard }
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("The instructions you’ve written here are replaced, and can’t be brought back.")
+                        }
+                }
+                Button(editing ? "Done" : "Edit…") { editing.toggle() }
+                    .accessibilityLabel(editing ? "Done editing \(title.lowercased())" : "Edit \(title.lowercased())")
+            }
+        } label: {
+            Text(model.config[keyPath: setting].trimmed.isEmpty ? "Oatcake’s own instructions" : "Your instructions")
+            Text(applies)
+        }
+        .onAppear {
+            let custom = model.config[keyPath: setting].trimmed
+            text = custom.isEmpty ? standard : custom
+        }
+        if editing {
             TextEditor(text: $text)
                 .font(.system(.callout, design: .monospaced))
                 .frame(minHeight: 120)
@@ -379,28 +435,14 @@ private struct InstructionsSection: View {
                     let custom = text.trimmed == standard.trimmed ? "" : text
                     if custom != model.config[keyPath: setting] { model.saveConfig(with(model.config) { $0[keyPath: setting] = custom }) }
                 }
-            LabeledContent {
-                // It only does anything when the instructions have been changed, and then it asks: they're yours.
-                Button("Restore Default…") { restoring = true }.disabled(text.trimmed == standard.trimmed)
-                    .alert("Restore Oatcake’s own \(title.lowercased())?", isPresented: $restoring) {
-                        Button("Restore Default", role: .destructive) { text = standard }
-                        Button("Cancel", role: .cancel) {}
-                    } message: {
-                        Text("The instructions you’ve written here are replaced, and can’t be brought back.")
-                    }
-            } label: {
-                Text(model.config[keyPath: setting].trimmed.isEmpty ? "Oatcake’s own instructions" : "Your instructions")
-                Text(applies)
-            }
-        } header: {
-            Text(title)
-        } footer: {
-            Text(hint).settingsHint()
         }
-        .onAppear {
-            let custom = model.config[keyPath: setting].trimmed
-            text = custom.isEmpty ? standard : custom
-        }
+    }
+
+    init(title: String, setting: WritableKeyPath<Config, String>, standard: String, applies: String) {
+        self.title = title
+        self.setting = setting
+        self.standard = standard
+        self.applies = applies
     }
 }
 
@@ -422,7 +464,7 @@ private struct TemplatesSections: View {
         } header: {
             Text("Summary templates")
         } footer: {
-            Text("Other summary instructions, each with a name: for a one-to-one you lead, say, or one with your own lead. A meeting keeps the template you regenerate it with; the others use the summary instructions above. The summary starts at the model’s first ‘## ’ heading, so anything it writes before that is left out.")
+            Text("Other summary instructions, each with a name: for a one-to-one you lead, say. A meeting keeps the template you regenerate it with; the rest use the summary instructions.")
                 .settingsHint()
         }
         ForEach(model.config.summaryTemplates, id: \.name) { template in
@@ -576,7 +618,7 @@ private struct TestRow: View {
     }
 }
 
-/// Settings › Summaries: whether the chosen model is on this Mac, with its download or removal.
+/// Settings › Models: whether the chosen model is on this Mac, with its download or removal.
 private struct ModelRow: View {
     @Environment(AppModel.self) private var model
     let chosen: LocalModel
@@ -676,9 +718,16 @@ private struct ImportRow: View {
 private struct SecretField: View {
     @Environment(AppModel.self) private var model
     let name: SecretName
+    let title: String
+    /// What's known of it beyond being saved: the calendar's last fetch, say.
+    let status: String
+    var statusColor: Color = .secondary
     let placeholder: String
     @ViewState private var draft = ""
     @ViewState private var shown = false
+    /// The field is open: a saved one is never shown again, so it's only there while one is typed.
+    /// Opened only when asked for, since macOS offers passwords for a secure field as soon as it has the keyboard.
+    @ViewState private var entering = false
     @ViewState private var described = (saved: false, hint: "")
     @ViewState private var pause: Task<Void, Never>?
     /// Why the last save or removal didn't work (the file couldn't be written), shown under the field.
@@ -687,52 +736,65 @@ private struct SecretField: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Group {
-                    if shown {
-                        TextField("", text: $draft, prompt: Text(prompt))
-                    } else {
-                        SecureField("", text: $draft, prompt: Text(prompt))
-                    }
-                }
-                .textFieldStyle(.roundedBorder)
-                .font(.system(.body, design: .monospaced))
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity)
-                .focused($focused)
-                // The field has no label of its own beside it for VoiceOver to read.
-                .accessibilityLabel(described.saved ? "Calendar’s private address, saved. Type a new one to replace it" : "Calendar’s private address")
-                .help(described.saved ? "Paste a new one to replace it" : "")
-                .onSubmit { save(done: true) }
-                .onChange(of: draft) {
-                    pause?.cancel()
-                    let value = draft
-                    pause = Task {
-                        try? await Task.sleep(for: .seconds(1.2))
-                        if !Task.isCancelled, value == draft { save(done: false) }
-                    }
-                }
-                .onChange(of: focused) { if !focused { save(done: true) } }
-                // A saved one can't be shown, so the eye only appears while typing a new one.
-                if !draft.isEmpty {
-                    Button { shown.toggle() } label: { Image(systemName: shown ? "eye.slash" : "eye") }
-                        .buttonStyle(.borderless).help("Show or hide what you're typing").accessibilityLabel(shown ? "Hide what you’re typing" : "Show what you’re typing")
-                }
-                if described.saved {
-                    // Asked first: a saved address can't be shown again, only copied afresh from the calendar.
-                    Button("Remove…") { removing = true }
-                        .help("Delete the saved one")
-                        .alert("Remove the calendar’s address?", isPresented: $removing) {
-                            Button("Remove", role: .destructive) {
-                                problem = model.setSecret(name, "")
-                                draft = ""
-                                load()
+        VStack(alignment: .leading, spacing: 8) {
+            LabeledContent {
+                HStack {
+                    if entering {
+                        // With nothing typed it just closes; with something, it's saved first and stays open if that fails.
+                        Button("Done") { if draft.trimmed.isEmpty { entering = false } else { save(done: true) } }
+                    } else if described.saved {
+                        Button("Replace…") { enter() }.help("Paste a new one in place of the saved one")
+                        // Asked first: a saved address can't be shown again, only copied afresh from the calendar.
+                        Button("Remove…") { removing = true }
+                            .help("Delete the saved one")
+                            .alert("Remove the calendar’s address?", isPresented: $removing) {
+                                Button("Remove", role: .destructive) {
+                                    problem = model.setSecret(name, "")
+                                    draft = ""
+                                    load()
+                                }
+                                Button("Cancel", role: .cancel) {}
+                            } message: {
+                                Text("Upcoming and call reminders stop. Oatcake can’t show the address again: to connect the calendar later, copy it from your calendar’s settings as you did before.")
                             }
-                            Button("Cancel", role: .cancel) {}
-                        } message: {
-                            Text("Upcoming and call reminders stop. Oatcake can’t show the address again: to connect the calendar later, copy it from your calendar’s settings as you did before.")
+                    } else {
+                        Button("Add…") { enter() }
+                    }
+                }
+            } label: {
+                Text(title)
+                Text(described.hint.isEmpty ? status : "\(described.hint) · \(status)").foregroundStyle(statusColor)
+            }
+            if entering {
+                HStack(spacing: 6) {
+                    Group {
+                        if shown {
+                            TextField("", text: $draft, prompt: Text(placeholder))
+                        } else {
+                            SecureField("", text: $draft, prompt: Text(placeholder))
                         }
+                    }
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(maxWidth: .infinity)
+                    .focused($focused)
+                    // The field has no label of its own beside it for VoiceOver to read.
+                    .accessibilityLabel(described.saved ? "New calendar private address, to replace the saved one" : "Calendar’s private address")
+                    .onSubmit { save(done: true) }
+                    .onChange(of: draft) {
+                        pause?.cancel()
+                        let value = draft
+                        pause = Task {
+                            try? await Task.sleep(for: .seconds(1.2))
+                            if !Task.isCancelled, value == draft { save(done: false) }
+                        }
+                    }
+                    .onChange(of: focused) { if !focused { save(done: true) } }
+                    // A saved one can't be shown, so the eye only appears while typing a new one.
+                    if !draft.isEmpty {
+                        Button { shown.toggle() } label: { Image(systemName: shown ? "eye.slash" : "eye") }
+                            .buttonStyle(.borderless).help("Show or hide what you're typing").accessibilityLabel(shown ? "Hide what you’re typing" : "Show what you’re typing")
+                    }
                 }
             }
             if let problem {
@@ -742,7 +804,11 @@ private struct SecretField: View {
         .onAppear(perform: load)
     }
 
-    private var prompt: String { described.saved ? described.hint : described.hint.isEmpty ? placeholder : described.hint }
+    private func enter() {
+        problem = nil
+        entering = true
+        DispatchQueue.main.async { focused = true }
+    }
 
     private func load() { described = Secrets.describe(name) }
 
@@ -750,8 +816,11 @@ private struct SecretField: View {
         pause?.cancel()
         guard !draft.trimmed.isEmpty else { return }
         problem = model.setSecret(name, draft)
-        // What couldn't be saved stays in the field, to try again.
-        if done, problem == nil { draft = "" }
+        // What couldn't be saved stays in the field, to try again; what could closes it.
+        if done, problem == nil {
+            draft = ""
+            entering = false
+        }
         load()
     }
 }
