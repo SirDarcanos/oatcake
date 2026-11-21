@@ -145,7 +145,8 @@ voices by FluidAudio's batch diariser (pyannote segmentation, WeSpeaker fingerpr
 clustering). It runs as a helper process (`Oatcake --analyse`), so a problem there can't take the
 window or a recording in progress with it. Mic lines that repeat the call audio (speaker echo) are
 dropped. Known voices are recognised from saved voiceprints; other names are suggested from the
-conversation by the summary model, quoting the words that gave it away. The recording waits under
+conversation by the summary model, quoting the words that gave it away (not when After a call is set
+to save the transcript only: see [Saving without Who's who](#saving-without-whos-who)). The recording waits under
 Needs review with its step (1–5), and the Dock icon's badge counts the recordings waiting there. A
 failure shows the reason, with **Try again** and **Discard…**; **Discard…** is in the toolbar while
 it's processing and on Who's who as well.
@@ -168,7 +169,9 @@ waiting here: **Save with a summary**, or **Save the transcript only** (no summa
 Voices Oatcake is sure it recognises from before keep their names (a closer match than this screen
 asks for, since nobody is looking), and every other voice is "Voice 1", "Voice 2"…, whatever the
 model guessed from the conversation: a guess, or a match that wasn't sure enough, waits on the
-voice's card as a suggestion. No voice is remembered from names nobody checked.
+voice's card as a suggestion. **Save the transcript only** doesn't ask the model for names at all, so
+the call is saved as soon as it's processed and only a match that wasn't sure enough waits as a
+suggestion. No voice is remembered from names nobody checked.
 
 The meeting says it was saved without checking who's who: **Name voices…** opens this screen for
 it, and **Update meeting** writes its transcript and `meeting.json` again in place, puts the new

@@ -137,11 +137,15 @@ final class Jobs {
                 }
             }
             // Step 5, here rather than in the helper: the language model is the app's to run. A model
-            // that's still downloading isn't waited for; the names can be typed.
+            // that's still downloading isn't waited for; the names can be typed. Saving the transcript only
+            // asks nothing of the model: the call is saved without its guesses anyway (suggestedDecisions),
+            // and waiting for them held the save up. Naming its voices later starts without them.
             if outcome?.done == true, Recordings.get(id) != nil, !Task.isCancelled, hasUnnamedVoices(rec.dir) {
-                progress[id] = JobProgress(stage: .suggestingNames)
                 if let chosenModel = downloads.chosenModel, !LocalModels.isDownloaded(chosenModel) { downloads.downloadModel(chosenModel) }
-                await suggestNames(rec.dir, config: config)
+                if config.afterCall != .saveTranscript {
+                    progress[id] = JobProgress(stage: .suggestingNames)
+                    await suggestNames(rec.dir, config: config)
+                }
             }
             analysing.remove(id)
             analyses.removeValue(forKey: id)
