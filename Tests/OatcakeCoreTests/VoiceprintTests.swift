@@ -30,6 +30,7 @@ import Testing
         #expect(throws: OatcakeError.self) { try mergeVoice("Nobody", into: "Jane", file: file) }
         #expect(knownVoices(file).map(\.name) == ["Jane", "John Smith"])
         // Both were saved from call c: one fingerprint for it, the one that was already John Smith's.
+        #expect(mergedFingerprints("Jane", into: "John Smith", file: file) == 4)
         try mergeVoice("Jane", into: "John Smith", file: file)
         #expect(knownVoices(file).map(\.name) == ["John Smith"] && knownVoices(file).first?.calls == 4)
         let merged = Voiceprints.load(file).people["John Smith"]?.samples ?? []

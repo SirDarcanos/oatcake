@@ -758,7 +758,7 @@ private struct PeopleSection: View {
     @ViewState private var renaming: KnownVoice?
     @ViewState private var forgetting: KnownVoice?
     /// Who's being merged, and into whom: asked first, as the two can't be told apart again.
-    @ViewState private var merging: (voice: KnownVoice, into: KnownVoice)?
+    @ViewState private var merging: (voice: KnownVoice, into: KnownVoice, dropsOldest: Bool)?
     @ViewState private var draft = ""
     @ViewState private var error = ""
 
@@ -777,7 +777,9 @@ private struct PeopleSection: View {
                         if voices.count > 1 {
                             Menu("Merge Into") {
                                 ForEach(voices.filter { $0.name != voice.name }) { other in
-                                    Button(other.name) { merging = (voice, other) }
+                                    Button(other.name) {
+                                        merging = (voice, other, mergedFingerprints(voice.name, into: other.name) > maxSamplesPerPerson)
+                                    }
                                 }
                             }
                             .fixedSize()
@@ -812,9 +814,8 @@ private struct PeopleSection: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             if let m = merging {
-                let dropped = m.voice.calls + m.into.calls > maxSamplesPerPerson
                 Text("Oatcake recognises both voices as \(m.into.name) from now on, and \(m.voice.name) is no longer listed. Meetings already saved keep the names they have."
-                     + (dropped ? " Oatcake keeps \(maxSamplesPerPerson) fingerprints for one person, so the oldest of theirs go." : ""))
+                     + (m.dropsOldest ? " Oatcake keeps \(maxSamplesPerPerson) fingerprints for one person, so the oldest of theirs go." : ""))
             }
         }
         .alert("Forget \(forgetting?.name ?? "")?", isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } })) {
