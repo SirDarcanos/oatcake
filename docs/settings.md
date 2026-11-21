@@ -86,6 +86,12 @@ first; renaming to a name that's already there does the same. **Forget…** stop
 them. Meetings already saved keep the names they were saved with (to change
 one meeting's, use [Rename Speakers](how-it-works.md#rename-speakers)).
 
+Click someone's avatar to choose their colour from the palette's twelve: it's theirs everywhere,
+in avatars and in names in transcripts. Oatcake otherwise gives each first name a colour the first
+time it sees it, so a colour you choose is kept for the full name, and two people called Jane can
+have different ones. **Use the colour Oatcake gave them** goes back to that. Renaming someone takes
+their chosen colour with them, and so does merging them into someone who hasn't one.
+
 ## Models
 
 - **Speech to text:** Parakeet English, or Parakeet for 25 European languages

@@ -830,6 +830,42 @@ private struct SecretField: View {
     }
 }
 
+/// The palette, to choose someone's colour from: it's theirs on every screen from then on.
+private struct ColorChoice: View {
+    let name: String
+    let done: () -> Void
+
+    var body: some View {
+        let chosen = chosenColor(name)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("\(name)’s colour").font(.headline)
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(26), spacing: 8), count: 6), spacing: 8) {
+                ForEach(paletteColors.indices, id: \.self) { i in
+                    Button {
+                        chooseColor(i, for: name)
+                        done()
+                    } label: {
+                        Circle().fill(paletteColors[i]).frame(width: 22, height: 22)
+                            .overlay(Circle().strokeBorder(Color.primary, lineWidth: 2).padding(-3).opacity(chosen == i ? 1 : 0))
+                    }
+                    .buttonStyle(.plain)
+                    .help(hueNames[i])
+                    .accessibilityLabel(hueNames[i])
+                    .accessibilityAddTraits(chosen == i ? .isSelected : [])
+                }
+            }
+            if chosen != nil {
+                Button("Use the colour Oatcake gave them") {
+                    chooseColor(nil, for: name)
+                    done()
+                }
+                .buttonStyle(.link)
+            }
+        }
+        .padding(16)
+    }
+}
+
 /// Settings › People: the voices Oatcake recognises, to rename or forget.
 private struct PeopleSection: View {
     @ViewState private var voices: [KnownVoice] = []
@@ -837,6 +873,8 @@ private struct PeopleSection: View {
     @ViewState private var forgetting: KnownVoice?
     /// Who's being merged, and into whom: asked first, as the two can't be told apart again.
     @ViewState private var merging: (voice: KnownVoice, into: KnownVoice, dropsOldest: Bool)?
+    /// Whose colour is being chosen.
+    @ViewState private var coloring: String?
     @ViewState private var draft = ""
     @ViewState private var error = ""
 
@@ -848,6 +886,13 @@ private struct PeopleSection: View {
             ForEach(voices) { voice in
                 LabeledContent {
                     HStack {
+                        Button { coloring = voice.name } label: { Avatar(name: voice.name, size: 22) }
+                            .buttonStyle(.plain)
+                            .help("Choose \(voice.name)’s colour")
+                            .accessibilityLabel("\(voice.name)’s colour")
+                            .popover(isPresented: Binding(get: { coloring == voice.name }, set: { if !$0 { coloring = nil } }), arrowEdge: .bottom) {
+                                ColorChoice(name: voice.name) { coloring = nil }
+                            }
                         Button("Rename…") {
                             draft = voice.name
                             renaming = voice
@@ -874,13 +919,20 @@ private struct PeopleSection: View {
         } header: {
             Text("People")
         } footer: {
-            Text("Oatcake recognises these voices on calls. Renaming changes the name it uses from now on; meetings already saved keep the name they were saved with. Merge Into makes two people one, under the name you pick.")
+            Text("Oatcake recognises these voices on calls. Click someone’s avatar to choose their colour. Renaming changes the name it uses from now on; meetings already saved keep the name they were saved with. Merge Into makes two people one, under the name you pick.")
                 .settingsHint()
         }
         .onAppear(perform: load)
         .alert("Rename \(renaming?.name ?? "")", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $draft)
-            Button("Rename") { if let voice = renaming { change { try renameVoice(voice.name, to: draft) } } }
+            Button("Rename") {
+                if let voice = renaming {
+                    change {
+                        try renameVoice(voice.name, to: draft)
+                        carryChosenColor(from: voice.name, to: draft.trimmed)
+                    }
+                }
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
             if let voice = renaming, draft.trimmed != voice.name, voices.contains(where: { $0.name == draft.trimmed }) {
@@ -888,7 +940,14 @@ private struct PeopleSection: View {
             }
         }
         .alert(merging.map { "Merge \($0.voice.name) into \($0.into.name)?" } ?? "", isPresented: Binding(get: { merging != nil }, set: { if !$0 { merging = nil } })) {
-            Button("Merge", role: .destructive) { if let m = merging { change { try mergeVoice(m.voice.name, into: m.into.name) } } }
+            Button("Merge", role: .destructive) {
+                if let m = merging {
+                    change {
+                        try mergeVoice(m.voice.name, into: m.into.name)
+                        carryChosenColor(from: m.voice.name, to: m.into.name)
+                    }
+                }
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
             if let m = merging {

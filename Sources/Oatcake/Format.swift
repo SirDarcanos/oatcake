@@ -103,16 +103,55 @@ func otherAttendees(_ event: CalendarEvent, myName: String) -> [CalendarEvent.At
 /// Labels that aren't a person: their avatars are grey.
 private let notAPerson = #"^(Voice \d+|Several people|Microphone|System audio|Call audio|Unknown)$"#
 private let hues: [Double] = [265, 25, 160, 330, 200, 60, 295, 130, 230, 0, 95, 180]
+/// What each hue is called, for choosing one (Settings › People).
+let hueNames = ["Indigo", "Red", "Green", "Magenta", "Sky", "Orange", "Purple", "Leaf", "Blue", "Raspberry", "Mustard", "Teal"]
 private let colorsKey = "personColors"
+/// Colours you chose, by full name: apart from the first-name colours above, which a one-word name
+/// ("Jane") would otherwise share with everyone of that first name.
+private let chosenColorsKey = "personChosenColors"
+/// Bumped when you choose someone's colour, so avatars already on screen take it straight away.
+let colorsChangedKey = "personColorsChanged"
+
+/// The first-name key a colour is remembered under, and the full name's, for a colour you chose.
+private func firstNameKey(_ name: String) -> String { (name.trimmed.split(separator: " ").first.map(String.init) ?? name).lowercased() }
+private func fullNameKey(_ name: String) -> String { name.trimmed.lowercased() }
+
+/// The palette's colours as avatars show them, in its order.
+var paletteColors: [Color] { hues.map { oklch(0.55, 0.15, $0) } }
+
+/// The colour you chose for someone in Settings › People (an index into the palette), if you did.
+func chosenColor(_ name: String) -> Int? {
+    let chosen = (UserDefaults.standard.dictionary(forKey: chosenColorsKey) as? [String: Int]) ?? [:]
+    return chosen[fullNameKey(name)].flatMap { hues.indices.contains($0) ? $0 : nil }
+}
+
+/// Chooses someone's colour (nil: back to the one Oatcake gave them). It's kept under their full
+/// name, ahead of the one their first name has, so two people called Jane can have different colours.
+func chooseColor(_ index: Int?, for name: String) {
+    var chosen = (UserDefaults.standard.dictionary(forKey: chosenColorsKey) as? [String: Int]) ?? [:]
+    chosen[fullNameKey(name)] = index
+    UserDefaults.standard.set(chosen, forKey: chosenColorsKey)
+    UserDefaults.standard.set(UserDefaults.standard.integer(forKey: colorsChangedKey) + 1, forKey: colorsChangedKey)
+}
+
+/// A chosen colour goes with the name when someone is renamed or merged into someone else in Settings ›
+/// People, unless the name they now go by has one. The old name keeps it too: meetings already saved
+/// still use that name.
+func carryChosenColor(from old: String, to new: String) {
+    guard let index = chosenColor(old), chosenColor(new) == nil else { return }
+    chooseColor(index, for: new)
+}
 
 /**
  * Each person keeps one colour everywhere and for good: the first time a name is seen it takes the
  * palette's least-used hue (in the order above, which spreads early picks around the wheel), and that
- * choice is remembered. Keyed by first name, so "Jane" and "Jane Doe" match.
+ * choice is remembered. Keyed by first name, so "Jane" and "Jane Doe" match, unless you've chosen a
+ * colour for the full name.
  */
 private func hueFor(_ name: String, remember: Bool) -> Double {
     var all = (UserDefaults.standard.dictionary(forKey: colorsKey) as? [String: Int]) ?? [:]
-    let key = (name.trimmed.split(separator: " ").first.map(String.init) ?? name).lowercased()
+    if let chosen = chosenColor(name) { return hues[chosen] }
+    let key = firstNameKey(name)
     if let i = all[key], hues.indices.contains(i) { return hues[i] }
     let uses = hues.indices.map { i in all.values.filter { $0 == i }.count }
     let index = uses.firstIndex(of: uses.min()!)!
@@ -145,9 +184,9 @@ private func provisionalHues(_ names: [String]) -> [String: Double] {
     var taken: [String: Int] = [:]
     var out: [String: Double] = [:]
     for name in names where !name.trimmed.isEmpty && name.range(of: notAPerson, options: .regularExpression) == nil {
-        let key = (name.trimmed.split(separator: " ").first.map(String.init) ?? name).lowercased()
+        let key = firstNameKey(name)
         let index: Int
-        if let known = all[key] ?? taken[key], hues.indices.contains(known) {
+        if let known = chosenColor(name) ?? all[key] ?? taken[key], hues.indices.contains(known) {
             index = known
         } else {
             index = uses.firstIndex(of: uses.min()!)!
