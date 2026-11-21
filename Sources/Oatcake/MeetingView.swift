@@ -65,6 +65,8 @@ struct MeetingView: View {
     @ViewState private var pending: [FileKey: String] = [:]
     @ViewState private var saveTask: Task<Void, Never>?
     @ViewState private var arrived = false
+    /// Whether the tab has been checked against this meeting yet (the view is made afresh for each meeting).
+    @ViewState private var tabChecked = false
     @ViewState private var finding = false
     @ViewState private var query = ""
     @ViewState private var match = 0
@@ -135,8 +137,12 @@ struct MeetingView: View {
         do {
             let m = try model.library.readMeeting(path)
             files = [.summary: m.summary, .transcript: m.transcript, .notes: m.notes, .todos: m.todo, .draft: m.draft]
-            // Arriving on Draft for Sharing from a meeting that had one, at one that doesn't.
-            if tab == .draft && !hasDraft { tab = .summary }
+            // Arriving on Draft for Sharing from a meeting that had one, at one that doesn't. Only on
+            // arrival: a draft emptied here, to be written again by hand, keeps its tab meanwhile.
+            if !tabChecked {
+                tabChecked = true
+                if tab == .draft && !hasDraft { tab = .summary }
+            }
             readTranscript(m.transcript)
             meta = m.meta
             loadError = ""
@@ -216,7 +222,10 @@ struct MeetingView: View {
         !(files?[.draft] ?? "").trimmed.isEmpty || model.jobs.drafting.contains(path) || model.jobs.draftErrors[path] != nil
     }
 
-    private var tabs: [MeetingTab] { hasDraft ? MeetingTab.allCases : MeetingTab.allCases.filter { $0 != .draft } }
+    /// The Draft for Sharing tab shows while there's a draft, and while you're on it.
+    private var showsDraftTab: Bool { hasDraft || tab == .draft }
+
+    private var tabs: [MeetingTab] { showsDraftTab ? MeetingTab.allCases : MeetingTab.allCases.filter { $0 != .draft } }
 
     private func switchTab(_ t: MeetingTab) {
         flush()
@@ -243,7 +252,7 @@ struct MeetingView: View {
                 Text("Summary").tag(MeetingTab.summary).help("⌘1")
                 Text("Transcript").tag(MeetingTab.transcript).help("⌘2")
                 Text("My notes").tag(MeetingTab.notes).help("⌘3")
-                if hasDraft { Text("Draft for Sharing").tag(MeetingTab.draft).help("⌘4") }
+                if showsDraftTab { Text("Draft for Sharing").tag(MeetingTab.draft).help("⌘4") }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -596,6 +605,13 @@ struct MeetingView: View {
                     }
                     .disabled((files?[.summary] ?? "").trimmed.isEmpty || model.jobs.summarising.contains(path))
                     SettingsPaneLink(pane: "summaries", title: "Open Settings").buttonStyle(.link)
+                    // Put aside: without a draft there's nothing else on this tab, so it goes too.
+                    Button("Dismiss") {
+                        model.jobs.draftErrors.removeValue(forKey: path)
+                        model.jobs.draftRequests.removeValue(forKey: path)
+                        if (files?[.draft] ?? "").trimmed.isEmpty { switchTab(.summary) }
+                    }
+                    .buttonStyle(.link)
                 }
                 .padding(.top, 6)
             }.padding(.bottom, 16)
