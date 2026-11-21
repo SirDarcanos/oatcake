@@ -213,7 +213,7 @@ struct LiveView: View {
     /// and the people on the calendar invite. Oatcake follows that voice for the rest of the call, and
     /// Who's who starts from it after the call.
     private func speaker(_ line: LiveTranscriptLine, myName: String, color: Color?) -> some View {
-        let given = model.recording.liveNames.first { $0.line == line.id }?.name
+        let given = liveName(for: line, in: model.recording.liveNames)?.name
         let invited = (rec.attendees ?? []).filter { $0 != myName && !knownVoices.contains($0) }
         return Menu {
             if !knownVoices.isEmpty {

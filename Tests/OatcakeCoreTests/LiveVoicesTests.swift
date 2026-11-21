@@ -64,6 +64,15 @@ import Testing
         #expect(liveNameSuggestions([named(0, 5, "Jane Doe")], turns: [], letters: [:]) == ["A": live("Jane Doe")])
     }
 
+    /// A name you gave still finds its line when the live transcript has started again and cut the call
+    /// into slightly different lines; a neighbouring line it barely touches isn't it.
+    @Test func namesFindTheirLineAgain() {
+        let given = [LiveName(line: LiveTranscriptLine(track: .system, start: 11, end: 16, text: "The build went out."), name: "Jane Smith")]
+        #expect(liveName(for: LiveTranscriptLine(track: .system, start: 10.8, end: 16.2, text: "The build went out."), in: given)?.name == "Jane Smith")
+        #expect(liveName(for: LiveTranscriptLine(track: .system, start: 15.5, end: 19, text: "Great, thanks."), in: given) == nil)
+        #expect(liveName(for: LiveTranscriptLine(track: .mic, start: 11, end: 16, text: "Yes."), in: given) == nil)
+    }
+
     /// The names you give are kept in the recording, line by line, and an older live line (without a
     /// speaker) still reads.
     @Test func namesAreKept() throws {

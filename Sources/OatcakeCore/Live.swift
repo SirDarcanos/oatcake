@@ -79,6 +79,19 @@ public struct LiveName: Codable, Equatable, Sendable {
     }
 }
 
+/**
+ * The name you gave a line of the call side, if you did: the one given to that line or, when the
+ * live transcript has started again and cut the call into lines afresh, the one given to the line
+ * that covered most of this one (at least half of the shorter of the two).
+ */
+public func liveName(for line: LiveTranscriptLine, in given: [LiveName]) -> LiveName? {
+    if let same = given.last(where: { $0.line == line.id }) { return same }
+    func overlap(_ name: LiveName) -> Double { min(name.end, line.end) - max(name.start, line.start) }
+    return given
+        .filter { line.track == .system && overlap($0) > 0 && overlap($0) >= 0.5 * min($0.end - $0.start, line.end - line.start) }
+        .max { overlap($0) < overlap($1) }
+}
+
 public enum LiveNames {
     static let file = "live-names.json"
 
@@ -206,6 +219,7 @@ public func transcribeLive(_ dir: URL, config: Config = Config.load(), voiceprin
     if config.liveVoices { fingerprints = try? await SpeechModels.loadDiarizer(live: true) }
     let known = Voiceprints.load(voiceprints)
     var voices: [LiveVoice] = []
+    var calls: [LiveTranscriptLine] = []
     var given: [LiveName] = []
     var shown: [String: String] = [:]
     report(LiveEvent(stage: .listening))
@@ -225,19 +239,26 @@ public func transcribeLive(_ dir: URL, config: Config = Config.load(), voiceprin
             let offset = Double(done[i].samples) / Double(sampleRate)
             let new = utterances.map { LiveTranscriptLine(track: done[i].track, start: $0.start + offset, end: $0.end + offset, text: $0.text) }
             if let fingerprints, done[i].track == .system, !utterances.isEmpty,
-               let prints = try? await fingerprints.embedSpans(audioSource: ArrayAudioSampleSource(samples: fresh), spans: utterances.map { $0.start..<$0.end }) {
+               let prints = try? await fingerprints.embedSpans(audioSource: ArrayAudioSampleSource(samples: fresh), spans: utterances.map { $0.start..<$0.end }),
+               prints.count == new.count {
                 voices += zip(new, prints).map { LiveVoice(line: $0.id, embedding: $1, known: known) }
             }
             lines += new
             done[i].samples += consumed
         }
-        if fingerprints != nil {
+        // Names follow your choices even without fingerprints (the voice models wouldn't load, or a
+        // line couldn't be fingerprinted): a name you give or take back is shown on its line either way.
+        if config.liveVoices {
             let now = LiveNames.load(dir)
+            calls += lines.filter { $0.track == .system }
             if !lines.isEmpty || now != given {
                 given = now
-                let names = nameLiveVoices(voices, named: Dictionary(given.map { ($0.line, $0.name) }, uniquingKeysWith: { _, last in last }))
+                var named: [String: String] = [:]
+                for line in calls { if let name = liveName(for: line, in: given) { named[line.id] = name.name } }
+                var names = nameLiveVoices(voices, named: named)
+                names.merge(named) { _, yours in yours }
                 let new = Set(lines.map(\.id))
-                let changed = voices.map(\.line).filter { !new.contains($0) && names[$0] != shown[$0] }
+                let changed = calls.map(\.id).filter { !new.contains($0) && names[$0] != shown[$0] }
                 if !changed.isEmpty { report(LiveEvent(names: changed.map { LiveSpeaker(line: $0, name: names[$0]) })) }
                 for i in lines.indices { lines[i].speaker = names[lines[i].id] }
                 shown = names

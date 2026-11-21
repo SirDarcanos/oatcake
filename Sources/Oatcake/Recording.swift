@@ -615,7 +615,8 @@ final class RecordingController {
     /// recording, where the helper follows it for the rest of the call and Who's who finds it after.
     func nameLiveLine(_ line: LiveTranscriptLine, as name: String?) {
         guard let live else { return }
-        var names = liveNames.filter { $0.line != line.id }
+        // Whatever was given for this line, also under the line it was before the transcript started again.
+        var names = liveNames.filter { liveName(for: line, in: [$0]) == nil }
         if let name { names.append(LiveName(line: line, name: name)) }
         do {
             try LiveNames.save(names, in: live.dir)
