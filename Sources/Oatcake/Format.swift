@@ -106,6 +106,9 @@ private let hues: [Double] = [265, 25, 160, 330, 200, 60, 295, 130, 230, 0, 95, 
 /// What each hue is called, for choosing one (Settings › People).
 let hueNames = ["Indigo", "Red", "Green", "Magenta", "Sky", "Orange", "Purple", "Leaf", "Blue", "Raspberry", "Mustard", "Teal"]
 private let colorsKey = "personColors"
+/// Colours you chose, by full name: apart from the first-name colours above, which a one-word name
+/// ("Jane") would otherwise share with everyone of that first name.
+private let chosenColorsKey = "personChosenColors"
 /// Bumped when you choose someone's colour, so avatars already on screen take it straight away.
 let colorsChangedKey = "personColorsChanged"
 
@@ -118,23 +121,23 @@ var paletteColors: [Color] { hues.map { oklch(0.55, 0.15, $0) } }
 
 /// The colour you chose for someone in Settings › People (an index into the palette), if you did.
 func chosenColor(_ name: String) -> Int? {
-    let all = (UserDefaults.standard.dictionary(forKey: colorsKey) as? [String: Int]) ?? [:]
-    return all[fullNameKey(name)].flatMap { hues.indices.contains($0) ? $0 : nil }
+    let chosen = (UserDefaults.standard.dictionary(forKey: chosenColorsKey) as? [String: Int]) ?? [:]
+    return chosen[fullNameKey(name)].flatMap { hues.indices.contains($0) ? $0 : nil }
 }
 
 /// Chooses someone's colour (nil: back to the one Oatcake gave them). It's kept under their full
 /// name, ahead of the one their first name has, so two people called Jane can have different colours.
 func chooseColor(_ index: Int?, for name: String) {
-    var all = (UserDefaults.standard.dictionary(forKey: colorsKey) as? [String: Int]) ?? [:]
-    all[fullNameKey(name)] = index
-    UserDefaults.standard.set(all, forKey: colorsKey)
+    var chosen = (UserDefaults.standard.dictionary(forKey: chosenColorsKey) as? [String: Int]) ?? [:]
+    chosen[fullNameKey(name)] = index
+    UserDefaults.standard.set(chosen, forKey: chosenColorsKey)
     UserDefaults.standard.set(UserDefaults.standard.integer(forKey: colorsChangedKey) + 1, forKey: colorsChangedKey)
 }
 
-/// A chosen colour goes with the name when someone is renamed in Settings › People, unless the new name has one.
-func moveChosenColor(from old: String, to new: String) {
-    guard let index = chosenColor(old), chosenColor(new) == nil, fullNameKey(old) != fullNameKey(new) else { return }
-    chooseColor(nil, for: old)
+/// A chosen colour goes with the name when someone is renamed in Settings › People, unless the new
+/// name has one. The old name keeps it too: meetings already saved still use that name.
+func carryChosenColor(from old: String, to new: String) {
+    guard let index = chosenColor(old), chosenColor(new) == nil else { return }
     chooseColor(index, for: new)
 }
 
@@ -182,7 +185,7 @@ private func provisionalHues(_ names: [String]) -> [String: Double] {
     for name in names where !name.trimmed.isEmpty && name.range(of: notAPerson, options: .regularExpression) == nil {
         let key = firstNameKey(name)
         let index: Int
-        if let known = all[fullNameKey(name)] ?? all[key] ?? taken[key], hues.indices.contains(known) {
+        if let known = chosenColor(name) ?? all[key] ?? taken[key], hues.indices.contains(known) {
             index = known
         } else {
             index = uses.firstIndex(of: uses.min()!)!

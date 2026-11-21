@@ -825,7 +825,6 @@ private struct SecretField: View {
     }
 }
 
-/// Settings › People: the voices Oatcake recognises, to rename or forget.
 /// The palette, to choose someone's colour from: it's theirs on every screen from then on.
 private struct ColorChoice: View {
     let name: String
@@ -862,6 +861,7 @@ private struct ColorChoice: View {
     }
 }
 
+/// Settings › People: the voices Oatcake recognises, to rename or forget.
 private struct PeopleSection: View {
     @ViewState private var voices: [KnownVoice] = []
     @ViewState private var renaming: KnownVoice?
@@ -924,7 +924,7 @@ private struct PeopleSection: View {
                 if let voice = renaming {
                     change {
                         try renameVoice(voice.name, to: draft)
-                        moveChosenColor(from: voice.name, to: draft.trimmed)
+                        carryChosenColor(from: voice.name, to: draft.trimmed)
                     }
                 }
             }
