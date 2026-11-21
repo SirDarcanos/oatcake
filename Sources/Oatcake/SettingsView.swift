@@ -830,6 +830,8 @@ private struct PeopleSection: View {
     @ViewState private var voices: [KnownVoice] = []
     @ViewState private var renaming: KnownVoice?
     @ViewState private var forgetting: KnownVoice?
+    /// Who's being merged, and into whom: asked first, as the two can't be told apart again.
+    @ViewState private var merging: (voice: KnownVoice, into: KnownVoice, dropsOldest: Bool)?
     @ViewState private var draft = ""
     @ViewState private var error = ""
 
@@ -845,6 +847,17 @@ private struct PeopleSection: View {
                             draft = voice.name
                             renaming = voice
                         }
+                        if voices.count > 1 {
+                            Menu("Merge Into") {
+                                ForEach(voices.filter { $0.name != voice.name }) { other in
+                                    Button(other.name) {
+                                        merging = (voice, other, mergedFingerprints(voice.name, into: other.name) > maxSamplesPerPerson)
+                                    }
+                                }
+                            }
+                            .fixedSize()
+                            .help("Make \(voice.name) and someone else here one person, under the name you pick")
+                        }
                         Button("Forget…") { forgetting = voice }
                     }
                 } label: {
@@ -856,7 +869,7 @@ private struct PeopleSection: View {
         } header: {
             Text("People")
         } footer: {
-            Text("Oatcake recognises these voices on calls. Renaming changes the name it uses from now on; meetings already saved keep the name they were saved with. Renaming someone to a name that’s already here makes them one person.")
+            Text("Oatcake recognises these voices on calls. Renaming changes the name it uses from now on; meetings already saved keep the name they were saved with. Merge Into makes two people one, under the name you pick.")
                 .settingsHint()
         }
         .onAppear(perform: load)
@@ -867,6 +880,15 @@ private struct PeopleSection: View {
         } message: {
             if let voice = renaming, draft.trimmed != voice.name, voices.contains(where: { $0.name == draft.trimmed }) {
                 Text("\(draft.trimmed) is already here: the two become one person.")
+            }
+        }
+        .alert(merging.map { "Merge \($0.voice.name) into \($0.into.name)?" } ?? "", isPresented: Binding(get: { merging != nil }, set: { if !$0 { merging = nil } })) {
+            Button("Merge", role: .destructive) { if let m = merging { change { try mergeVoice(m.voice.name, into: m.into.name) } } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let m = merging {
+                Text("Oatcake recognises both voices as \(m.into.name) from now on, and \(m.voice.name) is no longer listed. Meetings already saved keep the names they have."
+                     + (m.dropsOldest ? " Oatcake keeps \(maxSamplesPerPerson) fingerprints for one person, so the oldest of theirs go." : ""))
             }
         }
         .alert("Forget \(forgetting?.name ?? "")?", isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } })) {

@@ -76,8 +76,10 @@ Settings, with **Open Notification Settings**.
 ## People
 
 The voices Oatcake recognises. **Rename…** one ("John" to "John Smith") to change the name it
-suggests from now on; renaming to a name that's already there makes them one person. **Forget…**
-stops it recognising them. Meetings already saved keep the names they were saved with (to change
+suggests from now on. **Merge Into** (once there are two or more) makes two people one, under the
+name you pick from its menu: both sets of fingerprints are kept, up to the 10 newest, and it asks
+first; renaming to a name that's already there does the same. **Forget…** stops it recognising
+them. Meetings already saved keep the names they were saved with (to change
 one meeting's, use [Rename Speakers](how-it-works.md#rename-speakers)).
 
 ## Models

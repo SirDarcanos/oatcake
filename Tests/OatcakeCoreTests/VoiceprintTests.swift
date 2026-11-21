@@ -13,7 +13,7 @@ import Testing
         try Voiceprints(model: voiceprintModel, people: [
             "John": .init(samples: [sample("a", "2026-11-01T10:00:00.000Z"), sample("b", "2026-11-03T10:00:00.000Z")]),
             "John Smith": .init(samples: [sample("c", "2026-11-02T10:00:00.000Z")]),
-            "Jane": .init(samples: [sample("d", "2026-11-04T10:00:00.000Z")]),
+            "Jane": .init(samples: [sample("c", "2026-11-02T11:00:00.000Z"), sample("d", "2026-11-04T10:00:00.000Z")]),
         ]).save(file)
 
         try renameVoice("John", to: "  John Smith ", file: file)
@@ -24,8 +24,20 @@ import Testing
         #expect(throws: OatcakeError.self) { try renameVoice("Nobody", to: "X", file: file) }
         #expect(throws: OatcakeError.self) { try renameVoice("Jane", to: " ", file: file) }
 
-        try forgetVoice("Jane", file: file)
-        #expect(knownVoices(file).map(\.name) == ["John Smith"])
+        // Merge Into: only between two people who are both still known.
+        #expect(throws: OatcakeError.self) { try mergeVoice("Jane", into: "Jane", file: file) }
+        #expect(throws: OatcakeError.self) { try mergeVoice("Jane", into: "Nobody", file: file) }
+        #expect(throws: OatcakeError.self) { try mergeVoice("Nobody", into: "Jane", file: file) }
+        #expect(knownVoices(file).map(\.name) == ["Jane", "John Smith"])
+        // Both were saved from call c: one fingerprint for it, the one that was already John Smith's.
+        #expect(mergedFingerprints("Jane", into: "John Smith", file: file) == 4)
+        try mergeVoice("Jane", into: "John Smith", file: file)
+        #expect(knownVoices(file).map(\.name) == ["John Smith"] && knownVoices(file).first?.calls == 4)
+        let merged = Voiceprints.load(file).people["John Smith"]?.samples ?? []
+        #expect(merged.map(\.call) == ["a", "c", "b", "d"] && merged.first { $0.call == "c" }?.at == "2026-11-02T10:00:00.000Z")
+
+        try forgetVoice("John Smith", file: file)
+        #expect(knownVoices(file).isEmpty)
 
         // A file that can't be read loads as nobody; it's kept beside the new one rather than lost to it.
         let kept = file.deletingPathExtension().appendingPathExtension("unreadable.json")
