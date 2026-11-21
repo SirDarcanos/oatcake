@@ -360,7 +360,7 @@ struct SettingsView: View {
         } header: {
             Text("Draft for sharing")
         } footer: {
-            Text("Draft for Sharing… in a meeting rewrites its summary and to-dos for other people. It doesn’t read the transcript or your notes.").settingsHint()
+            Text("Draft for Sharing… in a meeting rewrites its \(model.config.todosEnabled ? "summary and to-dos" : "summary") for other people. It doesn’t read the transcript or your notes.").settingsHint()
         }
         Section {
             reasoningToggle(\.names, title: "Name suggestions", detail: "Slower, but in Oatcake’s tests names were made up less often.")
