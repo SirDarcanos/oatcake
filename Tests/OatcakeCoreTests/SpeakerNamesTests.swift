@@ -22,6 +22,7 @@ import Testing
         try m.write("Team/2026-11-19 1000 Weekly", .transcript, transcript, meta: meta)
         try m.write("Team/2026-11-19 1000 Weekly", .summary, "## Budget\n- Jane and John looked at the budget.\n")
         try m.write("Team/2026-11-19 1000 Weekly", .todo, "- [ ] Send the budget — Jane — due Friday — [00:31]\n")
+        try m.write("Team/2026-11-19 1000 Weekly", .draft, "## Next\n- Jane sends the budget on Friday.\n")
         return (m, Meetings(root: m.root))
     }
 
@@ -52,6 +53,7 @@ import Testing
         #expect(files.transcript.contains("**[00:20] Several people:**"))
         #expect(files.summary == "## Budget\n- John and Jane looked at the budget.\n")
         #expect(files.todo == "- [ ] Send the budget — John — due Friday — [00:31]\n")
+        #expect(files.draft == "## Next\n- John sends the budget on Friday.\n")
         #expect(files.meta.participants == ["Tester", "John", "Jane"])
         // A meeting with no recording (an import) has no fingerprint to move.
         #expect(!FileManager.default.fileExists(atPath: m.root.appendingPathComponent("voiceprints.json").path))

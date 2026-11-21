@@ -65,7 +65,7 @@ extension Meetings {
         }
         guard transcript as String != files.transcript else { return }
         try write(rel, .transcript, transcript as String)
-        for (file, text) in [(MeetingFile.summary, files.summary), (.todo, files.todo)] where !text.isEmpty {
+        for (file, text) in [(MeetingFile.summary, files.summary), (.todo, files.todo), (.draft, files.draft)] where !text.isEmpty {
             let renamed = renamePeople(text, changes)
             if renamed != text { try write(rel, file, renamed) }
         }

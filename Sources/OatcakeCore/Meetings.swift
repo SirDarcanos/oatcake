@@ -60,6 +60,8 @@ public struct MeetingFiles: Equatable, Sendable {
     public var transcript: String
     public var notes: String
     public var todo: String
+    /// The draft for sharing (Draft for Sharing…), in meetings it has been written for; "" elsewhere.
+    public var draft: String
     public var meta: MeetingMeta
 }
 
@@ -75,7 +77,7 @@ public struct SearchHit: Equatable, Sendable {
 }
 
 public enum MeetingFile: String, CaseIterable, Sendable {
-    case summary = "summary.md", transcript = "transcript.md", notes = "notes.md", todo = "todo.md"
+    case summary = "summary.md", transcript = "transcript.md", notes = "notes.md", todo = "todo.md", draft = "draft.md"
 }
 
 // Sendable by its lock: `root` never changes, and the two caches below are only touched inside `lock`.
@@ -131,6 +133,7 @@ public final class Meetings: @unchecked Sendable {
                             transcript: readText(dir.appendingPathComponent("transcript.md")),
                             notes: readText(dir.appendingPathComponent("notes.md")),
                             todo: readText(dir.appendingPathComponent("todo.md")),
+                            draft: readText(dir.appendingPathComponent(MeetingFile.draft.rawValue)),
                             meta: tryJSON(MeetingMeta.self, dir.appendingPathComponent("meeting.json")) ?? MeetingMeta())
     }
 

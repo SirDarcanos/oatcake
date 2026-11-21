@@ -183,7 +183,8 @@ itself, it waits here as usual.
 The meeting is a folder in the folder you picked: `2026-11-05 1400 Weekly sync/` with
 `summary.md`, `todo.md` (action items, as `- [ ] Task — Owner — due Fri, Oct 30 — [12:34]`),
 `transcript.md`, `notes.md` (your own notes, untouched; prep notes have no time) and
-`meeting.json` (title, times, participants). A long turn in the transcript is broken at a pause
+`meeting.json` (title, times, participants), plus `draft.md` once you've written a
+[draft for sharing](#draft-for-sharing). A long turn in the transcript is broken at a pause
 about every half minute, each part with its own time.
 
 Saving doesn't involve the summary model: the meeting is written straight away with its transcript
@@ -195,7 +196,8 @@ to try again later.
 
 ### Reading and editing
 
-Tabs: Summary (with the meeting's to-dos at the top), Transcript and My notes (⌘1–⌘3), each
+Tabs: Summary (with the meeting's to-dos at the top), Transcript and My notes (⌘1–⌘3), and Draft
+for Sharing (⌘4) in a meeting that has [one](#draft-for-sharing), each
 Rendered or as editable Markdown from the switch at the top right of the note (saved as you type;
 Summary shows `todo.md` and `summary.md`). **Copy** puts the tab you're on (the summary with its
 to-dos, the transcript, or your notes) on the clipboard under the meeting's title and date,
@@ -211,6 +213,19 @@ lists them: the meeting's summary is written with the one you pick, and the meet
 any summary written of it later. Only that part is asked for and replaced, edits and ticks
 included; the rest of the meeting stays as it is. The old one stays until the new one is ready,
 and stays if it fails or is changed somewhere else meanwhile.
+
+### Draft for sharing
+
+**Draft for Sharing…** in the Summary tab's toolbar has the model write the meeting's summary and
+to-dos again for other people to read, following your
+[draft for sharing instructions](settings.md#summaries), plus anything you ask for that draft alone
+("shorter, and leave out the budget"). It's given the summary and to-dos as they are, with your
+edits, and nothing else: not the transcript and not your notes, so it can't bring back anything
+you took out of the summary. The draft goes in the meeting's `draft.md` and opens in a **Draft for
+Sharing** tab (⌘4), which only meetings with a draft have; edit it there, then **Copy** or
+**Share** it. Asking again replaces the draft, edits included, and says so first; the old draft
+stays until the new one is ready, and stays if it fails or is edited meanwhile. Renaming speakers
+renames them in the draft too.
 
 ### To-dos
 

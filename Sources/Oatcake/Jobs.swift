@@ -64,6 +64,13 @@ final class Jobs {
     var reviewDrafts: [String: ReviewDraft] = [:]
     /// Meetings whose to-dos couldn't be read from the model's reply, and why, by path.
     var todoProblems: [String: String] = [:]
+    /// Meetings whose draft for sharing is being written now, and why the last attempt failed, by path.
+    var drafting = Set<String>()
+    var draftErrors: [String: String] = [:]
+    /// What was asked for a draft alone, by path: kept after a failure, so Try again asks the same.
+    var draftRequests: [String: String] = [:]
+    /// Where each meeting whose draft is being written lives now: it can be renamed or moved meanwhile.
+    private var draftJobs: [UUID: String] = [:]
     private var analysing = Set<String>()
     /// The analysis helper running for each recording, and the work around it (which goes on to
     /// suggest names), so discarding a recording stops both.
@@ -97,6 +104,10 @@ final class Jobs {
         regenerating = Dictionary(regenerating.map { (remap($0.key), $0.value) }, uniquingKeysWith: { a, _ in a })
         regeneratingWith = Dictionary(regeneratingWith.map { (remap($0.key), $0.value) }, uniquingKeysWith: { a, _ in a })
         todoProblems = Dictionary(todoProblems.map { (remap($0.key), $0.value) }, uniquingKeysWith: { a, _ in a })
+        drafting = Set(drafting.map(remap))
+        draftJobs = draftJobs.mapValues(remap)
+        draftErrors = Dictionary(draftErrors.map { (remap($0.key), $0.value) }, uniquingKeysWith: { a, _ in a })
+        draftRequests = Dictionary(draftRequests.map { (remap($0.key), $0.value) }, uniquingKeysWith: { a, _ in a })
         // A recording waiting in Who's who is still saved into the folder it was set to, wherever that is now.
         reviewDrafts = reviewDrafts.mapValues { draft in with(draft) { $0.folder = remap($0.folder) } }
     }
@@ -334,6 +345,35 @@ final class Jobs {
             summarising.remove(meeting)
             summaryJobs.removeValue(forKey: job)
             if summaryAgain.remove(job) != nil { writeSummary(meeting, only: .summary) }
+            refresh()
+        }
+    }
+
+    /// Draft for Sharing: the meeting's summary and to-dos written again for other people, with the
+    /// instructions in Settings and `request` for this draft alone, in place of any draft there was.
+    /// The sheet that asks for `request` has said so already. The old draft stays until the new one
+    /// is ready, and stays if it fails or is edited meanwhile.
+    func draftForSharing(_ path: String, request: String) {
+        guard !drafting.contains(path), !summarising.contains(path) else { return }
+        drafting.insert(path)
+        draftErrors.removeValue(forKey: path)
+        draftRequests[path] = request
+        let job = UUID()
+        draftJobs[job] = path
+        let config = config
+        Task {
+            do {
+                // What's there now: if it's edited by the time the model is done, it isn't replaced.
+                let previous = try Meetings(root: config.meetingsRoot).read(path).draft
+                try await downloads.ensureModel()
+                let draft = try await OatcakeCore.draftForSharing(config, meeting: draftJobs[job] ?? path, request: request)
+                try OatcakeCore.writeDraftForSharing(draft, config: config, meeting: draftJobs[job] ?? path, previous: previous)
+                draftRequests.removeValue(forKey: draftJobs[job] ?? path)
+            } catch {
+                draftErrors[draftJobs[job] ?? path] = error.localizedDescription
+            }
+            drafting.remove(draftJobs[job] ?? path)
+            draftJobs.removeValue(forKey: job)
             refresh()
         }
     }

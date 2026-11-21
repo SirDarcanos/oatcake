@@ -96,7 +96,7 @@ one meeting's, use [Rename Speakers](how-it-works.md#rename-speakers)).
   deletes it (or **Remove Partial Download**), and **Test** asks it for one word. See
   [Language model](models.md#language-model).
 - **Reasoning:** whether the model thinks a task through before it replies, with a switch each for
-  summaries, to-dos, name suggestions and Ask. On is slower and not always better; it starts on for
+  summaries, to-dos, name suggestions, Ask and drafts for sharing. On is slower and not always better; it starts on for
   everything except to-dos. The switches are for Oatcake's own models: a server of yours decides
   for itself.
 - **Summary instructions:** what the model is told to write once it has read the transcript.
@@ -117,6 +117,10 @@ one meeting's, use [Rename Speakers](how-it-works.md#rename-speakers)).
   discussed, what was asked and not taken on, what was done during the call, and small talk. Make
   it stricter or looser, or keep it to your own action items; **Restore Default…** brings
   Oatcake's own back. The shape of each to-do (task, owner, due date, time) isn't part of it.
+- **Draft for sharing instructions:** what the model is told when it writes a meeting's
+  [draft for sharing](how-it-works.md#draft-for-sharing) from its summary and to-dos. Oatcake's
+  own ask for an update for people who weren't there: decisions and next steps first, short
+  bullet points, nothing the notes don't say. **Restore Default…** brings them back.
 - **Jargon:** names, products and acronyms, separated by commas. The summary model is told to spell
   them as written, in summaries, to-dos, name suggestions and Ask's answers. Transcripts keep what
   the speech model heard.
