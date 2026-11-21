@@ -286,6 +286,10 @@ import Testing
         #expect(suggestedDecisions(unsure)["A"] == .name(""))
         unsure.speakers[0].suggestion?.score = nil
         #expect(suggestedDecisions(unsure)["A"] == .name(""))
+        // A voice you named during the call is named: you said who it was.
+        var named = analysis
+        named.speakers[1].suggestion = suggested("John Smith", .live)
+        #expect(suggestedDecisions(named)["B"] == .name("John Smith"))
         let saved = try saveMeeting(config, rec, decisions: suggestedDecisions(analysis), folder: "Team", title: rec.title,
                                     unchecked: true, voiceprints: voiceprints)
         let meetings = Meetings(root: root)

@@ -128,6 +128,9 @@ public struct Config: Codable, Equatable, Sendable {
     public var autoStop: Bool
     /// Transcribe during the call, for the live transcript beside your notes.
     public var liveTranscript: Bool
+    /// Name the voices in the live transcript: people Oatcake knows by voice, and anyone you name on a
+    /// line. Turned off, the live transcript doesn't load the voice models (memory and CPU saved).
+    public var liveVoices: Bool
     /// Wait for who's who, or save the meeting as soon as it's processed (unchecked: it can be named later).
     public var afterCall: AfterCall
     /// Names, products and acronyms the summary model should spell as written here.
@@ -174,7 +177,7 @@ public struct Config: Codable, Equatable, Sendable {
     }
 
     init(myName: String, outputDir: String, asrModel: String, llm: LlmConfig, keepAudio: Bool, mic: MicChoice?, callReminders: Bool, updateCheck: Bool,
-         callNotice: Bool = true, autoStop: Bool = true, liveTranscript: Bool = true, jargon: [String] = [], menuBarNextCall: Bool = true,
+         callNotice: Bool = true, autoStop: Bool = true, liveTranscript: Bool = true, liveVoices: Bool = true, jargon: [String] = [], menuBarNextCall: Bool = true,
          summaryInstructions: String = "", todoInstructions: String = "", ignoredEvents: [String] = Config.defaultIgnoredEvents,
          afterCall: AfterCall = .review, summaryTemplates: [SummaryTemplate] = [], todosEnabled: Bool = true,
          sharingInstructions: String = "") {
@@ -189,6 +192,7 @@ public struct Config: Codable, Equatable, Sendable {
         self.callNotice = callNotice
         self.autoStop = autoStop
         self.liveTranscript = liveTranscript
+        self.liveVoices = liveVoices
         self.jargon = jargon
         self.menuBarNextCall = menuBarNextCall
         self.summaryInstructions = summaryInstructions
@@ -215,6 +219,7 @@ public struct Config: Codable, Equatable, Sendable {
         callNotice = (try? c.decodeIfPresent(Bool.self, forKey: .callNotice)) ?? base.callNotice
         autoStop = (try? c.decodeIfPresent(Bool.self, forKey: .autoStop)) ?? base.autoStop
         liveTranscript = (try? c.decodeIfPresent(Bool.self, forKey: .liveTranscript)) ?? base.liveTranscript
+        liveVoices = (try? c.decodeIfPresent(Bool.self, forKey: .liveVoices)) ?? base.liveVoices
         jargon = (try? c.decodeIfPresent([String].self, forKey: .jargon)) ?? base.jargon
         menuBarNextCall = (try? c.decodeIfPresent(Bool.self, forKey: .menuBarNextCall)) ?? base.menuBarNextCall
         summaryInstructions = (try? c.decodeIfPresent(String.self, forKey: .summaryInstructions)) ?? base.summaryInstructions
@@ -241,6 +246,7 @@ public struct Config: Codable, Equatable, Sendable {
         try c.encode(callNotice, forKey: .callNotice)
         try c.encode(autoStop, forKey: .autoStop)
         try c.encode(liveTranscript, forKey: .liveTranscript)
+        try c.encode(liveVoices, forKey: .liveVoices)
         try c.encode(jargon, forKey: .jargon)
         try c.encode(menuBarNextCall, forKey: .menuBarNextCall)
         try c.encode(summaryInstructions, forKey: .summaryInstructions)
@@ -254,7 +260,7 @@ public struct Config: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case myName, outputDir, asrModel, llm, keepAudio, mic, callReminders, updateCheck, callNotice, autoStop, liveTranscript, jargon, menuBarNextCall, summaryInstructions, todoInstructions, summaryTemplates, sharingInstructions, ignoredEvents, ignoredCalendarEvents, afterCall, todosEnabled
+        case myName, outputDir, asrModel, llm, keepAudio, mic, callReminders, updateCheck, callNotice, autoStop, liveTranscript, liveVoices, jargon, menuBarNextCall, summaryInstructions, todoInstructions, summaryTemplates, sharingInstructions, ignoredEvents, ignoredCalendarEvents, afterCall, todosEnabled
     }
 
     /// For the model: how to spell the names and terms you've listed, or "" when there are none.

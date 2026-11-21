@@ -64,8 +64,17 @@ public let voiceprintModel = "wespeaker-v2"
 public let maxSamplesPerPerson = 10
 // Measured on AMI ES2004a against ES2004c (same four people): the same person scored 0.85–0.95,
 // different people 0.34 at most.
-private let matchThreshold: Float = 0.6
-private let matchMargin: Float = 0.1
+let matchThreshold: Float = 0.6
+let matchMargin: Float = 0.1
+
+/// The person a fingerprint is, from each person's best score: only when it clears the threshold and
+/// beats the runner-up by the margin.
+func bestMatch(_ scores: [String: Float]) -> (name: String, score: Float)? {
+    let sorted = scores.sorted { $0.value > $1.value }
+    guard let best = sorted.first, best.value >= matchThreshold else { return nil }
+    if sorted.count > 1, best.value - sorted[1].value < matchMargin { return nil }
+    return (best.key, best.value)
+}
 
 struct Voiceprints: Codable {
     struct Sample: Codable {
@@ -87,13 +96,11 @@ struct Voiceprints: Codable {
     }
 
     /// Best voice match, only when it clears the threshold and beats the runner-up by the margin.
-    func match(_ embedding: [Float]) -> (name: String, score: Float)? {
-        let scores = people.compactMap { name, person -> (String, Float)? in
-            person.samples.map { cosine(embedding, $0.embedding) }.max().map { (name, $0) }
-        }.sorted { $0.1 > $1.1 }
-        guard let best = scores.first, best.1 >= matchThreshold else { return nil }
-        if scores.count > 1, best.1 - scores[1].1 < matchMargin { return nil }
-        return best
+    func match(_ embedding: [Float]) -> (name: String, score: Float)? { bestMatch(scores(embedding)) }
+
+    /// Each person's best score against a fingerprint, for people with fingerprints.
+    func scores(_ embedding: [Float]) -> [String: Float] {
+        people.compactMapValues { person in person.samples.map { cosine(embedding, $0.embedding) }.max() }
     }
 }
 

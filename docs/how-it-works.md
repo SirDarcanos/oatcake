@@ -108,10 +108,22 @@ meetings are being imported.
 ### Live transcript
 
 Beside your notes, **Transcript** shows the call as it's said, a moment after each pause (a second
-helper, `Oatcake --live`, transcribes the audio as the recorder writes it). Your lines are yours;
-each line from the call side gets an obviously made-up name, a different one every time ("Mystery
-Guest", "Captain Placeholder"…), until the call is over and the voices are told apart. Settings ›
-General turns the live transcript off.
+helper, `Oatcake --live`, transcribes the audio as the recorder writes it). Your lines are yours.
+Each line from the call side gets a fingerprint, and the name of whoever it sounds like: someone
+Oatcake knows by voice, or someone you've named on another line. A line nobody can be sure of gets
+an obviously made-up name, a different one every time ("Mystery Guest", "Captain Placeholder"…).
+
+Click a line's name to say who said it: the menu lists the people Oatcake knows by voice and the
+people on the calendar invite. Oatcake follows that voice for the rest of the call, and fills in
+the earlier lines that sound like it too. Naming a line someone else when Oatcake had put a known
+person's name on it puts that person's saved voiceprint aside for this call. **Take back** undoes a
+name you gave. The names you give are kept in the recording (`live-names.json`), and Who's who
+starts from them after the call (see [Review](#3-review-whos-who)).
+
+One line gives a rougher fingerprint than a whole call, and can hold two people, so the live names
+are for following the call; the voices are told apart properly once it's over. Matching uses the same rule
+as review (see [Accuracy](models.md#accuracy)). Settings › General turns the live transcript off,
+or only the naming of voices, which saves about 180 MB of memory during a call.
 
 ### Calls are noticed
 
@@ -144,9 +156,11 @@ On this Mac, in the background. Parakeet transcribes both tracks. The call audio
 voices by FluidAudio's batch diariser (pyannote segmentation, WeSpeaker fingerprints, VBx
 clustering). It runs as a helper process (`Oatcake --analyse`), so a problem there can't take the
 window or a recording in progress with it. Mic lines that repeat the call audio (speaker echo) are
-dropped. Known voices are recognised from saved voiceprints; other names are suggested from the
-conversation by the summary model, quoting the words that gave it away (not when After a call is set
-to save the transcript only: see [Saving without Who's who](#saving-without-whos-who)). The recording waits under
+dropped. Voices you named in the live transcript get those names (a voice takes the name given to
+the lines it said most of); known voices are recognised from saved voiceprints; other names are
+suggested from the conversation by the summary model, quoting the words that gave it away (not when
+After a call is set to save the transcript only: see
+[Saving without Who's who](#saving-without-whos-who)). The recording waits under
 Needs review with its step (1–5), and the Dock icon's badge counts the recordings waiting there. A
 failure shows the reason, with **Try again** and **Discard…**; **Discard…** is in the toolbar while
 it's processing and on Who's who as well.
@@ -155,7 +169,8 @@ it's processing and on Who's who as well.
 
 Change the title or the folder it's saved in if you want to. One card per voice: play its clips,
 confirm or type the name, or pick one of the people on the call's calendar invite (each is offered
-until they've been given a voice) (with where the suggestion came from), merge it into another
+until they've been given a voice) (with where the suggestion came from: named by you during the
+call, recognised from before, or guessed from the conversation), merge it into another
 voice or into you, mark it as mixed ("Several people"), or leave it out when it isn't part of the
 call (people talking in the background, say): its lines then stay out of the transcript, the
 summary and the to-dos. **Put back** undoes leaving one out, and **Undo** a merge. Unnamed voices
@@ -166,8 +181,8 @@ voices with 30+ seconds of speech are saved, so they're recognised next time.
 
 Settings › General › **After a call** can save each call as soon as it's processed, instead of
 waiting here: **Save with a summary**, or **Save the transcript only** (no summary or to-dos).
-Voices Oatcake is sure it recognises from before keep their names (a closer match than this screen
-asks for, since nobody is looking), and every other voice is "Voice 1", "Voice 2"…, whatever the
+Voices you named during the call, and voices Oatcake is sure it recognises from before, keep their
+names (a closer match than this screen asks for, since nobody is looking), and every other voice is "Voice 1", "Voice 2"…, whatever the
 model guessed from the conversation: a guess, or a match that wasn't sure enough, waits on the
 voice's card as a suggestion. **Save the transcript only** doesn't ask the model for names at all, so
 the call is saved as soon as it's processed and only a match that wasn't sure enough waits as a

@@ -53,6 +53,8 @@ final class RecordingController {
     /// The call being recorded, as it's heard: lines from the live helper, and what the helper is doing.
     var liveLines: [LiveTranscriptLine] = []
     var liveState = LiveTranscriptState.idle
+    /// The lines you've said who said during this call, as kept in the recording (live-names.json).
+    var liveNames: [LiveName] = []
     var status = RecorderStatus(state: .starting)
     /// Why the call that's "live" isn't being recorded at all: the recorder never started. The live
     /// screen stays, saying so, until it's closed.
@@ -78,6 +80,9 @@ final class RecordingController {
     /// The recording whose live transcript helper is running or on its way up. A second helper for the
     /// same recording would say every line again.
     private var liveTranscriptFor: String?
+    /// The helper running now, and whether it names voices: one told to stop may still say a line or two.
+    private var liveRun: UUID?
+    private var liveRunNamesVoices = false
     /// When a calling app started using the microphone, whether recording has been offered for that
     /// call, whether the recording in progress has had a calling app on the microphone, and since
     /// when it has had neither that nor any call audio.
@@ -119,7 +124,16 @@ final class RecordingController {
         // The live transcript follows its switch straight away, mid-call too.
         // (Not for a call that couldn't be recorded: there's nothing for it to transcribe.)
         if let live, recorderFailure == nil {
-            if !saved.liveTranscript { stopLiveTranscript() } else if liveHelper == nil { startLiveTranscript(live) }
+            if !saved.liveTranscript {
+                stopLiveTranscript()
+            } else if liveHelper == nil {
+                startLiveTranscript(live)
+            } else if saved.liveVoices != liveRunNamesVoices {
+                // Naming voices takes a helper that has loaded the voice models, or frees their memory:
+                // it starts again, and goes through the call so far.
+                stopLiveTranscript()
+                startLiveTranscript(live)
+            }
         }
         updateMenuBar()
     }
@@ -562,9 +576,13 @@ final class RecordingController {
         guard liveTranscriptFor != rec.id else { return }
         liveLines = []
         liveState = .idle
+        liveNames = LiveNames.load(rec.dir)
         guard config.liveTranscript, liveHelper == nil else { return }
         liveTranscriptFor = rec.id
         liveState = .starting
+        let run = UUID()
+        liveRun = run
+        liveRunNamesVoices = config.liveVoices
         Task {
             _ = try? await ChildProcess.run(Bundle.main.executableURL!, [HelperMode.live, rec.dir.path], onStart: { process in
                 Task { @MainActor in
@@ -574,8 +592,11 @@ final class RecordingController {
             }, onLine: { line in
                 guard let event = try? JSONDecoder().decode(LiveEvent.self, from: Data(line.utf8)) else { return }
                 Task { @MainActor in
-                    guard self.live?.id == rec.id else { return }
+                    guard self.live?.id == rec.id, self.liveRun == run else { return }
                     if let line = event.line { self.liveLines.append(line) }
+                    for change in event.names ?? [] {
+                        if let i = self.liveLines.firstIndex(where: { $0.id == change.line }) { self.liveLines[i].speaker = change.name }
+                    }
                     if let stage = event.stage { self.liveState = .at(stage) }
                     if let error = event.error { self.liveState = .stopped(error) }
                 }
@@ -587,6 +608,25 @@ final class RecordingController {
         liveHelper?.terminate()
         liveHelper = nil
         liveTranscriptFor = nil
+        liveRun = nil
+    }
+
+    /// You've said who said a line of the live transcript (nil: you take it back). It's kept in the
+    /// recording, where the helper follows it for the rest of the call and Who's who finds it after.
+    func nameLiveLine(_ line: LiveTranscriptLine, as name: String?) {
+        guard let live else { return }
+        // Whatever was given for this line, also under the line it was before the transcript started again.
+        var names = liveNames.filter { liveName(for: line, in: [$0]) == nil }
+        if let name { names.append(LiveName(line: line, name: name)) }
+        do {
+            try LiveNames.save(names, in: live.dir)
+            liveNames = names
+            // Shown straight away; the helper names the lines that sound like it a moment later. A name
+            // taken back stays until the helper has decided again.
+            if let name, let i = liveLines.firstIndex(where: { $0.id == line.id }) { liveLines[i].speaker = name }
+        } catch {
+            toast("Couldn’t keep that name: \(error.localizedDescription)", isError: true)
+        }
     }
 
     // MARK: - Menu bar

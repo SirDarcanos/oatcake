@@ -26,7 +26,8 @@ public struct Quote: Codable, Equatable, Sendable {
 }
 
 public struct Suggestion: Codable, Equatable, Sendable {
-    public enum How: String, Codable, Sendable { case voice, transcript }
+    /// Recognised from before, guessed from the conversation, or named by you in the live transcript.
+    public enum How: String, Codable, Sendable { case voice, transcript, live }
     public var name: String
     public var how: How
     public var detail: String
@@ -203,6 +204,7 @@ public func analyse(_ dir: URL, config: Config = Config.load(), voiceprints file
     try FileManager.default.createDirectory(at: clips, withIntermediateDirectories: true)
     let voiceprints = Voiceprints.load(file)
     let byLetter = Dictionary(letters.map { ($0.value, $0.key) }, uniquingKeysWith: { a, _ in a })
+    let given = liveNameSuggestions(LiveNames.load(dir), turns: turns, letters: letters)
     // From the lines rather than the turns: when diarisation finds nothing, the call audio is all
     // speaker "A", and it still needs a card in review (or its lines would be dropped on save).
     var seen = Set<String>()
@@ -214,8 +216,9 @@ public func analyse(_ dir: URL, config: Config = Config.load(), voiceprints file
         let seconds = own.isEmpty
             ? systemLines.filter { $0.speaker == id }.reduce(0) { $0 + $1.end - $1.start }
             : own.reduce(0) { $0 + $1.end - $1.start }
+        // What you said during the call comes before what the voice sounds like.
         return SpeakerInfo(id: id, seconds: seconds, embedding: embedding,
-                           suggestion: voice.map { Suggestion(name: $0.name, how: .voice, detail: String(format: "voice match %.2f", $0.score), score: Double($0.score)) },
+                           suggestion: given[id] ?? voice.map { Suggestion(name: $0.name, how: .voice, detail: String(format: "voice match %.2f", $0.score), score: Double($0.score)) },
                            quotes: quotes)
     }
 
@@ -228,6 +231,30 @@ public func analyse(_ dir: URL, config: Config = Config.load(), voiceprints file
                             echoLinesRemoved: micLines.count - keptMic.count, me: meInfo, warnings: [],
                             embeddingModel: voiceprintModel)
     try writeAtomic(dir.appendingPathComponent("analysis.json"), try encodeJSON(analysis))
+}
+
+/**
+ * The voices you named in the live transcript. A line counts towards the voice that said most of it
+ * (when one did: a line two people shared says nothing about either), and a voice takes the name it
+ * was given for the most of its time. Times are in the call audio, as the turns are.
+ */
+func liveNameSuggestions(_ given: [LiveName], turns: [Turn], letters: [String: String]) -> [String: Suggestion] {
+    var votes: [String: [String: Double]] = [:]
+    for line in given {
+        var heard: [String: Double] = [:]
+        // No turns: the call audio is all one voice, "A".
+        if turns.isEmpty { heard["A"] = line.end - line.start }
+        for turn in turns {
+            let overlap = min(line.end, turn.end) - max(line.start, turn.start)
+            if overlap > 0, let letter = letters[turn.speaker] { heard[letter, default: 0] += overlap }
+        }
+        guard let voice = heard.max(by: { $0.value < $1.value }), voice.value > 0,
+              voice.value >= 0.6 * heard.values.reduce(0, +) else { continue }
+        votes[voice.key, default: [:]][line.name, default: 0] += voice.value
+    }
+    return votes.compactMapValues { names in
+        names.max { $0.value < $1.value }.map { Suggestion(name: $0.key, how: .live, detail: "") }
+    }
 }
 
 /// The three longest lines of at least 1.5 s, in time order, each with a clip of up to 10 s.

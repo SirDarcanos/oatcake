@@ -65,3 +65,11 @@ Voiceprints from one meeting scored 0.85–0.95 against the same person in anoth
 at most 0.34 against anyone else; a match needs 0.6 and a lead of 0.1 over the next person.
 Expect to merge a split voice now and then, and to mark a voice "mixed" when two people sound
 alike.
+
+The live transcript names voices one line at a time, by the same rule. Replaying ES2004c (39
+minutes) as a call, with voiceprints from ES2004a, 91% of the speaking time was named right and 1%
+wrong (a line two people shared). With nobody known and one line of 4 s or more named by hand for
+each person, 91% was right and none wrong; when the lines named were only 2 s, 75% was right.
+Lines under 2 s mostly stay unnamed. Fingerprinting the lines took 15–22 ms each, about 6 s of CPU
+over the 39 minutes, and the helper used about 180 MB more memory at its peak. It fingerprints one
+window at a time: at FluidAudio's default of 32, its peaks reached 650 MB.

@@ -25,14 +25,15 @@ public func loadAnalysis(_ rec: Recording) throws -> Analysis {
 /// person measured 0.85–0.95 there; a match in the 0.6s has been someone else in the background.
 public let unattendedMatch = 0.8
 
-/// Who's who as a meeting saved without checking gets it: a voice Oatcake recognised from before, and
-/// is sure of, under that person's name, and every other voice unnamed ("Voice 1"…), whatever the
-/// model guessed from the conversation. A guess is a name that was said on the call, so it's often
-/// someone else's; and each "Voice N" stands for one voice only, so it can be given its name later
-/// wherever it's been written. A match that isn't sure enough is still suggested when the voices are named.
+/// Who's who as a meeting saved without checking gets it: a voice you named during the call, or one
+/// Oatcake recognised from before and is sure of, under that person's name, and every other voice
+/// unnamed ("Voice 1"…), whatever the model guessed from the conversation. A guess is a name that was
+/// said on the call, so it's often someone else's; and each "Voice N" stands for one voice only, so it
+/// can be given its name later wherever it's been written. A match that isn't sure enough is still
+/// suggested when the voices are named.
 public func suggestedDecisions(_ analysis: Analysis) -> [String: Decision] {
     Dictionary(uniqueKeysWithValues: analysis.speakers.map { s in
-        let sure = s.suggestion.flatMap { $0.how == .voice && ($0.score ?? 0) >= unattendedMatch ? $0.name.trimmed : nil }
+        let sure = s.suggestion.flatMap { $0.how == .live || ($0.how == .voice && ($0.score ?? 0) >= unattendedMatch) ? $0.name.trimmed : nil }
         return (s.id, Decision.name(sure ?? ""))
     })
 }

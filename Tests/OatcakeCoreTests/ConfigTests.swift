@@ -56,7 +56,8 @@ import Testing
     @Test func olderConfig() throws {
         let old = #"{"myName":"John","outputDir":"/tmp/m","asrModel":"parakeet-unified-en","keepAudio":false,"mic":null,"callReminders":false,"updateCheck":true}"#
         let config = try JSONDecoder().decode(Config.self, from: Data(old.utf8))
-        #expect(config.callNotice && config.autoStop && config.liveTranscript && config.menuBarNextCall && config.jargon.isEmpty)
+        #expect(config.callNotice && config.autoStop && config.liveTranscript && config.liveVoices && config.menuBarNextCall && config.jargon.isEmpty)
+        #expect(try !JSONDecoder().decode(Config.self, from: Data(encodeJSON(with(config) { $0.liveVoices = false }).utf8)).liveVoices)
         #expect(!config.callReminders && config.myName == "John")
         let again = try JSONDecoder().decode(Config.self, from: Data(encodeJSON(with(config) { $0.autoStop = false; $0.jargon = ["Jetpack"] }).utf8))
         #expect(!again.autoStop && again.jargon == ["Jetpack"])
