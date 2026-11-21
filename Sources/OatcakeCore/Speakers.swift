@@ -60,7 +60,8 @@ func cosine(_ a: [Float], _ b: [Float]) -> Float {
 
 /// Fingerprints only match ones from the same model.
 public let voiceprintModel = "wespeaker-v2"
-private let maxSamplesPerPerson = 10
+/// How many fingerprints Oatcake keeps for one person: the newest, so a voice that changes is followed.
+public let maxSamplesPerPerson = 10
 // Measured on AMI ES2004a against ES2004c (same four people): the same person scored 0.85–0.95,
 // different people 0.34 at most.
 private let matchThreshold: Float = 0.6
@@ -153,6 +154,19 @@ public func renameVoice(_ name: String, to newName: String, file: URL = Paths.vo
     merged.samples = Array((merged.samples + person.samples).sorted { $0.at < $1.at }.suffix(maxSamplesPerPerson))
     prints.people[clean] = merged
     try prints.save(file)
+}
+
+/**
+ * Settings › People › Merge Into: two people Oatcake recognises are one, under `other`'s name, with
+ * both sets of fingerprints (the newest kept, as renaming to a name that's there does). Both have to
+ * still be known, so a name forgotten meanwhile isn't quietly renamed instead.
+ */
+public func mergeVoice(_ name: String, into other: String, file: URL = Paths.voiceprints) throws {
+    guard name != other else { throw OatcakeError("Pick someone else to merge \(name) into.") }
+    let people = Voiceprints.load(file).people
+    guard people[other] != nil else { throw OatcakeError("Oatcake doesn't know \(other)'s voice any more.") }
+    guard people[name] != nil else { throw OatcakeError("Oatcake doesn't know \(name)'s voice any more.") }
+    try renameVoice(name, to: other, file: file)
 }
 
 /**

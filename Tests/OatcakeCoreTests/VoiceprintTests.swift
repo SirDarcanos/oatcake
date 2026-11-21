@@ -24,8 +24,17 @@ import Testing
         #expect(throws: OatcakeError.self) { try renameVoice("Nobody", to: "X", file: file) }
         #expect(throws: OatcakeError.self) { try renameVoice("Jane", to: " ", file: file) }
 
-        try forgetVoice("Jane", file: file)
+        // Merge Into: only between two people who are both still known.
+        #expect(throws: OatcakeError.self) { try mergeVoice("Jane", into: "Jane", file: file) }
+        #expect(throws: OatcakeError.self) { try mergeVoice("Jane", into: "Nobody", file: file) }
+        #expect(throws: OatcakeError.self) { try mergeVoice("Nobody", into: "Jane", file: file) }
+        #expect(knownVoices(file).map(\.name) == ["Jane", "John Smith"])
+        try mergeVoice("Jane", into: "John Smith", file: file)
         #expect(knownVoices(file).map(\.name) == ["John Smith"])
+        #expect(Voiceprints.load(file).people["John Smith"]?.samples.map(\.call) == ["a", "c", "b", "d"])
+
+        try forgetVoice("John Smith", file: file)
+        #expect(knownVoices(file).isEmpty)
 
         // A file that can't be read loads as nobody; it's kept beside the new one rather than lost to it.
         let kept = file.deletingPathExtension().appendingPathExtension("unreadable.json")
