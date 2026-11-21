@@ -16,6 +16,10 @@ Settings, with **Open Notification Settings**.
   and during the call (see [Record](how-it-works.md#1-record)).
 - **Live transcript** (on to start with): shows what's being said beside your notes during the
   call (see [Live transcript](how-it-works.md#live-transcript)).
+- **Name voices during the call** (on to start with): names the people Oatcake knows by voice in
+  the live transcript, and lets you click a line to say who said it. Turned off, the live
+  transcript doesn't load the voice models: about 180 MB less memory during a call, and a little
+  less CPU.
 - **After a call:** wait for you to check who's who (the default), or save each call once it's
   processed, with a summary or with the transcript only (see
   [Saving without Who's who](how-it-works.md#saving-without-whos-who)).

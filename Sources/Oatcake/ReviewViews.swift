@@ -392,10 +392,18 @@ struct ReviewView: View {
                         Label("From the calendar invite", systemImage: "calendar").font(.callout).foregroundStyle(.secondary)
                     } else if fromSuggestion, let suggestion = s.suggestion {
                         Label {
-                            Text(suggestion.how == .voice ? "Recognised from before"
-                                 : "Guessed from the conversation\(suggestion.detail.isEmpty ? "" : " · “\(suggestion.detail.trimmingCharacters(in: CharacterSet(charactersIn: "\"“”")))”")")
+                            switch suggestion.how {
+                            case .voice: Text("Recognised from before")
+                            case .live: Text("Named by you during the call")
+                            case .transcript:
+                                Text("Guessed from the conversation\(suggestion.detail.isEmpty ? "" : " · “\(suggestion.detail.trimmingCharacters(in: CharacterSet(charactersIn: "\"“”")))”")")
+                            }
                         } icon: {
-                            Image(systemName: suggestion.how == .voice ? "person.crop.circle.badge.checkmark" : "quote.bubble")
+                            switch suggestion.how {
+                            case .voice: Image(systemName: "person.crop.circle.badge.checkmark")
+                            case .live: Image(systemName: "text.bubble")
+                            case .transcript: Image(systemName: "quote.bubble")
+                            }
                         }
                         .font(.callout)
                         .foregroundStyle(suggestion.how == .voice ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))

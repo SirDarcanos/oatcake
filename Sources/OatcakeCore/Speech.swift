@@ -64,10 +64,17 @@ public enum SpeechModels {
         return Transcriber(vad: vad, asr: asr)
     }
 
-    static func loadDiarizer() async throws -> OfflineDiarizerManager {
+    /// `live`: for fingerprints of the live transcript's lines, a line or two at a time. A batch of one
+    /// keeps the memory they take while it works down to a few MB, where the default 32 at a time
+    /// went up by hundreds.
+    static func loadDiarizer(live: Bool = false) async throws -> OfflineDiarizerManager {
         var config = OfflineDiarizerConfig()
         // One speaker at a time, so every word of the transcript gets exactly one.
         config.postProcessing.exclusiveSegments = true
+        if live {
+            config.embedding.batchSize = 1
+            config.segmentation.batchSize = 1
+        }
         let manager = OfflineDiarizerManager(config: config)
         try await manager.prepareModels(directory: diarizerDirectory)
         return manager

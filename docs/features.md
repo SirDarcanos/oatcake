@@ -17,6 +17,9 @@ Everything Oatcake does today, with a link to where each is described. Planned w
   [Record](how-it-works.md#1-record)
 - Live transcript beside your notes, transcribed on the Mac as the call goes.
   [Live transcript](how-it-works.md#live-transcript)
+- Voices named in the live transcript: people Oatcake knows by voice, and anyone you name by
+  clicking a line, followed for the rest of the call and carried into Who's who.
+  [Live transcript](how-it-works.md#live-transcript)
 - Microphone choice, following the Mac's or a chosen mic, changeable mid-call without a gap in the
   recording. [Record](how-it-works.md#1-record)
 - Warnings for a silent microphone, no call audio, or a recorder that stopped or never started, on

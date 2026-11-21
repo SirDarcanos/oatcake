@@ -63,8 +63,13 @@ struct SettingsView: View {
             }
             Toggle(isOn: bind(\.liveTranscript)) {
                 Text("Live transcript")
-                Text("Shows what’s being said beside your notes during the call. It’s transcribed on your Mac; who said what on the call side is worked out afterwards.")
+                Text("Shows what’s being said beside your notes during the call, transcribed on your Mac.")
             }
+            Toggle(isOn: bind(\.liveVoices)) {
+                Text("Name voices during the call")
+                Text("Names the people Oatcake knows by voice in the live transcript, and lets you click a line to say who said it. Who’s who starts from the names you give. Turned off, a call uses about 180 MB less memory and a little less CPU.")
+            }
+            .disabled(!config.liveTranscript)
             Picker(selection: bind(\.afterCall)) {
                 Text("Wait for me to check who’s who").tag(AfterCall.review)
                 Text("Save with a summary").tag(AfterCall.saveWithSummary)

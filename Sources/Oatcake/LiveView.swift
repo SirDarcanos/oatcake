@@ -9,6 +9,8 @@ struct LiveView: View {
     @AppStorage(TextScale.key) private var textScale = 1.0
     @ViewState private var devices: [InputDevice] = []
     @ViewState private var showTranscript = UserDefaults.standard.object(forKey: "liveTranscriptShown") as? Bool ?? true
+    /// People Oatcake knows by voice, to say who said a line.
+    @ViewState private var knownVoices: [String] = []
 
     private var status: RecorderStatus { model.recording.status }
     private var started: Bool { status.state == .recording && model.recording.recorderFailure == nil }
@@ -53,6 +55,7 @@ struct LiveView: View {
         .onAppear(perform: loadNotes)
         .onDisappear { model.recording.saveLiveNotes(rec.id) }
         .task { devices = (try? await Recordings.listInputs()) ?? [] }
+        .task { knownVoices = knownPeople() }
     }
 
     // MARK: Header
@@ -155,13 +158,16 @@ struct LiveView: View {
 
     // MARK: Live transcript
 
-    /// What's been said so far, a moment after each pause. Your microphone is you; each line from the
-    /// call side gets an obviously made-up name of its own until the call is over and the voices are told apart.
+    /// What's been said so far, a moment after each pause. Your microphone is you. A line from the call
+    /// side has the name of whoever it sounds like, when voices are named (Settings › General), and
+    /// otherwise an obviously made-up name of its own until the call is over and the voices are told apart.
     private var transcript: some View {
         let lines = liveTranscript(model.recording.liveLines)
         let myName = model.config.myName.isEmpty ? "You" : model.config.myName
-        // Your name as text, in the shade that reads against the window (the avatar's own is too close to it).
-        let mine = provisionalNameColors([myName])[myName] ?? .primary
+        // Names as text, in the shade that reads against the window (the avatar's own is too close to it).
+        let colors = provisionalNameColors([myName] + Set(lines.compactMap(\.speaker)).sorted())
+        let mine = colors[myName] ?? .primary
+        let namesVoices = model.config.liveVoices
         let state = model.recording.liveState
         let stopped: String? = if case .stopped(let why) = state { "The live transcript stopped: \(why)" } else { nil }
         return ScrollViewReader { proxy in
@@ -170,7 +176,7 @@ struct LiveView: View {
                     HStack {
                         SectionLabel(text: "Live transcript")
                         Spacer()
-                        Text("Names come after the call").font(.caption).foregroundStyle(.secondary)
+                        Text(namesVoices ? "Click a name to say who it is" : "Names come after the call").font(.caption).foregroundStyle(.secondary)
                     }
                     if lines.isEmpty && stopped == nil {
                         Text(waiting(state))
@@ -179,8 +185,13 @@ struct LiveView: View {
                     ForEach(lines) { line in
                         VStack(alignment: .leading, spacing: 2) {
                             HStack {
-                                Text(line.track == .mic ? myName : callPlaceholder(for: rec.id, lineAt: line.start)).fontWeight(.semibold)
-                                    .foregroundStyle(line.track == .mic ? AnyShapeStyle(mine) : AnyShapeStyle(.secondary))
+                                if line.track == .mic {
+                                    Text(myName).fontWeight(.semibold).foregroundStyle(mine)
+                                } else if namesVoices {
+                                    speaker(line, myName: myName, color: line.speaker.flatMap { colors[$0] })
+                                } else {
+                                    Text(callPlaceholder(for: rec.id, lineAt: line.start)).fontWeight(.semibold).foregroundStyle(.secondary)
+                                }
                                 Text(clock(line.start)).foregroundStyle(.tertiary).monospacedDigit()
                             }
                             .font(.caption)
@@ -196,6 +207,44 @@ struct LiveView: View {
             .onChange(of: model.recording.liveLines.count) { withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
         }
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    /// Who said a line from the call side, as a menu to say who it was: people Oatcake knows by voice,
+    /// and the people on the calendar invite. Oatcake follows that voice for the rest of the call, and
+    /// Who's who starts from it after the call.
+    private func speaker(_ line: LiveTranscriptLine, myName: String, color: Color?) -> some View {
+        let given = model.recording.liveNames.first { $0.line == line.id }?.name
+        let invited = (rec.attendees ?? []).filter { $0 != myName && !knownVoices.contains($0) }
+        return Menu {
+            if !knownVoices.isEmpty {
+                Section("Known voices") { ForEach(knownVoices, id: \.self) { choice($0, for: line, given: given) } }
+            }
+            if !invited.isEmpty {
+                Section("On the invite") { ForEach(invited, id: \.self) { choice($0, for: line, given: given) } }
+            }
+            if knownVoices.isEmpty && invited.isEmpty {
+                Text("Nobody to choose yet: people appear here once Oatcake knows their voice, or when they’re on the calendar invite.")
+            }
+            if given != nil {
+                Divider()
+                Button("Take back “\(given ?? "")”") { model.recording.nameLiveLine(line, as: nil) }
+            }
+        } label: {
+            Text(line.speaker ?? callPlaceholder(for: rec.id, lineAt: line.start)).font(.caption.weight(.semibold))
+                .foregroundStyle(color.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.secondary))
+        }
+        // Drawn as the name it is, like yours beside it: a borderless menu would set it in its own font.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Who said this?")
+    }
+
+    @ViewBuilder private func choice(_ name: String, for line: LiveTranscriptLine, given: String?) -> some View {
+        Button { model.recording.nameLiveLine(line, as: name) } label: {
+            if given == name { Label(name, systemImage: "checkmark") } else { Text(name) }
+        }
     }
 
     /// What the transcript pane says before there are any lines to show.
