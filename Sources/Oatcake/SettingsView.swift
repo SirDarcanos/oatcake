@@ -808,7 +808,7 @@ private struct PeopleSection: View {
             }
         }
         .alert(merging.map { "Merge \($0.voice.name) into \($0.into.name)?" } ?? "", isPresented: Binding(get: { merging != nil }, set: { if !$0 { merging = nil } })) {
-            Button("Merge") { if let m = merging { change { try mergeVoice(m.voice.name, into: m.into.name) } } }
+            Button("Merge", role: .destructive) { if let m = merging { change { try mergeVoice(m.voice.name, into: m.into.name) } } }
             Button("Cancel", role: .cancel) {}
         } message: {
             if let m = merging {

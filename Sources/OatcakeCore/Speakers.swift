@@ -151,7 +151,11 @@ public func renameVoice(_ name: String, to newName: String, file: URL = Paths.vo
     var prints = Voiceprints.load(file)
     guard let person = prints.people.removeValue(forKey: name) else { throw OatcakeError("Oatcake doesn't know \(name)'s voice.") }
     var merged = prints.people[clean] ?? Voiceprints.Person(samples: [])
-    merged.samples = Array((merged.samples + person.samples).sorted { $0.at < $1.at }.suffix(maxSamplesPerPerson))
+    // One fingerprint per call, as for any person: when both were saved from the same call, the one
+    // already under the new name stays.
+    let calls = Set(merged.samples.map(\.call))
+    let joining = person.samples.filter { !calls.contains($0.call) }
+    merged.samples = Array((merged.samples + joining).sorted { $0.at < $1.at }.suffix(maxSamplesPerPerson))
     prints.people[clean] = merged
     try prints.save(file)
 }
