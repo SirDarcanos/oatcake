@@ -132,7 +132,7 @@ struct LiveView: View {
             HStack(spacing: 6) {
                 Text("\(downloading). It writes the summary once the call is over.")
                 SettingsLink { Text("Settings") }.buttonStyle(.link)
-                    .simultaneousGesture(TapGesture().onEnded { UserDefaults.standard.set("summaries", forKey: "settingsPane") })
+                    .simultaneousGesture(TapGesture().onEnded { UserDefaults.standard.set("models", forKey: "settingsPane") })
             }
             .font(.callout).foregroundStyle(.secondary).padding(.top, 14)
         }

@@ -442,7 +442,7 @@ struct MeetingView: View {
                                 HStack(spacing: 10) {
                                     Button("Try again") { regenerate(part, template: model.jobs.regeneratingWith[path] ?? .meetings) }
                                         .disabled((files[.transcript] ?? "").trimmed.isEmpty)
-                                    SettingsPaneLink(pane: "summaries", title: "Open Settings").buttonStyle(.link)
+                                    SettingsPaneLink(pane: "models", title: "Open Settings").buttonStyle(.link)
                                 }
                                 .padding(.top, 6)
                             }.padding(.bottom, 16)
@@ -604,7 +604,7 @@ struct MeetingView: View {
                         model.jobs.draftForSharing(path, request: model.jobs.draftRequests[path] ?? "")
                     }
                     .disabled((files?[.summary] ?? "").trimmed.isEmpty || model.jobs.summarising.contains(path))
-                    SettingsPaneLink(pane: "summaries", title: "Open Settings").buttonStyle(.link)
+                    SettingsPaneLink(pane: "models", title: "Open Settings").buttonStyle(.link)
                     // Put aside: without a draft there's nothing else on this tab, so it goes too.
                     Button("Dismiss") {
                         model.jobs.draftErrors.removeValue(forKey: path)
@@ -721,7 +721,7 @@ struct MeetingView: View {
                 HStack(spacing: 10) {
                     Button("Write summary") { model.jobs.writeSummary(path) }
                     // What stopped it is usually put right in Settings: the model, or its download.
-                    if error != nil { SettingsPaneLink(pane: "summaries", title: "Open Settings").buttonStyle(.link) }
+                    if error != nil { SettingsPaneLink(pane: "models", title: "Open Settings").buttonStyle(.link) }
                 }
                 .padding(.top, 6)
             }

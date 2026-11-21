@@ -54,7 +54,7 @@ recording's permissions and the model downloads, and what to tell the people on 
   [save](docs/how-it-works.md#4-save) and [ask](docs/how-it-works.md#5-ask).
 - [Settings](docs/settings.md), pane by pane: [General](docs/settings.md#general),
   [Calendar](docs/settings.md#calendar), [People](docs/settings.md#people),
-  [Transcription](docs/settings.md#transcription), [Summaries](docs/settings.md#summaries),
+  [Models](docs/settings.md#models), [Summaries](docs/settings.md#summaries),
   [Storage](docs/settings.md#storage) and [Updates](docs/settings.md#updates).
 - [Importing from Granola and Quill](docs/importing.md).
 - [Speech and language models](docs/models.md): [speech models](docs/models.md#speech-models),

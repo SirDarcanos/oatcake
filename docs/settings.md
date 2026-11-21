@@ -30,11 +30,12 @@ Settings, with **Open Notification Settings**.
 
 ## Calendar
 
-- **Private iCal address:** paste your calendar's private iCal address (Google Calendar ›
-  Settings › your calendar › Integrate calendar › "Secret address in iCal format"). It's kept in
+- **Private iCal address:** **Add…** opens a field to paste your calendar's private iCal address
+  into (Google Calendar › Settings › your calendar › Integrate calendar › "Secret address in iCal
+  format"); it's saved as you paste, and **Done** or Return closes the field. It's kept in
   `private.json` in Oatcake's data folder, which only your user account can read, not in
-  `config.json`, and Settings shows only that one is saved and which server it's on; **Remove…**
-  deletes it. (0.4.0 to 0.5.2 kept it in your login Keychain, which asked for your login password
+  `config.json`, and Settings shows only that one is saved and which server it's on, with how the
+  last fetch went. **Replace…** pastes another in its place; **Remove…** deletes it. (0.4.0 to 0.5.2 kept it in your login Keychain, which asked for your login password
   after every update; the first launch of a later version moves it, asking that one last time.)
   Without one, Upcoming is hidden.
 
@@ -79,14 +80,11 @@ suggests from now on; renaming to a name that's already there makes them one per
 stops it recognising them. Meetings already saved keep the names they were saved with (to change
 one meeting's, use [Rename Speakers](how-it-works.md#rename-speakers)).
 
-## Transcription
+## Models
 
 - **Speech to text:** Parakeet English, or Parakeet for 25 European languages
   (`SpeechModels.asr`); FluidAudio runs other models too. See [Speech models](models.md#speech-models).
-
-## Summaries
-
-- **Language model:** what writes summaries and to-dos, suggests names and answers questions.
+- **Language model:** what writes summaries, to-dos and drafts for sharing, suggests names and answers questions.
   Qwen3 8B or Qwen3 4B, which Oatcake downloads and runs on this Mac (the one that suits its memory
   is chosen to start with, and marked "recommended for this Mac"; one this Mac has too little
   memory for says so), or a model server of your own: Ollama, LM Studio or another with the same
@@ -95,13 +93,24 @@ one meeting's, use [Rename Speakers](how-it-works.md#rename-speakers)).
   chosen model straight away rather than at your first call, **Stop** stops a download, **Remove…**
   deletes it (or **Remove Partial Download**), and **Test** asks it for one word. See
   [Language model](models.md#language-model).
-- **Reasoning:** whether the model thinks a task through before it replies, with a switch each for
-  summaries, to-dos, name suggestions, Ask and drafts for sharing. On is slower and not always better; it starts on for
-  everything except to-dos. The switches are for Oatcake's own models: a server of yours decides
-  for itself.
-- **Summary instructions:** what the model is told to write once it has read the transcript.
-  Change the headings, the level of detail or the language to suit you; **Restore Default…** brings
-  Oatcake's own back. To-dos are collected separately and aren't affected.
+
+(Earlier versions had speech to text in a pane of its own, Transcription.)
+
+## Summaries
+
+One section for each thing the model writes, each with its instructions and its reasoning switch
+side by side. Instructions show as Oatcake's own or yours; **Edit…** opens them below (saved as
+you type), and **Restore Default…** there brings Oatcake's own back. **Reasoning** is whether the
+model thinks a task through before it replies: slower, and not always better. Each switch says
+how it did in Oatcake's tests. They're for Oatcake's own models: with a server of yours they're
+shown but can't be changed, as it decides for itself.
+
+- **Jargon:** names, products and acronyms, separated by commas. The model is told to spell them
+  as written, in summaries, to-dos, drafts, name suggestions and Ask's answers. Transcripts keep
+  what the speech model heard.
+- **Summary:** what the model is told to write once it has read the transcript. Change the
+  headings, the level of detail or the language to suit you. To-dos are collected separately and
+  aren't affected. Reasoning starts on: decisions went to the right person more reliably with it.
 - **Summary templates:** other summary instructions, each with a name, for the meetings that need a
   different summary (a one-to-one you lead, one with your own lead, a team meeting). **Add
   Template** starts one as a copy of the summary instructions; change its name and instructions in
@@ -110,20 +119,20 @@ one meeting's, use [Rename Speakers](how-it-works.md#rename-speakers)).
   meeting keeps it (in its `meeting.json`) and every other meeting keeps the summary instructions.
   A meeting keeps its template by name: once that template is renamed or deleted, the meeting is
   back on the summary instructions, until a template is given that name again. A template with no
-  instructions means the summary instructions. The summary starts at the model's first `## `
-  heading: anything written before it is left out.
-- **To-do instructions** (while to-dos are collected): what the model is told counts as a to-do.
-  Oatcake's own keep it to what somebody said they'd do after the call, and leave out what was only
+  instructions means the summary instructions. The summary starts at the model's
+  first `## ` heading: anything written before it is left out.
+- **To-dos** (while to-dos are collected): what the model is told counts as a to-do. Oatcake's
+  own keep it to what somebody said they'd do after the call, and leave out what was only
   discussed, what was asked and not taken on, what was done during the call, and small talk. Make
-  it stricter or looser, or keep it to your own action items; **Restore Default…** brings
-  Oatcake's own back. The shape of each to-do (task, owner, due date, time) isn't part of it.
-- **Draft for sharing instructions:** what the model is told when it writes a meeting's
+  it stricter or looser, or keep it to your own action items. The shape of each to-do (task,
+  owner, due date, time) isn't part of it. Reasoning starts off: to-dos lost detail with it.
+- **Draft for sharing:** what the model is told when it writes a meeting's
   [draft for sharing](how-it-works.md#draft-for-sharing) from its summary and to-dos. Oatcake's
   own ask for an update for people who weren't there: decisions and next steps first, short
-  bullet points, nothing the notes don't say. **Restore Default…** brings them back.
-- **Jargon:** names, products and acronyms, separated by commas. The summary model is told to spell
-  them as written, in summaries, to-dos, name suggestions and Ask's answers. Transcripts keep what
-  the speech model heard.
+  bullet points, nothing the notes don't say. Reasoning starts on, as for summaries (not measured
+  for drafts).
+- **Reasoning for name suggestions and Ask:** both start on: names were made up less often, and
+  answers kept to the question.
 
 ## Storage
 

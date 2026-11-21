@@ -27,7 +27,7 @@ Summaries, to-dos, name suggestions and Ask's answers come from one model, run o
 
 - **Where it comes from.** Qwen's own GGUF files on Hugging Face, at a fixed revision, checked
   against their SHA-256 before use (`LocalModels` in `Sources/OatcakeCore/LocalModel.swift`). A
-  download that's interrupted carries on from where it stopped. Settings › Summaries shows how far
+  download that's interrupted carries on from where it stopped. Settings › Models shows how far
   it has got, downloads it on request and removes it.
 - **What runs it.** llama.cpp's server, inside Oatcake.app (MIT; the build is named in
   `Scripts/bundle.sh`). Oatcake starts it when there's something to write, on 127.0.0.1 at a port
