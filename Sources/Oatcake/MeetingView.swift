@@ -27,13 +27,14 @@ private enum SaveStatus {
 }
 
 private enum FileKey: Hashable {
-    case summary, transcript, notes, todos
+    case summary, transcript, notes, todos, draft
     var file: MeetingFile {
         switch self {
         case .summary: .summary
         case .transcript: .transcript
         case .notes: .notes
         case .todos: .todo
+        case .draft: .draft
         }
     }
 }
@@ -56,6 +57,7 @@ struct MeetingView: View {
     /// The speakers Rename speakers… offers: only in a transcript Oatcake wrote.
     @ViewState private var speakers: [MeetingSpeaker] = []
     @ViewState private var renamingSpeakers = false
+    @ViewState private var askingForDraft = false
     /// The transcript's Markdown has been typed in since it was last parsed.
     @ViewState private var transcriptEdited = false
     @ViewState private var flash = -1
@@ -91,6 +93,12 @@ struct MeetingView: View {
                 model.library.renameSpeakers(path, renames)
             }
         }
+        .sheet(isPresented: $askingForDraft) {
+            DraftForSharingSheet(replacing: !(files?[.draft] ?? "").trimmed.isEmpty, todos: model.config.todosEnabled) { request in
+                model.jobs.draftForSharing(path, request: request)
+                switchTab(.draft)
+            }
+        }
         .onAppear {
             if let jump { tab = jump.tab }
             load()
@@ -111,8 +119,8 @@ struct MeetingView: View {
             model.jobs.todoProblems.removeValue(forKey: path)
         }
         .background {
-            // ⌘1–⌘3 switch tabs.
-            ForEach(Array(MeetingTab.allCases.enumerated()), id: \.offset) { i, t in
+            // ⌘1–⌘3 switch tabs, and ⌘4 to the draft for sharing in a meeting that has one.
+            ForEach(Array(tabs.enumerated()), id: \.offset) { i, t in
                 Button("") { switchTab(t) }.keyboardShortcut(KeyEquivalent(Character("\(i + 1)")), modifiers: .command).hidden()
             }
         }
@@ -126,7 +134,9 @@ struct MeetingView: View {
         guard pending.isEmpty else { return }
         do {
             let m = try model.library.readMeeting(path)
-            files = [.summary: m.summary, .transcript: m.transcript, .notes: m.notes, .todos: m.todo]
+            files = [.summary: m.summary, .transcript: m.transcript, .notes: m.notes, .todos: m.todo, .draft: m.draft]
+            // Arriving on Draft for Sharing from a meeting that had one, at one that doesn't.
+            if tab == .draft && !hasDraft { tab = .summary }
             readTranscript(m.transcript)
             meta = m.meta
             loadError = ""
@@ -201,6 +211,13 @@ struct MeetingView: View {
         }
     }
 
+    /// The meeting has a draft for sharing, or one is being written or failed to be: its tab shows.
+    private var hasDraft: Bool {
+        !(files?[.draft] ?? "").trimmed.isEmpty || model.jobs.drafting.contains(path) || model.jobs.draftErrors[path] != nil
+    }
+
+    private var tabs: [MeetingTab] { hasDraft ? MeetingTab.allCases : MeetingTab.allCases.filter { $0 != .draft } }
+
     private func switchTab(_ t: MeetingTab) {
         flush()
         tab = t
@@ -226,6 +243,7 @@ struct MeetingView: View {
                 Text("Summary").tag(MeetingTab.summary).help("⌘1")
                 Text("Transcript").tag(MeetingTab.transcript).help("⌘2")
                 Text("My notes").tag(MeetingTab.notes).help("⌘3")
+                if hasDraft { Text("Draft for Sharing").tag(MeetingTab.draft).help("⌘4") }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -268,6 +286,17 @@ struct MeetingView: View {
                           : (templates.isEmpty ? "Write the summary again with the current instructions in Settings"
                              : "Write the summary again, with a template if you pick one"))
             }
+            if tab == .summary || tab == .draft, !(files?[.summary] ?? "").trimmed.isEmpty {
+                Button {
+                    // Edits to the summary, to-dos or draft are saved first: the draft is written from them.
+                    flush()
+                    guard pending.isEmpty else { return }
+                    askingForDraft = true
+                } label: { Label("Draft for Sharing…", systemImage: "square.and.pencil") }
+                    .disabled(model.jobs.summarising.contains(path) || model.jobs.drafting.contains(path))
+                    .help(model.config.todosEnabled ? "Write this meeting’s summary and to-dos again for other people to read"
+                          : "Write this meeting’s summary again for other people to read")
+            }
             if canRenameSpeakers {
                 Button {
                     // A failed save keeps its text pending; renaming then would have it written back over the new names.
@@ -279,7 +308,12 @@ struct MeetingView: View {
                     .help(model.config.todosEnabled ? "Change who’s who in this meeting: the names in its transcript, summary and to-dos"
                           : "Change who’s who in this meeting: the names in its transcript and summary")
             }
-            let what = tab == .summary ? (model.config.todosEnabled ? "summary and to-dos" : "summary") : tab == .transcript ? "transcript" : "notes"
+            let what = switch tab {
+            case .summary: model.config.todosEnabled ? "summary and to-dos" : "summary"
+            case .transcript: "transcript"
+            case .notes: "notes"
+            case .draft: "draft for sharing"
+            }
             Button { copy() } label: { Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") }
                 .help("Copy the \(what), formatted (as Markdown where only plain text can go)")
             ShareLink(item: shareText, subject: Text(meetingTitle(node))) { Label("Share", systemImage: "square.and.arrow.up") }
@@ -312,6 +346,7 @@ struct MeetingView: View {
             parts.append(part(.summary))
         case .transcript: parts.append(part(.transcript))
         case .notes: parts.append(part(.notes))
+        case .draft: parts.append(part(.draft))
         }
         return parts.filter { !$0.isEmpty }.joined(separator: "\n\n") + "\n"
     }
@@ -404,6 +439,7 @@ struct MeetingView: View {
                             }.padding(.bottom, 16)
                         }
                     }
+                    if tab == .draft { draftNotice }
                     if markdown {
                         markdownEditors(files)
                     } else {
@@ -411,6 +447,7 @@ struct MeetingView: View {
                         case .summary: summary(files)
                         case .transcript: transcript(rows, current: current)
                         case .notes: notes(files)
+                        case .draft: draft(files)
                         }
                     }
                 }
@@ -492,12 +529,18 @@ struct MeetingView: View {
 
     private func markdownEditors(_ files: [FileKey: String]) -> some View {
         VStack(alignment: .leading, spacing: 18) {
-            ForEach(tab == .summary ? (model.config.todosEnabled ? [FileKey.todos, .summary] : [.summary]) : [tab == .transcript ? .transcript : .notes], id: \.self) { key in
+            ForEach(editorKeys, id: \.self) { key in
                 VStack(alignment: .leading, spacing: 6) {
                     Label("\(folderPath(path)) › \(key.file.rawValue)", systemImage: "doc.text").font(.caption).foregroundStyle(.secondary)
                     // While the model is writing these two files they aren't for typing in: what's typed
                     // and what's written would overwrite each other.
-                    if model.jobs.summarising.contains(path), key == .summary || key == .todos {
+                    if model.jobs.drafting.contains(path), key == .draft {
+                        Text("The draft for sharing is being written. This can be edited once it’s here.")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
+                            .padding(8)
+                            .background(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.line))
+                    } else if model.jobs.summarising.contains(path), key == .summary || key == .todos {
                         Text("The summary is being written. This can be edited once it’s here.")
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, minHeight: key == .todos ? 70 : 120, alignment: .topLeading)
@@ -519,6 +562,53 @@ struct MeetingView: View {
                             }
                     }
                 }
+            }
+        }
+    }
+
+    /// The files the Markdown view edits on the tab you're on.
+    private var editorKeys: [FileKey] {
+        switch tab {
+        case .summary: model.config.todosEnabled ? [.todos, .summary] : [.summary]
+        case .transcript: [.transcript]
+        case .notes: [.notes]
+        case .draft: [.draft]
+        }
+    }
+
+    /// The draft for sharing being written, or why it couldn't be. A draft already there stays meanwhile.
+    @ViewBuilder private var draftNotice: some View {
+        if model.jobs.drafting.contains(path) {
+            Notice(tone: .blue) {
+                Text("Writing the draft for sharing…").fontWeight(.semibold)
+                Text((files?[.draft] ?? "").trimmed.isEmpty ? "It’s written from the summary\(model.config.todosEnabled ? " and to-dos" : "")."
+                     : "The draft that’s here stays until the new one is ready.")
+            }.padding(.bottom, 16)
+        } else if let error = model.jobs.draftErrors[path] {
+            Notice(tone: .red) {
+                ModelError(raw: error, prefix: "Couldn’t write the draft for sharing. ")
+                if !(files?[.draft] ?? "").trimmed.isEmpty { Text("The draft that was here was kept.") }
+                HStack(spacing: 10) {
+                    Button("Try again") {
+                        flush()
+                        guard pending.isEmpty else { return }
+                        model.jobs.draftForSharing(path, request: model.jobs.draftRequests[path] ?? "")
+                    }
+                    .disabled((files?[.summary] ?? "").trimmed.isEmpty || model.jobs.summarising.contains(path))
+                    SettingsPaneLink(pane: "summaries", title: "Open Settings").buttonStyle(.link)
+                }
+                .padding(.top, 6)
+            }.padding(.bottom, 16)
+        }
+    }
+
+    private func draft(_ files: [FileKey: String]) -> some View {
+        let text = files[.draft] ?? ""
+        return Group {
+            if !text.trimmed.isEmpty {
+                MarkdownView(markdown: text, fontSize: 14 * scale)
+            } else if !model.jobs.drafting.contains(path) && model.jobs.draftErrors[path] == nil {
+                Text("No draft for sharing in this meeting.").foregroundStyle(.secondary)
             }
         }
     }
@@ -736,5 +826,53 @@ struct MeetingView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+/// Draft for Sharing…: what the draft is written from, and anything wanted for this one alone. Its
+/// button says whether it replaces a draft that's there, so it asks once.
+private struct DraftForSharingSheet: View {
+    /// The meeting has a draft for sharing already, which the new one takes the place of.
+    let replacing: Bool
+    /// Whether to-dos are collected (Settings › General): while they're off, the sheet doesn't mention them.
+    let todos: Bool
+    let write: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @ViewState private var request = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Draft for Sharing").font(.headline)
+            Text("Oatcake’s model writes this meeting’s \(todos ? "summary and to-dos" : "summary") again for other people to read, following your draft for sharing instructions in Settings › Summaries. It doesn’t read the transcript or your notes.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("For this draft only (optional)")
+                // Plain, with a border of its own: the rounded style draws one line whatever space is reserved.
+                TextField("", text: $request, prompt: Text("Shorter, and leave out the budget"), axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(2, reservesSpace: true)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 5)
+                    .background(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.line))
+                    .accessibilityLabel("For this draft only")
+            }
+            if replacing {
+                Text("This replaces the draft for sharing that’s there, including your edits to it.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(replacing ? "Replace Draft" : "Write Draft") {
+                    write(request.trimmed)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
     }
 }

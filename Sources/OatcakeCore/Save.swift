@@ -160,7 +160,7 @@ public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: 
         if !renames.isEmpty || !gone.isEmpty {
             let meetings = Meetings(root: config.meetingsRoot)
             let files = try meetings.read(outRel)
-            for (file, text) in [(MeetingFile.summary, files.summary), (.todo, files.todo)] where !text.isEmpty {
+            for (file, text) in [(MeetingFile.summary, files.summary), (.todo, files.todo), (.draft, files.draft)] where !text.isEmpty {
                 let renamed = renamePeople(file == .todo ? withoutTodos(of: gone, in: text) : text, renames)
                 if renamed != text { try meetings.write(outRel, file, renamed) }
             }

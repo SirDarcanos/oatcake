@@ -319,6 +319,7 @@ struct SettingsView: View {
                 if model.config.todosEnabled { Toggle("To-dos", isOn: bindLlm(\.reasoning.todos)) }
                 Toggle("Name suggestions", isOn: bindLlm(\.reasoning.names))
                 Toggle("Ask", isOn: bindLlm(\.reasoning.ask))
+                Toggle("Drafts for sharing", isOn: bindLlm(\.reasoning.sharing))
             } header: {
                 Text("Reasoning")
             } footer: {
@@ -348,6 +349,9 @@ struct SettingsView: View {
                                 applies: "Used for to-dos collected from now on.",
                                 hint: "What the model is told counts as a to-do. Make it stricter or looser, or keep it to your own action items (“Only list what John agreed to do”). Each to-do still comes with its owner, due date and time in the call.")
         }
+        InstructionsSection(title: "Draft for sharing instructions", setting: \.sharingInstructions, standard: defaultSharingInstructions,
+                            applies: "Used for drafts written from now on.",
+                            hint: "What the model is told when it turns a meeting’s summary and to-dos into a draft for sharing (Draft for Sharing… in a meeting). It reads only the summary and to-dos as they are, not the transcript or your notes.")
     }
 }
 

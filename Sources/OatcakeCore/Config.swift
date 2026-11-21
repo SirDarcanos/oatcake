@@ -35,6 +35,8 @@ public struct LlmConfig: Codable, Equatable, Sendable {
         public var todos = false
         public var names = true
         public var ask = true
+        /// Drafts for sharing. Not measured: it starts as summaries do, which it's closest to.
+        public var sharing = true
         public init() {}
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -43,6 +45,7 @@ public struct LlmConfig: Codable, Equatable, Sendable {
             todos = (try? c.decodeIfPresent(Bool.self, forKey: .todos)) ?? start.todos
             names = (try? c.decodeIfPresent(Bool.self, forKey: .names)) ?? start.names
             ask = (try? c.decodeIfPresent(Bool.self, forKey: .ask)) ?? start.ask
+            sharing = (try? c.decodeIfPresent(Bool.self, forKey: .sharing)) ?? start.sharing
         }
     }
 
@@ -139,6 +142,9 @@ public struct Config: Codable, Equatable, Sendable {
     /// Other summary instructions, by name, for a meeting to be summarised with instead (Regenerate
     /// summary). Meetings that haven't chosen one use summaryInstructions.
     public var summaryTemplates: [SummaryTemplate]
+    /// What the model is told when it writes a draft for sharing, when you've changed it. "" = Oatcake's
+    /// own (defaultSharingInstructions).
+    public var sharingInstructions: String
     /// Calendar events whose titles start with one of these aren't offered as calls (ignoredEvent).
     public var ignoredEvents: [String]
     /// To-dos: collected from each call with its summary, and shown on the To-dos page and in each
@@ -170,7 +176,8 @@ public struct Config: Codable, Equatable, Sendable {
     init(myName: String, outputDir: String, asrModel: String, llm: LlmConfig, keepAudio: Bool, mic: MicChoice?, callReminders: Bool, updateCheck: Bool,
          callNotice: Bool = true, autoStop: Bool = true, liveTranscript: Bool = true, jargon: [String] = [], menuBarNextCall: Bool = true,
          summaryInstructions: String = "", todoInstructions: String = "", ignoredEvents: [String] = Config.defaultIgnoredEvents,
-         afterCall: AfterCall = .review, summaryTemplates: [SummaryTemplate] = [], todosEnabled: Bool = true) {
+         afterCall: AfterCall = .review, summaryTemplates: [SummaryTemplate] = [], todosEnabled: Bool = true,
+         sharingInstructions: String = "") {
         self.myName = myName
         self.outputDir = outputDir
         self.asrModel = asrModel
@@ -187,6 +194,7 @@ public struct Config: Codable, Equatable, Sendable {
         self.summaryInstructions = summaryInstructions
         self.todoInstructions = todoInstructions
         self.summaryTemplates = summaryTemplates
+        self.sharingInstructions = sharingInstructions
         self.ignoredEvents = ignoredEvents
         self.afterCall = afterCall
         self.todosEnabled = todosEnabled
@@ -212,6 +220,7 @@ public struct Config: Codable, Equatable, Sendable {
         summaryInstructions = (try? c.decodeIfPresent(String.self, forKey: .summaryInstructions)) ?? base.summaryInstructions
         todoInstructions = (try? c.decodeIfPresent(String.self, forKey: .todoInstructions)) ?? base.todoInstructions
         summaryTemplates = (try? c.decodeIfPresent([SummaryTemplate].self, forKey: .summaryTemplates)) ?? base.summaryTemplates
+        sharingInstructions = (try? c.decodeIfPresent(String.self, forKey: .sharingInstructions)) ?? base.sharingInstructions
         ignoredEvents = (try? c.decodeIfPresent([String].self, forKey: .ignoredEvents)) ?? base.ignoredEvents
         ignoredCalendarEvents = (try? c.decodeIfPresent([IgnoredEvent].self, forKey: .ignoredCalendarEvents)) ?? base.ignoredCalendarEvents
         afterCall = (try? c.decodeIfPresent(AfterCall.self, forKey: .afterCall)) ?? base.afterCall
@@ -237,6 +246,7 @@ public struct Config: Codable, Equatable, Sendable {
         try c.encode(summaryInstructions, forKey: .summaryInstructions)
         try c.encode(todoInstructions, forKey: .todoInstructions)
         try c.encode(summaryTemplates, forKey: .summaryTemplates)
+        try c.encode(sharingInstructions, forKey: .sharingInstructions)
         try c.encode(ignoredEvents, forKey: .ignoredEvents)
         try c.encode(ignoredCalendarEvents, forKey: .ignoredCalendarEvents)
         try c.encode(afterCall, forKey: .afterCall)
@@ -244,7 +254,7 @@ public struct Config: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case myName, outputDir, asrModel, llm, keepAudio, mic, callReminders, updateCheck, callNotice, autoStop, liveTranscript, jargon, menuBarNextCall, summaryInstructions, todoInstructions, summaryTemplates, ignoredEvents, ignoredCalendarEvents, afterCall, todosEnabled
+        case myName, outputDir, asrModel, llm, keepAudio, mic, callReminders, updateCheck, callNotice, autoStop, liveTranscript, jargon, menuBarNextCall, summaryInstructions, todoInstructions, summaryTemplates, sharingInstructions, ignoredEvents, ignoredCalendarEvents, afterCall, todosEnabled
     }
 
     /// For the model: how to spell the names and terms you've listed, or "" when there are none.
@@ -270,6 +280,9 @@ public struct Config: Codable, Equatable, Sendable {
     /// What the model is told when it collects to-dos: which things count (yours, or Oatcake's own),
     /// then the shape to give them in, which stays Oatcake's.
     public var todosTask: String { (todoInstructions.trimmed.isEmpty ? defaultTodoInstructions : todoInstructions.trimmed) + "\n" + todosFormat }
+
+    /// What the model is told when it writes a draft for sharing: yours, or Oatcake's own.
+    public var sharingTask: String { sharingInstructions.trimmed.isEmpty ? defaultSharingInstructions : sharingInstructions.trimmed }
 
     public static func load() -> Config { loadWithProblem().config }
 

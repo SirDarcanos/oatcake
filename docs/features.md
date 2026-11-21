@@ -73,6 +73,8 @@ Everything Oatcake does today, with a link to where each is described. Planned w
   [Regenerate and summary templates](how-it-works.md#regenerate-and-summary-templates)
 - Regenerate the summary or the to-dos alone. [Regenerate and summary
   templates](how-it-works.md#regenerate-and-summary-templates)
+- A draft for sharing: the summary and to-dos written again for other people, with its own
+  instructions and an editable draft of its own. [Draft for sharing](how-it-works.md#draft-for-sharing)
 - **Write summary** to try again when one couldn't be written. [Save](how-it-works.md#4-save)
 - To-dos with owners and due dates, ticked off in the meeting; a to-do's time opens the transcript
   there. [To-dos](how-it-works.md#to-dos)
@@ -87,7 +89,8 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 - Each meeting a folder of Markdown (`summary.md`, `todo.md`, `transcript.md`, `notes.md`) and
   `meeting.json` in a Meetings folder you choose, kept in step with Finder.
   [Save](how-it-works.md#4-save)
-- Summary, Transcript and My notes tabs, each rendered or as editable Markdown.
+- Summary, Transcript and My notes tabs (and Draft for Sharing where there's one), each rendered or
+  as editable Markdown.
   [Reading and editing](how-it-works.md#reading-and-editing)
 - **Copy** and **Share**, formatted for documents and mail and as Markdown.
   [Reading and editing](how-it-works.md#reading-and-editing)

@@ -24,7 +24,8 @@ struct Jump: Equatable {
     var nonce = UUID()
 }
 
-enum MeetingTab: String, CaseIterable { case summary, transcript, notes }
+/// `draft` is shown only in meetings with a draft for sharing (or one on its way).
+enum MeetingTab: String, CaseIterable { case summary, transcript, notes, draft }
 
 /// "Stop recording?" and the like: a question with a destructive answer.
 struct Confirmation: Identifiable {

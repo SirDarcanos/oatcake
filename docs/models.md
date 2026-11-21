@@ -38,7 +38,8 @@ Summaries, to-dos, name suggestions and Ask's answers come from one model, run o
   decoding and room for a long reply. Whether it reasons before it replies is set for each task
   (Settings › Summaries): on to start with for summaries, name suggestions and Ask, where it
   measured better (decisions given to the right person, fewer invented names, answers that keep
-  to the question), and off for to-dos, which lost detail with it. The summary and the to-dos are
+  to the question), and off for to-dos, which lost detail with it. Drafts for sharing start on too,
+  as summaries do; that wasn't measured. The summary and the to-dos are
   two requests about the same transcript, each with its task after the transcript; the to-dos,
   the name suggestions and Ask's first step come back as JSON the server holds to a schema, sent
   as it's written: the model fills in the fields in the schema's order, and a to-do's task has to
