@@ -14,8 +14,11 @@ struct Avatar: View {
     var size: CGFloat = 24
     var remember = true
     var color: Color?
+    /// Read so a colour chosen in Settings shows straight away.
+    @AppStorage(colorsChangedKey) private var colorsChanged = 0
 
     var body: some View {
+        let _ = colorsChanged
         let p = person(name, remember: remember)
         Text(p.initial)
             .font(.system(size: size * 0.42, weight: .semibold))

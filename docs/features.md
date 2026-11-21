@@ -61,7 +61,8 @@ Everything Oatcake does today, with a link to where each is described. Planned w
   voices later. [Saving without Who's who](how-it-works.md#saving-without-whos-who)
 - **Rename Speakers** for a saved meeting: put a wrong name right, name a "Voice 2", swap two
   names or make two speakers one. [Rename Speakers](how-it-works.md#rename-speakers)
-- People Oatcake recognises listed in Settings, to rename, merge or forget. [People](settings.md#people)
+- People Oatcake recognises listed in Settings, to rename, merge or forget, or to choose their
+  colour. [People](settings.md#people)
 
 ## Summaries and to-dos
 
