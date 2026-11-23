@@ -81,6 +81,12 @@ that has any (ticking one updates its `todo.md`), and takes prep notes, which op
 notes: type them one at a time or paste a list, which becomes a note per line. They're kept for
 that call until it's recorded (for up to 30 days), so you can write them ahead and come back.
 
+If you've set up [summary templates](settings.md#summaries), choose one on **New recording**.
+For a calendar event, Oatcake suggests the template from the latest saved meeting with the same
+title, or **Default** if there isn't a matching template. You can change the choice for this
+recording. Oatcake keeps it with the saved meeting and uses it for the first summary, whether
+that's written automatically or later. Selecting a template doesn't turn on automatic summaries.
+
 Your microphone is recorded as you; everything the Mac plays (Zoom, Meet, Slack, anything) is
 recorded as the other people. During the call, write one point per line: each is stamped with the
 time you started typing it, and every line stays editable. The recorder is a small helper app
