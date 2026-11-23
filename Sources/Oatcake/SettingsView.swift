@@ -19,7 +19,7 @@ struct SettingsView: View {
             Form { PeopleSection() }.formStyle(.grouped).tabItem { Label("People", systemImage: "person.2") }.tag("people")
             Form { transcription; llmSection }.formStyle(.grouped).tabItem { Label("Models", systemImage: "cpu") }.tag("models")
             Form { jargonSection; outputSections }.formStyle(.grouped).tabItem { Label("Summaries", systemImage: "text.alignleft") }.tag("summaries")
-            Form { storage }.formStyle(.grouped).tabItem { Label("Storage", systemImage: "folder") }.tag("storage")
+            Form { storage; mcp }.formStyle(.grouped).tabItem { Label("Storage", systemImage: "folder") }.tag("storage")
             Form { UpdatesSection() }.formStyle(.grouped).tabItem { Label("Updates", systemImage: "arrow.down.circle") }.tag("updates")
         }
         .frame(width: 620, height: 600)
@@ -109,6 +109,36 @@ struct SettingsView: View {
         case .review: "Each call waits under Needs review until you’ve named its voices and saved it."
         case .saveWithSummary: "Each call is saved once it’s processed, and summarised. Voices Oatcake is sure it recognises keep their names; the rest are “Voice 1”, “Voice 2”… until you name them from the meeting."
         case .saveTranscript: "Each call is saved once it’s processed, with no summary or to-dos. Voices Oatcake is sure it recognises keep their names; the rest are “Voice 1”, “Voice 2”… until you name them from the meeting."
+        }
+    }
+
+    private var mcp: some View {
+        Section {
+            Toggle("Let other apps read my meetings", isOn: bind(\.mcpEnabled))
+            if model.mcpOffNotSaved, !model.config.mcpEnabled {
+                Text("Off for this session. Oatcake couldn’t save the change, so sharing may resume when you reopen the app.")
+                    .settingsHint(.amber)
+                Button("Retry Saving") { model.retrySavingMCPOff() }
+            } else {
+                Text(model.mcpStatus).settingsHint()
+            }
+            if let json = model.mcpConfiguration {
+                ScrollView {
+                    Text(verbatim: json)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                }
+                .frame(height: 150)
+                .background(.quaternary.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
+                .accessibilityLabel("MCP configuration")
+            }
+        } header: {
+            Text("Local MCP server")
+        } footer: {
+            Text("Runs only while Oatcake is open. The configuration contains a private token that gives connected apps read access to your whole Meetings folder. Only share it with apps you trust.")
+                .settingsHint()
         }
     }
 

@@ -155,6 +155,23 @@ shown but can't be changed, as it decides for itself.
 - **Import from Granola** and **Import from Quill:** **Import…** picks an export (see
   [Importing](importing.md)).
 
+### Local MCP server
+
+Turn on **Let other apps read my meetings** to let a compatible Model Context Protocol (MCP)
+client browse and search the current Meetings folder, read saved meeting documents, and list open
+and completed to-dos. The switch is off by default. Oatcake remembers it, but serves only while the
+app is running, including when it stays in the menu bar.
+
+When the status is **Running**, select and copy the JSON shown in Settings. If your client uses a
+different configuration format, enter `http://127.0.0.1:8765/mcp` as a Streamable HTTP endpoint and
+use the shown `Authorization` header. The client must run on the same Mac and support a bearer
+token. The JSON contains that token: anyone with it and access to the endpoint can read the whole
+library, so don't share it or commit it to a repository. A client using a hosted model may send it
+whatever meeting text it retrieves.
+
+If the Meetings folder is moved or replaced outside Oatcake, MCP stops sharing it. Check the folder
+in Storage and turn MCP off and on again to approve it, or choose the intended folder in Settings.
+
 ## Updates
 
 - **Check Now**, and what's new in a release that's waiting, with **Install and Relaunch** (or the
