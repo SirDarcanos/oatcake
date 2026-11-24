@@ -212,6 +212,13 @@ summary can't be written (the model's download was interrupted, a server of your
 the meeting says why in plain words (the raw message is behind Details) and shows **Write summary**
 to try again later.
 
+Summaries, to-dos, drafts for sharing and Ask's answers call everyone they/them. The model only
+has a name to go on, and guessed wrong: a man with a name it read as a woman's was "she", and
+telling it his pronouns still left "she" in about 1 summary in 4. So every he/him/his and
+she/her/hers it writes is changed to they/them/their afterwards, with the verb after it agreeing
+("she needs" becomes "they need"). That's done for English only; in another language "he" or
+"her" can be another word.
+
 ### Reading and editing
 
 Tabs: Summary (with the meeting's to-dos at the top), Transcript and My notes (⌘1–⌘3), and Draft

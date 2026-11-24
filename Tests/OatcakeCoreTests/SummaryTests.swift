@@ -163,6 +163,30 @@ import Testing
         #expect(server.requests.count == 2 && server.requests[1].json["response_format"] != nil)
     }
 
+    /// What comes back from the model as a summary, to-dos, a draft for sharing or an answer calls
+    /// everyone they/them: its he and she are guesses from a name.
+    @Test func everyoneIsThey() async throws {
+        let meetings = TestMeetings()
+        defer { meetings.remove() }
+        let rel = "Team/2026-11-09 1000 Weekly sync"
+        try meetings.write(rel, .transcript, "**[00:00] Andrea Doe:** I'm travelling next week.\n",
+                           meta: #"{"title":"Weekly sync","participants":["John Smith","Andrea Doe"]}"#)
+        let server = try await StandIn.model { request in
+            request.json["response_format"] == nil
+                ? "## Travel\n- Andrea Doe is travelling next week, so she is offline.\n- John Smith said he would cover.\n"
+                : #"{"todos":[{"task":"Send him the plan","owner":"Andrea Doe","due":null,"at":"00:00"}]}"#
+        }
+        var config = server.config
+        config.outputDir = meetings.root.path
+        try await writeSummary(config, meeting: rel)
+        let draft = try await draftForSharing(config, meeting: rel)
+        let answer = try await OatcakeCore.ask(config, meeting: rel, question: "Who is travelling?")
+        let neutral = "## Travel\n- Andrea Doe is travelling next week, so they are offline.\n- John Smith said they would cover.\n"
+        let saved = try Meetings(root: meetings.root).read(rel)
+        #expect(saved.summary == neutral && draft == neutral && answer == neutral.trimmed)
+        #expect(saved.todo == "- [ ] Send them the plan — Andrea Doe — [00:00]\n")
+    }
+
     @Test func summaryPieces() {
         // Anything before the first heading goes, and a code fence around the lot.
         #expect(summaryBody("Sure!\n\n## Launch\n- Done.\n") == "## Launch\n- Done.")
