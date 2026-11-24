@@ -32,7 +32,7 @@ public struct LlmConfig: Codable, Equatable, Sendable {
         // Read one by one, like Config: a key that's missing leaves the other alone.
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            reasoningControl = (try? c.decodeIfPresent(ReasoningControl.self, forKey: .reasoningControl)) ?? nil
+            reasoningControl = try? c.decodeIfPresent(ReasoningControl.self, forKey: .reasoningControl)
             baseUrl = (try? c.decodeIfPresent(String.self, forKey: .baseUrl)) ?? ""
             model = (try? c.decodeIfPresent(String.self, forKey: .model)) ?? ""
         }
