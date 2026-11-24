@@ -11,6 +11,14 @@ import Testing
         #expect(isEcho(Line(speaker: me, start: 11, end: 13, text: "I think that's fine"), system))
         #expect(!isEcho(Line(speaker: me, start: 15, end: 16, text: "Yes, I agree that's fine"), system))
         #expect(!isEcho(Line(speaker: me, start: 40, end: 42, text: "I think that's fine"), system))
+
+        // Chinese has no spaces between words: its characters are compared, so an echo the mic heard
+        // a little differently is still one, and a reply isn't.
+        #expect(words("大家早上好，Oatcake 3.0") == ["大", "家", "早", "上", "好", "oatcake", "3", "0"])
+        #expect(words("リリース・計画") == ["リ", "リ", "ー", "ス", "計", "画"] && words("ﾘﾘｰｽ") == ["ﾘ", "ﾘ", "ｰ", "ｽ"])
+        let call = [Line(speaker: "A", start: 10, end: 14, text: "大家早上好，我们先快速过一下进度。")]
+        #expect(isEcho(Line(speaker: me, start: 11, end: 13, text: "大家早上好我们先快速过一下进展"), call))
+        #expect(!isEcho(Line(speaker: me, start: 15, end: 16, text: "好的，我同意。"), call))
     }
 
     @Test func splitsBySpeaker() {
@@ -21,6 +29,11 @@ import Testing
         let lines = splitBySpeaker(Utterance(start: 0, end: 2.5, text: "Hello there. Hi!", words: words), turns: turns, letters: letters)
         #expect(lines.map(\.speaker) == ["A", "B"])
         #expect(lines.map(\.text) == ["Hello there.", "Hi!"])
+        // No word times (SenseVoice): the stretch goes to whoever spoke most of it, not whoever was
+        // speaking at its middle. Here A has 0–3 s and 8–14 s, B the 3–8 s that hold the middle.
+        let around = [Turn(start: 0, end: 3, speaker: "S1"), Turn(start: 3, end: 8, speaker: "S2"), Turn(start: 8, end: 14, speaker: "S1")]
+        let whole = splitBySpeaker(Utterance(start: 0, end: 14, text: "大家早上好。", words: []), turns: around, letters: speakerLetters(around))
+        #expect(whole.map(\.speaker) == ["A"] && whole.map(\.text) == ["大家早上好。"])
     }
 
     /// A name is only suggested when it was said: a small model asked for one will sometimes invent it.
@@ -35,6 +48,10 @@ import Testing
         let said = "John Doe (recorder): Joe Bloggs, the blacksmith is here.\nSpeaker A: The work is in its final throes.\nSpeaker B: Fine."
         let made = #"{"speakers":[{"speaker":"A","name":"Smith","quote":null},{"speaker":"B","name":"Roe","quote":null},{"speaker":"C","name":"Joe Bloggs","quote":"Joe Bloggs, the blacksmith"}]}"#
         #expect(namesIn(made, unknown: ["A", "B", "C"], transcript: said, myName: "John Doe").mapValues(\.name) == ["C": "Joe Bloggs"])
+        // Chinese and Japanese names have no spaces around them: said as written is enough.
+        let chinese = "John Doe (recorder): 张三，定价怎么样了？\nSpeaker A: 快好了。"
+        let guessed = #"{"speakers":[{"speaker":"A","name":"张三","quote":"张三，定价"},{"speaker":"B","name":"李四","quote":null}]}"#
+        #expect(namesIn(guessed, unknown: ["A", "B"], transcript: chinese, myName: "John Doe").mapValues(\.name) == ["A": "张三"])
 
         // From a processed recording: the voice nobody recognised gets its name, one that was recognised keeps its own.
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-names-\(UUID().uuidString)")

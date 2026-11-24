@@ -9,7 +9,7 @@ flowchart TD
     end
 
     subgraph process["2 · Process: speech models on this Mac's Neural Engine (FluidAudio)"]
-        asr["Silero VAD finds speech,<br/>Parakeet turns it into text"]
+        asr["Silero VAD finds speech,<br/>Parakeet (or Bark, or SenseVoice)<br/>turns it into text"]
         voices["pyannote finds speaker turns,<br/>WeSpeaker fingerprints each voice<br/>→ speakers A, B, C…"]
         combine["Who said what<br/>call-audio text split by speaker turns;<br/>mic lines that echo the call dropped"]
         match["Voiceprint match against<br/>people you've confirmed before"]
@@ -41,8 +41,9 @@ flowchart TD
     class guess,summary llm
 ```
 
-Everything runs on this Mac, and nothing from a call is sent anywhere. Silero, Parakeet, pyannote
-and WeSpeaker are small speech models (Parakeet is 0.6B parameters), run on the Neural Engine
+Everything runs on this Mac, and nothing from a call is sent anywhere. Silero, Parakeet (or the
+Bark or SenseVoice you choose instead), pyannote and WeSpeaker are small speech models (Parakeet
+is 0.6B parameters), run on the Neural Engine
 through [FluidAudio](https://github.com/FluidInference/FluidAudio)'s Core ML builds: they turn
 audio into text and voices into fingerprints, take no prompts, and can't write anything else. The
 two orange steps are the only language model: Qwen3, which Oatcake downloads once and runs itself
@@ -167,7 +168,8 @@ screen, for when you press record before joining.
 
 ## 2. Process
 
-On this Mac, in the background. Parakeet transcribes both tracks. The call audio is split into
+On this Mac, in the background. The speech model (Parakeet unless you've chosen another)
+transcribes both tracks. The call audio is split into
 voices by FluidAudio's batch diariser (pyannote segmentation, WeSpeaker fingerprints, VBx
 clustering). It runs as a helper process (`Oatcake --analyse`), so a problem there can't take the
 window or a recording in progress with it. Mic lines that repeat the call audio (speaker echo) are

@@ -96,8 +96,10 @@ their chosen colour with them, and so does merging them into someone who hasn't 
 
 ## Models
 
-- **Speech to text:** Parakeet English, or Parakeet for 25 European languages
-  (`SpeechModels.asr`); FluidAudio runs other models too. See [Speech models](models.md#speech-models).
+- **Speech to text:** Parakeet English; Bark English, which leaves out "um", false starts and
+  repeated words; Parakeet for 25 European languages; or SenseVoice for Chinese, Cantonese,
+  Japanese, Korean and English (`SpeechModels.asr`). A model you haven't used yet downloads
+  before the next call is transcribed. See [Speech models](models.md#speech-models).
 - **Language model:** what writes summaries, to-dos and drafts for sharing, suggests names and answers questions.
   Qwen3 8B or Qwen3 4B, which Oatcake downloads and runs on this Mac (the one that suits its memory
   is chosen to start with, and marked "recommended for this Mac"; one this Mac has too little

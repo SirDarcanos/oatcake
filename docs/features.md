@@ -53,7 +53,8 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 
 ## Transcription and voices
 
-- Transcription on the Mac's Neural Engine, in English or 25 European languages.
+- Transcription on the Mac's Neural Engine, in English, 25 European languages, or Chinese,
+  Cantonese, Japanese and Korean.
   [Process](how-it-works.md#2-process), [Speech models](models.md#speech-models)
 - The call side split into voices, with your microphone's echo of the call dropped.
   [Process](how-it-works.md#2-process)

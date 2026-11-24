@@ -13,7 +13,9 @@ speaker separation on a known meeting.
 | --- | --- | --- |
 | Silero VAD | finding speech | MIT |
 | Parakeet TDT 0.6B v2 | English transcription (default) | CC-BY-4.0 |
+| Underdog Bark 3.0 Clean (Conway Research; a retraining of Parakeet v3) | English, leaving out "um", false starts and repeats | CC-BY-4.0 |
 | Parakeet Ultra (post-trained v3) | 25 European languages | CC-BY-4.0 |
+| SenseVoiceSmall (Alibaba's FunAudioLLM) | Chinese, Cantonese, Japanese, Korean and English | [FunASR Model License 1.1](https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE): use, change and share with credit; "for reference and learning purposes only", and later versions apply automatically |
 | pyannote community-1 (segmentation and its WeSpeaker-based embedding) | speaker turns and voice fingerprints | CC-BY-4.0 |
 
 ## Language model
@@ -60,6 +62,21 @@ Summaries, to-dos, name suggestions and Ask's answers come from one model, run o
 
 Changing the model or llama.cpp's build is a deliberate change, like the speech models: change the
 revision and checksum together, then check summaries, to-dos and names on a known call.
+
+Parakeet and Bark give each word's time, so a line that two people share is split between them.
+SenseVoice gives a stretch of speech (up to 14 seconds) as text alone, so the whole stretch goes to
+the voice that said most of it. It's asked for punctuation (FluidAudio leaves it out unless asked),
+and a stretch it returns nothing for, not even a language, is tried again in two halves: one
+Japanese test sentence came back empty until it was. Checked with synthesised speech (`say`), not
+real calls:
+
+- **Bark 3.0 Clean** wrote the English test passage exactly, with punctuation. On LibriSpeech its
+  makers measure it a little behind Parakeet v3 (4.66% of words wrong on test-other, to 4.12%);
+  it's meant for conversation, which LibriSpeech isn't. The verbatim Bark 3.0 isn't offered: it
+  wrote the same passage without capitals or punctuation.
+- **SenseVoice** got the Chinese and Japanese test sentences nearly right, with a word or two
+  misheard (迁移 as 签移), the Korean with a repeated syllable, and English noticeably worse than
+  Parakeet ("morning oil" for "morning all").
 
 ## Accuracy
 

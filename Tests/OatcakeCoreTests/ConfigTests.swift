@@ -113,4 +113,14 @@ import Testing
         #expect(broken.config.outputDir == Config.defaults().outputDir && broken.problem?.contains("config.unreadable.json") == true)
         #expect(readText(kept) == #"{"myName": "John", "outputDir": }"#)
     }
+
+    /// The speech-to-text setting: each choice, the Electron version's name for one, and a name this
+    /// version doesn't know (from a newer one), which is the default.
+    @Test func speechModels() {
+        #expect(SpeechModels.asr.map(\.key) == ["parakeet-en", "bark-en", "parakeet-multilingual", "sensevoice"])
+        #expect(SpeechModels.asrChoice("bark-en").decoder == .parakeet(.bark3Clean))
+        #expect(SpeechModels.asrChoice("sensevoice").decoder == .senseVoice)
+        #expect(SpeechModels.asrChoice("parakeet-tdt-v3").key == "parakeet-multilingual")
+        #expect(SpeechModels.asrChoice("whisper-large").key == SpeechModels.defaultAsr)
+    }
 }

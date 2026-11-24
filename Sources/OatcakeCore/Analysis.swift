@@ -296,6 +296,14 @@ func splitBySpeaker(_ u: Utterance, turns: [Turn], letters: [String: String]) ->
         }
         return letters[best.speaker] ?? "A"
     }
+    // Without each word's time (SenseVoice), the whole stretch goes to whoever spoke most of it.
+    if u.words.isEmpty {
+        var spoke: [String: Double] = [:]
+        for t in turns { spoke[t.speaker, default: 0] += max(0, min(t.end, u.end) - max(t.start, u.start)) }
+        if let most = spoke.filter({ $0.value > 0 }).max(by: { ($0.value, $1.key) < ($1.value, $0.key) }) {
+            return [Line(speaker: letters[most.key] ?? "A", start: u.start, end: u.end, text: u.text)]
+        }
+    }
     let words = u.words.isEmpty ? [Word(text: u.text, start: u.start, end: u.end)] : u.words
     var lines: [Line] = []
     for w in words {
@@ -317,9 +325,34 @@ func splitBySpeaker(_ u: Utterance, turns: [Turn], letters: [String: String]) ->
 
 private let echoWindow = 6.0
 
-private func words(_ text: String) -> [String] {
-    let regex = #/[\p{L}\p{N}']+/#
-    return text.lowercased().matches(of: regex).map { String($0.output) }
+/// The words in a line, for comparing lines. Chinese and Japanese aren't written with spaces between
+/// words, so each of their characters counts as one: otherwise a whole clause would be a "word", and
+/// an echo heard slightly differently on the mic would never match.
+func words(_ text: String) -> [String] {
+    var found: [String] = []
+    var word = ""
+    for ch in text.lowercased() {
+        if ch.unicodeScalars.allSatisfy(isHanOrKana) {
+            if !word.isEmpty { found.append(word) }
+            word = ""
+            found.append(String(ch))
+        } else if ch.isLetter || ch.isNumber || ch == "'" {
+            word.append(ch)
+        } else if !word.isEmpty {
+            found.append(word)
+            word = ""
+        }
+    }
+    if !word.isEmpty { found.append(word) }
+    return found
+}
+
+private func isHanOrKana(_ scalar: Unicode.Scalar) -> Bool {
+    switch scalar.value {
+    // Hiragana and katakana (not their punctuation, ゠ and ・), half-width katakana, and Han.
+    case 0x3040...0x309F, 0x30A1...0x30FA, 0x30FC...0x30FF, 0xFF66...0xFF9D, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF, 0x20000...0x2FFFF: true
+    default: false
+    }
 }
 
 private func pairs(_ w: [String]) -> [String] {
@@ -435,7 +468,9 @@ func namesIn(_ reply: String, unknown: [String], transcript: String, myName: Str
         let folded = foldedForSearch(name)
         guard !wordsForNothing.contains(folded), !["full name", "the name"].contains(folded), !folded.hasPrefix("speaker"),
               !Set(folded.split(separator: " ")).isSubset(of: mine),
-              !words(name).isEmpty, words(name).allSatisfy(heard.contains) else { continue }
+              !words(name).isEmpty, words(name).allSatisfy(heard.contains)
+                  // Chinese and Japanese have no spaces to find a whole word by: the name as written will do.
+                  || name.unicodeScalars.contains(where: isHanOrKana) && foldedForSearch(transcript).contains(folded) else { continue }
         let quote = guess.quote?.trimmed ?? ""
         names[id] = Suggestion(name: name, how: .transcript, detail: wordsForNothing.contains(quote.lowercased()) ? "" : quote)
     }
