@@ -107,8 +107,9 @@ public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: 
 
     var outRel: String
     var out: URL
-    // Naming voices later keeps the summary template the meeting was regenerated with.
-    var template: String?
+    // Keep the recording's choice even if a summary is written later. When reviewing voices in
+    // an already saved meeting, its own choice takes precedence (including a return to Default).
+    var template = rec.summaryTemplate
     if let existing {
         outRel = existing
         out = try resolveInside(config.meetingsRoot, existing)

@@ -78,13 +78,24 @@ struct SidebarView: View {
             VStack(spacing: 0) {
                 UpdateNotice()
                 Divider()
-                SettingsLink {
-                    Label("Settings", systemImage: "slider.horizontal.3").frame(maxWidth: .infinity, alignment: .leading)
+                HStack {
+                    SettingsLink {
+                        Label("Settings", systemImage: "slider.horizontal.3")
+                    }
+                    .help("Settings (⌘,)")
+                    Spacer()
+                    Button { model.selection = .home } label: {
+                        Label("Home", systemImage: model.selection == .home ? "house.fill" : "house")
+                            .labelStyle(.iconOnly)
+                            .frame(minWidth: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .help("Home")
+                    .accessibilityAddTraits(model.selection == .home ? .isSelected : [])
                 }
                 .buttonStyle(.borderless)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .help("Settings (⌘,)")
             }
             .background(.bar)
         }
@@ -117,6 +128,7 @@ struct SidebarView: View {
     private var selectionBinding: Binding<SidebarItem?> {
         Binding {
             switch model.selection {
+            case .home: nil
             case .live: .live
             case .todos: .todos
             case .job(let id): .job(id)
@@ -216,8 +228,7 @@ struct SidebarView: View {
     @ViewBuilder private var upcoming: some View {
         let calendar = model.calendar.cache!
         let now = model.calendar.now
-        let endOfTomorrow = Calendar.current.date(byAdding: .day, value: 2, to: Calendar.current.startOfDay(for: now))!
-        let events = Array(model.calendar.events.filter { !$0.allDay && $0.endDate > now && $0.startDate < endOfTomorrow }.prefix(6))
+        let events = Array(upcomingCalls(model.calendar.events, at: now).prefix(6))
         let next = events.first { $0.startDate > now }
         Section {
             ForEach(events) { event in
@@ -336,7 +347,7 @@ struct SidebarView: View {
     }
 }
 
-private struct NewRecordingLabelStyle: LabelStyle {
+struct NewRecordingLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 7) {
             configuration.icon.foregroundStyle(.red).font(.system(size: 9))

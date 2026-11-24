@@ -10,7 +10,7 @@ leaves it, unless you point Oatcake at a model server of your own on your networ
 - **Records a call**: your microphone and everything the Mac plays, with notes you type during
   it, each stamped with its time, and a [live transcript](docs/how-it-works.md#live-transcript)
   beside them. It [notices calls](docs/how-it-works.md#calls-are-noticed) starting and ending.
-- **Works from your calendar**: the next calls in the sidebar and the
+- **Works from your calendar**: the next calls on Home and in the sidebar and the
   [menu bar](docs/how-it-works.md#the-menu-bar), a reminder before each, **Join the call**, prep
   notes, and a folder for each recurring meeting. [Calendar](docs/settings.md#calendar)
 - **Transcribes and tells the voices apart on this Mac**, and recognises people it has heard

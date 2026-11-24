@@ -556,7 +556,8 @@ struct MeetingView: View {
                             .padding(8)
                             .background(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.line))
                     } else {
-                        TextEditor(text: Binding(get: { files[key] ?? "" }, set: { write(key, $0) }))
+                        // Read live state so the binding can return the new text immediately after typing.
+                        TextEditor(text: Binding(get: { self.files?[key] ?? "" }, set: { write(key, $0) }))
                             .font(.system(size: 12.5 * scale, design: .monospaced))
                             .scrollDisabled(true)
                             .frame(minHeight: key == .todos ? 70 : 300)

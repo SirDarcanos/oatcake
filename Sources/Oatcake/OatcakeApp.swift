@@ -201,6 +201,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
 struct ContentView: View {
     @Environment(AppModel.self) private var model
+    // A narrower window can constrain the pane without changing the chosen width.
+    @ViewState private var meetingListWidth: CGFloat = 300
 
     var body: some View {
         @Bindable var model = model
@@ -209,12 +211,10 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 520)
         } detail: {
             if showsList {
-                HSplitView {
+                MeetingListSplit(preferredWidth: $meetingListWidth) {
                     MeetingListView(folder: model.library.tree?.find(model.folder) ?? model.library.tree, root: model.library.tree)
-                        .frame(minWidth: 220, idealWidth: 300, maxWidth: 560)
+                } detail: {
                     DetailView()
-                        .frame(minWidth: 420, maxWidth: .infinity)
-                        .layoutPriority(1)
                 }
             } else {
                 DetailView()
@@ -244,6 +244,54 @@ struct ContentView: View {
     }
 }
 
+/// Give the list an explicit width so a detail view's layout cannot reset the divider.
+private struct MeetingListSplit<ListContent: View, Detail: View>: View {
+    @Binding var preferredWidth: CGFloat
+    @ViewBuilder let list: () -> ListContent
+    @ViewBuilder let detail: () -> Detail
+    @GestureState private var dragOffset: CGFloat = 0
+
+    var body: some View {
+        GeometryReader { geometry in
+            let available = max(0, geometry.size.width - 1)
+            let minimum = min(220, available)
+            let maximum = max(minimum, min(560, available - 420))
+            let startingWidth = min(max(preferredWidth, minimum), maximum)
+            let width = min(max(startingWidth + dragOffset, minimum), maximum)
+            HStack(spacing: 0) {
+                list().frame(width: width)
+                Divider()
+                    .frame(width: 1)
+                    .overlay {
+                        Color.clear
+                            .frame(width: 10)
+                            .contentShape(Rectangle())
+                            .pointerStyle(.columnResize)
+                            .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .global)
+                                .updating($dragOffset) { drag, offset, _ in offset = drag.translation.width }
+                                .onEnded { drag in
+                                    let proposed = min(max(startingWidth + drag.translation.width, minimum), maximum)
+                                    if proposed != startingWidth { preferredWidth = proposed }
+                                })
+                    }
+                    .zIndex(1)
+                    .accessibilityRepresentation {
+                        Slider(value: Binding(get: { width }, set: { proposed in
+                            let adjusted = min(max(proposed, minimum), maximum)
+                            if adjusted != startingWidth { preferredWidth = adjusted }
+                        }),
+                               in: minimum...max(minimum + 1, maximum)) {
+                            Text("Meeting list width")
+                        }
+                        .accessibilityValue(Text("\(Int(width.rounded())) points"))
+                        .disabled(minimum == maximum)
+                    }
+                detail().frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+    }
+}
+
 /// The right-hand pane.
 struct DetailView: View {
     @Environment(AppModel.self) private var model
@@ -251,6 +299,8 @@ struct DetailView: View {
     var body: some View {
         Group {
             switch model.selection {
+            case .home:
+                HomeView()
             case .meeting(let path, let jump):
                 if let node = model.library.tree?.find(path), node.kind == .meeting {
                     MeetingView(node: node, jump: jump)

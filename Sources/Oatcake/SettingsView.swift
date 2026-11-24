@@ -19,7 +19,7 @@ struct SettingsView: View {
             Form { PeopleSection() }.formStyle(.grouped).tabItem { Label("People", systemImage: "person.2") }.tag("people")
             Form { transcription; llmSection }.formStyle(.grouped).tabItem { Label("Models", systemImage: "cpu") }.tag("models")
             Form { jargonSection; outputSections }.formStyle(.grouped).tabItem { Label("Summaries", systemImage: "text.alignleft") }.tag("summaries")
-            Form { storage }.formStyle(.grouped).tabItem { Label("Storage", systemImage: "folder") }.tag("storage")
+            Form { storage; mcp }.formStyle(.grouped).tabItem { Label("Storage", systemImage: "folder") }.tag("storage")
             Form { UpdatesSection() }.formStyle(.grouped).tabItem { Label("Updates", systemImage: "arrow.down.circle") }.tag("updates")
         }
         .frame(width: 620, height: 600)
@@ -109,6 +109,40 @@ struct SettingsView: View {
         case .review: "Each call waits under Needs review until you’ve named its voices and saved it."
         case .saveWithSummary: "Each call is saved once it’s processed, and summarised. Voices Oatcake is sure it recognises keep their names; the rest are “Voice 1”, “Voice 2”… until you name them from the meeting."
         case .saveTranscript: "Each call is saved once it’s processed, with no summary or to-dos. Voices Oatcake is sure it recognises keep their names; the rest are “Voice 1”, “Voice 2”… until you name them from the meeting."
+        }
+    }
+
+    /// Other apps' MCP access to the Meetings folder. They start `Oatcake --mcp` themselves, so
+    /// there's nothing here to start or stop: only whether it may read, and what to give an app.
+    private var mcp: some View {
+        Section {
+            Toggle("Let other apps read my meetings", isOn: bind(\.mcpEnabled))
+            if model.mcpOffNotSaved, !model.config.mcpEnabled {
+                Text("Oatcake couldn’t save this, so apps you’ve added it to can still read your meetings.")
+                    .settingsHint(.amber)
+                Button("Retry Saving") { model.retrySavingMCPOff() }
+            }
+            if model.config.mcpEnabled {
+                if model.config.mcpApprovedRoot == nil {
+                    Text("Oatcake couldn’t check the Meetings folder, so apps can’t read it yet. Check it above, then turn this off and on again.")
+                        .settingsHint(.amber)
+                }
+                Text("Add Oatcake to an app that supports MCP with this:").settingsHint()
+                // All of it in view: it's short, and it's there to be selected and copied whole.
+                Text(verbatim: MCPServer.configuration(executable: Bundle.main.executablePath ?? ""))
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                    .background(.quaternary.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
+                    .accessibilityLabel("MCP configuration")
+            }
+        } header: {
+            Text("Local MCP server")
+        } footer: {
+            Text("An app you add Oatcake to starts its reader itself, whether or not Oatcake is open, and can read your whole Meetings folder while this is on. An app that uses an online model may send what it reads to that service.")
+                .settingsHint()
         }
     }
 
@@ -490,7 +524,9 @@ private struct TemplatesSections: View {
 }
 
 /// One summary template, to rename, edit or delete. Its instructions are saved as they're typed; its
-/// name when you press Return or leave the field, if no other template has it.
+/// name when you press Return or leave the field, or when the field goes (another pane, or Settings
+/// closed), if no other template has it. Not as it's typed: the section is keyed by the name, so
+/// saving each keystroke would remake the field under the cursor.
 private struct TemplateSection: View {
     @Environment(AppModel.self) private var model
     /// As saved.
@@ -507,6 +543,7 @@ private struct TemplateSection: View {
                 .focused($nameFocused)
                 .onSubmit(saveName)
                 .onChange(of: nameFocused) { if !nameFocused { saveName() } }
+                .onDisappear(perform: saveName)
             if let nameProblem {
                 Text(nameProblem).settingsHint(.red)
             }
@@ -599,14 +636,8 @@ private struct TestRow: View {
         let started = Date()
         let llm = model.config.llm
         do {
-            let reply = try await withThrowingTaskGroup(of: String.self) { group in
-                group.addTask {
-                    // A one-word reply needs no reasoning. Loading the model is most of the wait.
-                    try await withModel(llm, tokens: 100) { chat, _ in
-                        try await chat.complete([ChatMessage("system", "Reply with the single word OK and nothing else."), ChatMessage("user", "Say OK.")],
-                                                think: false, maxTokens: 20)
-                    }
-                }
+            let check = try await withThrowingTaskGroup(of: ModelCheck.self) { group in
+                group.addTask { try await checkModel(llm) }
                 group.addTask {
                     try await Task.sleep(for: .seconds(120))
                     throw OatcakeError("No reply after two minutes")
@@ -615,7 +646,13 @@ private struct TestRow: View {
                 group.cancelAll()
                 return first
             }
-            result = (true, "Working: replied “\(reply.trimmed.prefix(40))” in \(String(format: "%.1f", Date().timeIntervalSince(started))) s.")
+            let time = String(format: "%.1f", Date().timeIntervalSince(started))
+            switch check {
+            case .replied(let reply):
+                result = (true, "Working: replied “\(reply.trimmed.prefix(40))” in \(time) s.")
+            case .stillReasoning:
+                result = (true, "Working: the model answered in \(time) s, but was still reasoning when this check stopped it. Summaries and other tasks give it far more room.")
+            }
         } catch {
             result = (false, String(explainModelError(error.localizedDescription).prefix(300)))
         }

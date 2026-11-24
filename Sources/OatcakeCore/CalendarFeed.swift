@@ -83,6 +83,12 @@ extension CalendarCache {
     }
 }
 
+/// Timed calls still in progress or starting before the end of tomorrow, in the calendar feed's order.
+public func upcomingCalls(_ events: [CalendarEvent], at now: Date, calendar: Calendar = .current) -> [CalendarEvent] {
+    guard let end = calendar.date(byAdding: .day, value: 2, to: calendar.startOfDay(for: now)) else { return [] }
+    return events.filter { !$0.allDay && $0.endDate > now && $0.startDate < end }
+}
+
 /**
  * The event happening at `now` (or starting within ten minutes), if any. None if that event is in
  * `recorded` (by ID): a call that finishes early and is followed by another while its slot is still on

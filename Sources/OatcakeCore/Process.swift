@@ -90,6 +90,8 @@ public enum HelperMode {
     public static let analyse = "--analyse"
     /// Transcribes a call while it's being recorded.
     public static let live = "--live"
+    /// Lets the app that started it read the saved meetings over MCP (MCPServer).
+    public static let mcp = "--mcp"
 }
 
 /// A helper process with its output collected, line by line if wanted, without blocking a thread.

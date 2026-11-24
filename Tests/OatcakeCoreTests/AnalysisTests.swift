@@ -56,7 +56,7 @@ import Testing
         let asked = try #require(server.requests.first)
         #expect(asked.messages.user.contains("John Doe (recorder): Joe Bloggs, where are we with pricing?\nSpeaker A: Nearly there.\nJane Doe: Good."))
         #expect(asked.messages.user.contains("Unidentified speakers: Speaker A\n") && asked.json["response_format"] != nil)
-        #expect(asked.json["temperature"] as? Double == 0.6)
+        #expect(asked.leavesSampling)
 
         // The model is shown "Jane Doe:" before the recognised voice's lines. That's a label, not something
         // said: it doesn't make Jane Doe a name the other voice can be given.

@@ -24,7 +24,7 @@ import Testing
         let first = try await OatcakeCore.ask(config, meeting: sync, question: "Who is booking the café?")
         let here = "Team/2026-11-09%201000%20Weekly%20sync"
         #expect(first == "Jane Doe said they would book it [12:34](\(here)#12:34), which is done [Weekly sync · Nov 9](\(here)). See also [00:00](\(here)#00:00). A link: [x](https://example.com).")
-        #expect(alone.requests.count == 1 && alone.requests[0].json["temperature"] as? Double == 0.6)
+        #expect(alone.requests.count == 1 && alone.requests[0].leavesSampling)
         let only = alone.requests[0].messages
         #expect(only.system.contains("[M1 12:34]") && only.user.hasPrefix("[M1] Weekly sync · Mon, Nov 9, 2026 (the meeting "))
         #expect(only.user.contains("To-dos ([x] = done):\n- [x] Book the café — Jane Doe") && only.user.contains("**[12:34] Jane Doe:** I will book the café"))
@@ -39,7 +39,7 @@ import Testing
         config.llm.reasoning.ask = false
         _ = try await OatcakeCore.ask(config, meeting: sync, question: "Who is booking the café?")
         #expect(stays.requests.count == 2 && !stays.requests[1].messages.user.contains("[M2]"))
-        #expect(stays.requests.map { $0.json["temperature"] as? Double } == [0.7, 0.7])
+        #expect(stays.requests.allSatisfy { $0.leavesSampling })
 
         let reaches = try await StandIn.model {
             $0.json["response_format"] != nil ? #"{"beyond":true,"search":["offsite budget","zebra"]}"#
