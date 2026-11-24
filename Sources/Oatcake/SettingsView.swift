@@ -636,14 +636,8 @@ private struct TestRow: View {
         let started = Date()
         let llm = model.config.llm
         do {
-            let reply = try await withThrowingTaskGroup(of: String.self) { group in
-                group.addTask {
-                    // A one-word reply needs no reasoning. Loading the model is most of the wait.
-                    try await withModel(llm, tokens: 100) { chat, _ in
-                        try await chat.complete([ChatMessage("system", "Reply with the single word OK and nothing else."), ChatMessage("user", "Say OK.")],
-                                                think: false, maxTokens: 20)
-                    }
-                }
+            let check = try await withThrowingTaskGroup(of: ModelCheck.self) { group in
+                group.addTask { try await checkModel(llm) }
                 group.addTask {
                     try await Task.sleep(for: .seconds(120))
                     throw OatcakeError("No reply after two minutes")
@@ -652,7 +646,13 @@ private struct TestRow: View {
                 group.cancelAll()
                 return first
             }
-            result = (true, "Working: replied “\(reply.trimmed.prefix(40))” in \(String(format: "%.1f", Date().timeIntervalSince(started))) s.")
+            let time = String(format: "%.1f", Date().timeIntervalSince(started))
+            switch check {
+            case .replied(let reply):
+                result = (true, "Working: replied “\(reply.trimmed.prefix(40))” in \(time) s.")
+            case .stillReasoning:
+                result = (true, "Working: the model answered in \(time) s, but was still reasoning when this check stopped it. Summaries and other tasks give it far more room.")
+            }
         } catch {
             result = (false, String(explainModelError(error.localizedDescription).prefix(300)))
         }
