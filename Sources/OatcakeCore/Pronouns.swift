@@ -27,8 +27,6 @@ private let afterHave: Set = ["been", "got", "had", "done", "seen", "gone", "mad
 /// Participles that after "she's" mean "she is": "she's supposed to", "he's based in Rome".
 private let stative: Set = ["supposed", "expected", "scheduled", "based", "interested", "involved", "located", "tasked", "required", "allowed",
                             "invited", "excited", "concerned", "pleased", "worried", "married", "engaged", "prepared", "committed", "set"]
-/// After "she's" and a participle, these make it the passive: "she's booked for Friday", "she's needed in Rome".
-private let passiveFollowers: Set = ["to", "in", "on", "at", "for", "by", "with", "from", "as"]
 /// Tagged as nouns, but not what a possessive goes with: "making her unavailable on Tuesday".
 private let notNouns: Set = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "today", "tomorrow", "tonight", "yesterday"]
 private let gendered: Set = ["he", "him", "his", "himself", "she", "her", "hers", "herself"]
@@ -87,13 +85,13 @@ private func theyThemLine(_ line: String, names: [String]) -> String {
         if let plural = agreeing[v] {
             edits.append((verb.range, plural))
         } else if v == "'s" || v == "’s" {
-            // "she's" is "she has" before a past participle ("she's booked the room"), and "she is"
-            // otherwise, including in the passive: "she's expected to present", "she's booked for Friday".
+            // "she's" is "she has" before a past participle ("she's booked the room", "she's worked
+            // on it"), and "she is" otherwise, or before a participle that's mostly said with "is"
+            // ("she's expected to present"). A rarer passive ("she's booked for Friday") gets "they've".
             let k = skippingBetween(j + 1)
             let after = word(k)?.text.lowercased() ?? ""
-            let regular = word(k)?.tag == .verb && (after.hasSuffix("ed") || after.hasSuffix("en"))
-            let passive = stative.contains(after) || passiveFollowers.contains(word(k + 1)?.text.lowercased() ?? "")
-            edits.append((verb.range, "\(v.first!)" + (afterHave.contains(after) || regular && !passive ? "ve" : "re")))
+            let participle = word(k)?.tag == .verb && (after.hasSuffix("ed") || after.hasSuffix("en"))
+            edits.append((verb.range, "\(v.first!)" + (afterHave.contains(after) || participle && !stative.contains(after) ? "ve" : "re")))
         } else if verb.tag == .verb, v.hasSuffix("s"), !v.hasSuffix("ss"),
                   let lemma = tagger.tag(at: verb.range.lowerBound, unit: .word, scheme: .lemma).0?.rawValue, lemma != v {
             edits.append((verb.range, lemma))
