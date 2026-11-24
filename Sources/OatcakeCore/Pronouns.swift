@@ -24,6 +24,11 @@ private let betweenSubjectAndVerb: Set = ["also", "still", "already", "then", "j
 private let agreeing = ["is": "are", "was": "were", "has": "have", "does": "do"]
 /// After "she's": "they've" before these, "they're" otherwise.
 private let afterHave: Set = ["been", "got", "had", "done", "seen", "gone", "made", "sent", "finished", "completed", "said", "taken", "given", "written", "asked", "agreed", "decided"]
+/// Participles that after "she's" mean "she is": "she's supposed to", "he's based in Rome".
+private let stative: Set = ["supposed", "expected", "scheduled", "based", "interested", "involved", "located", "tasked", "required", "allowed",
+                            "invited", "excited", "concerned", "pleased", "worried", "married", "engaged", "prepared", "committed", "set"]
+/// After "she's" and a participle, these make it the passive: "she's booked for Friday", "she's needed in Rome".
+private let passiveFollowers: Set = ["to", "in", "on", "at", "for", "by", "with", "from", "as"]
 /// Tagged as nouns, but not what a possessive goes with: "making her unavailable on Tuesday".
 private let notNouns: Set = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "today", "tomorrow", "tonight", "yesterday"]
 private let gendered: Set = ["he", "him", "his", "himself", "she", "her", "hers", "herself"]
@@ -56,9 +61,11 @@ private func theyThemLine(_ line: String, names: [String]) -> String {
     for (i, w) in words.enumerated() {
         let lower = w.text.lowercased()
         guard gendered.contains(lower), !named.contains(where: { $0.overlaps(w.range) }) else { continue }
-        // A capitalised He or Her next to another capitalised word is a name ("Lily He", "He Wei"),
-        // not the start of a sentence: a pronoun there is followed by a word in lower case.
-        if w.text.first?.isUppercase == true, isCapitalised(i - 1) || isCapitalised(i + 1) { continue }
+        // A capitalised He after another capitalised word is a name ("Lily He"), and so is a He
+        // before one ("He Wei"): a subject there is followed by a word in lower case. His and Her
+        // before one are possessives ("His PR", "Her Q3 numbers").
+        if w.text.first?.isUppercase == true,
+           isCapitalised(i - 1) || (lower == "he" || lower == "she") && isCapitalised(i + 1) { continue }
         // A possessive is followed by a noun, a number, or an adjective and then a noun: "her trip",
         // "her 2 PRs", "her new plan", but "making her unavailable on Tuesday" and "send her the plan".
         let beforeNoun = isNoun(i + 1) || isNumber(i + 1) || word(i + 1)?.tag == .adjective && isNoun(i + 2)
@@ -80,11 +87,13 @@ private func theyThemLine(_ line: String, names: [String]) -> String {
         if let plural = agreeing[v] {
             edits.append((verb.range, plural))
         } else if v == "'s" || v == "’s" {
-            // "she's" is "she has" before a past participle ("she's booked it"), "she is" otherwise.
-            let after = word(skippingBetween(j + 1))
-            let participle = after.map { afterHave.contains($0.text.lowercased())
-                || $0.tag == .verb && ($0.text.lowercased().hasSuffix("ed") || $0.text.lowercased().hasSuffix("en")) } ?? false
-            edits.append((verb.range, "\(v.first!)" + (participle ? "ve" : "re")))
+            // "she's" is "she has" before a past participle ("she's booked the room"), and "she is"
+            // otherwise, including in the passive: "she's expected to present", "she's booked for Friday".
+            let k = skippingBetween(j + 1)
+            let after = word(k)?.text.lowercased() ?? ""
+            let regular = word(k)?.tag == .verb && (after.hasSuffix("ed") || after.hasSuffix("en"))
+            let passive = stative.contains(after) || passiveFollowers.contains(word(k + 1)?.text.lowercased() ?? "")
+            edits.append((verb.range, "\(v.first!)" + (afterHave.contains(after) || regular && !passive ? "ve" : "re")))
         } else if verb.tag == .verb, v.hasSuffix("s"), !v.hasSuffix("ss"),
                   let lemma = tagger.tag(at: verb.range.lowerBound, unit: .word, scheme: .lemma).0?.rawValue, lemma != v {
             edits.append((verb.range, lemma))

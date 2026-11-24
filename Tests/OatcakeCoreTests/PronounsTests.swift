@@ -18,6 +18,12 @@ import Testing
         // "she's" is "she has" before a past participle, regular or not.
         #expect(theyThem("She's confirmed the booking and he's reviewed it, but she's tired.")
             == "They've confirmed the booking and they've reviewed it, but they're tired.")
+        // In the passive, "she's" is "she is".
+        #expect(theyThem("She's expected to present, he's based in Rome, she's booked for Friday, and he's booked the room.")
+            == "They're expected to present, they're based in Rome, they're booked for Friday, and they've booked the room.")
+        // At the start of a sentence, His and Her before a capitalised word are still possessives.
+        #expect(theyThem("His PR was merged. Her Q3 numbers are in. Her Rome trip moves to May.")
+            == "Their PR was merged. Their Q3 numbers are in. Their Rome trip moves to May.")
         // Before a number it's a possessive; "theirs" only where nothing follows.
         #expect(theyThem("He closed his 3 tasks and her 2 PRs; the rest were his.") == "They closed their 3 tasks and their 2 PRs; the rest were theirs.")
         // Words that only contain a pronoun are left alone, and so is a summary with none.
