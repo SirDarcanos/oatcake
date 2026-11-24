@@ -490,7 +490,9 @@ private struct TemplatesSections: View {
 }
 
 /// One summary template, to rename, edit or delete. Its instructions are saved as they're typed; its
-/// name when you press Return or leave the field, if no other template has it.
+/// name when you press Return or leave the field, or when the field goes (another pane, or Settings
+/// closed), if no other template has it. Not as it's typed: the section is keyed by the name, so
+/// saving each keystroke would remake the field under the cursor.
 private struct TemplateSection: View {
     @Environment(AppModel.self) private var model
     /// As saved.
@@ -507,6 +509,7 @@ private struct TemplateSection: View {
                 .focused($nameFocused)
                 .onSubmit(saveName)
                 .onChange(of: nameFocused) { if !nameFocused { saveName() } }
+                .onDisappear(perform: saveName)
             if let nameProblem {
                 Text(nameProblem).settingsHint(.red)
             }

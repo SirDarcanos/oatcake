@@ -130,7 +130,8 @@ shown but can't be changed, as it decides for itself.
   [Regenerate and summary templates](how-it-works.md#regenerate-and-summary-templates)); the
   meeting keeps it (in its `meeting.json`) and every other meeting keeps the summary instructions.
   A meeting keeps its template by name: once that template is renamed or deleted, the meeting is
-  back on the summary instructions, until a template is given that name again. A template with no
+  back on the summary instructions, until a template is given that name again. A new name is saved
+  when you press Return, leave the field, switch pane or close Settings. A template with no
   instructions means the summary instructions. The summary starts at the model's
   first `## ` heading: anything written before it is left out.
 - **To-dos** (while to-dos are collected): what the model is told counts as a to-do. Oatcake's
