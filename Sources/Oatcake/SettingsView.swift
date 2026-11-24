@@ -314,6 +314,17 @@ struct SettingsView: View {
                     if llm.own.model.trimmed.isEmpty { Text("Required").font(.callout).foregroundStyle(Color.amber) }
                 }
                 .font(.system(.body, design: .monospaced))
+                Picker(selection: bindLlm(\.own.reasoningControl)) {
+                    Text("Leave it to the server").tag(nil as LlmConfig.ReasoningControl?)
+                    Text("Ollama (reasoning_effort)").tag(Optional(LlmConfig.ReasoningControl.ollama))
+                    Text("llama.cpp (enable_thinking)").tag(Optional(LlmConfig.ReasoningControl.llamaCpp))
+                } label: {
+                    Text("Reasoning switch")
+                    Text(llm.own.reasoningControl == nil
+                         ? "The server decides whether its model reasons first. Choose the switch it takes to use the Reasoning switches in Settings › Summaries."
+                         : "Each task’s Reasoning switch in Settings › Summaries is sent this way. A model that can’t turn reasoning off keeps its least.")
+                        .settingsHint()
+                }
             }
             TestRow(missing: testBlocker(llm)).id(llm.model)
         } header: {
@@ -376,17 +387,19 @@ struct SettingsView: View {
     }
 
     /**
-     * Whether the model thinks a task through before it replies. Only Oatcake's own models are told:
-     * a server of yours decides for itself, so the switch is shown but can't be changed.
+     * Whether the model thinks a task through before it replies. Oatcake's own models are always told;
+     * a server of yours only once you've said which switch it takes (Settings › Models). Until then it
+     * decides for itself, so the switch is shown but can't be changed.
      */
     private func reasoningToggle(_ task: WritableKeyPath<LlmConfig.Reasoning, Bool>, title: String = "Reasoning", detail: String) -> some View {
-        let own = LocalModels.find(model.config.llm.model) == nil
+        let undecided = LocalModels.find(model.config.llm.model) == nil && model.config.llm.own.reasoningControl == nil
         let reasoning: WritableKeyPath<LlmConfig, LlmConfig.Reasoning> = \.reasoning
         return Toggle(isOn: bindLlm(reasoning.appending(path: task))) {
             Text(title)
-            Text(own ? "A model server of your own decides this for itself." : "The model thinks it through before replying. \(detail)")
+            Text(undecided ? "A model server of your own decides this for itself, until you choose its reasoning switch in Settings › Models."
+                 : "The model thinks it through before replying. \(detail)")
         }
-        .disabled(own)
+        .disabled(undecided)
     }
 }
 

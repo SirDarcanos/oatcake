@@ -114,8 +114,12 @@ One section for each thing the model writes, each with its instructions and its 
 side by side. Instructions show as Oatcake's own or yours; **Edit…** opens them below (saved as
 you type), and **Restore Default…** there brings Oatcake's own back. **Reasoning** is whether the
 model thinks a task through before it replies: slower, and not always better. Each switch says
-how it did in Oatcake's tests. They're for Oatcake's own models: with a server of yours they're
-shown but can't be changed, as it decides for itself.
+how it did in Oatcake's tests. With a server of yours they're shown but can't be changed, as it
+decides for itself, until you choose the **Reasoning switch** it takes in Settings › Models:
+**Ollama** (its `reasoning_effort`: `medium` to reason, `none` not to) or **llama.cpp** (the
+`enable_thinking` that Qwen3's chat template reads, as Oatcake's own server uses). Then each
+switch is sent with its task's requests. A model that can't turn reasoning off (GPT-OSS on Ollama)
+keeps its lowest level. **Leave it to the server**, the default, sends nothing about reasoning.
 
 - **Jargon:** names, products and acronyms, separated by commas. The model is told to spell them
   as written, in summaries, to-dos, drafts, name suggestions and Ask's answers. Transcripts keep
