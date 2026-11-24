@@ -84,7 +84,7 @@ public func ask(_ config: Config, meeting rel: String, question: String, history
         onStep("Writing the answer")
         let prompt = ([open] + found.map(\.text)).joined(separator: "\n\n") + "\n\n" + tail
         let answer = try await model.complete([system, ChatMessage("user", prompt)], think: think, maxTokens: replyTokens)
-        return citationLinks(answer, sources: [rel] + found.map(\.path))
+        return citationLinks(theyThem(answer, names: files.meta.participants ?? []), sources: [rel] + found.map(\.path))
     }
 }
 

@@ -428,8 +428,11 @@ private func summarise(_ config: Config, title: String, participants: [String], 
             summaryBody(try await model.complete([system, ChatMessage("user", prompt)], think: reasoning.summary, maxTokens: replyTokens))
         }
     }
+    // Everyone is they/them: a he or she from the model is a guess from a name (theyThem).
+    summary = theyThem(summary, names: participants)
+    let neutral = todos.isEmpty ? [] : theyThem(todos.joined(separator: "\n"), names: participants).components(separatedBy: "\n")
     var seen = Set<String>()
-    let unique = todos.filter { seen.insert($0.lowercased()).inserted }
+    let unique = neutral.filter { seen.insert($0.lowercased()).inserted }
     return SummaryDraft(summary: summary.trimmed + "\n", todo: unique.isEmpty ? "" : unique.joined(separator: "\n") + "\n",
                         todoProblem: todosUnread ? todosUnreadMessage : nil)
 }

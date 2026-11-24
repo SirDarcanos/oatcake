@@ -23,7 +23,7 @@ import Testing
         config.llm = alone.config.llm
         let first = try await OatcakeCore.ask(config, meeting: sync, question: "Who is booking the café?")
         let here = "Team/2026-11-09%201000%20Weekly%20sync"
-        #expect(first == "Jane Doe said she would book it [12:34](\(here)#12:34), which is done [Weekly sync · Nov 9](\(here)). See also [00:00](\(here)#00:00). A link: [x](https://example.com).")
+        #expect(first == "Jane Doe said they would book it [12:34](\(here)#12:34), which is done [Weekly sync · Nov 9](\(here)). See also [00:00](\(here)#00:00). A link: [x](https://example.com).")
         #expect(alone.requests.count == 1 && alone.requests[0].leavesSampling)
         let only = alone.requests[0].messages
         #expect(only.system.contains("[M1 12:34]") && only.user.hasPrefix("[M1] Weekly sync · Mon, Nov 9, 2026 (the meeting "))

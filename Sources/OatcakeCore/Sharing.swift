@@ -44,7 +44,7 @@ public func draftForSharing(_ config: Config, meeting rel: String, request: Stri
         try await model.complete([ChatMessage("system", sharingSystem), ChatMessage("user", prompt)],
                                  think: config.llm.reasoning.sharing, maxTokens: replyTokens)
     }
-    let draft = sharingBody(reply)
+    let draft = theyThem(sharingBody(reply), names: files.meta.participants ?? [])
     guard !draft.isEmpty else { throw OatcakeError("The model returned an empty draft.") }
     return draft + "\n"
 }
