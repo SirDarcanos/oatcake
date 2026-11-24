@@ -13,6 +13,7 @@ public struct TreeNode: Identifiable, Equatable, Hashable, Sendable {
     public var children: [TreeNode] = []
     /// Meetings only, from meeting.json.
     public var title: String?
+    public var summaryTemplate: String?
     public var startedAt: Date?
     public var endedAt: Date?
     /// Imported from a Granola export.
@@ -109,7 +110,8 @@ public final class Meetings: @unchecked Sendable {
             if !rel.isEmpty, fm.exists(metaFile) {
                 // A hand-edited meeting.json shouldn't hide the meeting.
                 let meta = tryJSON(MeetingMeta.self, metaFile)
-                return TreeNode(name: name, path: rel, kind: .meeting, title: meta?.title, startedAt: parseISO(meta?.startedAt),
+                return TreeNode(name: name, path: rel, kind: .meeting, title: meta?.title, summaryTemplate: meta?.template,
+                                startedAt: parseISO(meta?.startedAt),
                                 endedAt: parseISO(meta?.endedAt), granola: meta?.source == "granola",
                                 preview: preview(full.appendingPathComponent("summary.md")))
             }

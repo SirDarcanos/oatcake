@@ -17,6 +17,7 @@ struct NewRecordingView: View {
     @ViewState private var folder = topLevel
     @ViewState private var newName = ""
     @ViewState private var title = ""
+    @ViewState private var summaryTemplate: String?
     @ViewState private var prep: [String] = []
     @ViewState private var prepDraft = ""
     @ViewState private var error = ""
@@ -102,9 +103,12 @@ struct NewRecordingView: View {
             folder = model.folder.isEmpty ? topLevel : model.folder
             return
         }
-        if let tree = model.library.tree, let match = matchingFolder(event.title, in: tree) {
+        let tree = model.library.tree
+        let earlier = tree.flatMap { latestMeeting(titled: event.title, in: $0) }
+        summaryTemplate = model.config.summaryTemplate(named: earlier?.summaryTemplate)?.name
+        if let tree, let match = matchingFolder(event.title, in: tree) {
             folder = match
-        } else if let tree = model.library.tree, let earlier = latestMeeting(titled: event.title, in: tree) {
+        } else if let earlier {
             let parent = parentOf(earlier.path)
             folder = parent.isEmpty ? topLevel : parent
         } else if event.seriesId != nil {
@@ -150,6 +154,21 @@ struct NewRecordingView: View {
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 360)
                     .onSubmit(start)
+            }
+            let templates = model.config.summaryTemplates.filter { model.config.summaryTemplate(named: $0.name) != nil }
+            if !templates.isEmpty {
+                GridRow {
+                    Text("Summary template").foregroundStyle(.secondary)
+                    Picker("Summary template", selection: Binding(
+                        get: { model.config.summaryTemplate(named: summaryTemplate)?.name },
+                        set: { summaryTemplate = $0 }
+                    )) {
+                        Text("Default").tag(nil as String?)
+                        ForEach(templates, id: \.name) { Text($0.name).tag(Optional($0.name)) }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 360, alignment: .leading)
+                }
             }
             GridRow {
                 Text("Microphone").foregroundStyle(.secondary)
@@ -307,7 +326,9 @@ struct NewRecordingView: View {
             let notes = prep + prepLines(prepDraft)
             let name = title.trimmed.isEmpty ? (folderName.isEmpty ? "Untitled meeting" : folderName) : title.trimmed
             try model.recording.startRecording(title: name, folder: target,
-                                     options: .init(eventId: event?.id, prep: notes, attendees: event.map { others($0).map(attendeeName) } ?? []))
+                                     options: .init(eventId: event?.id, prep: notes,
+                                                    attendees: event.map { others($0).map(attendeeName) } ?? [],
+                                                    summaryTemplate: model.config.summaryTemplate(named: summaryTemplate)?.name))
         } catch {
             self.error = error.localizedDescription
             starting = false

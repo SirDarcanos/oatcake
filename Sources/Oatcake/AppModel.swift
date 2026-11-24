@@ -9,6 +9,7 @@ import SwiftUI
 
 /// What the detail pane shows.
 enum Selection: Equatable {
+    case home
     /// A meeting, optionally opened on a tab at a transcript time (the nonce makes a repeat jump count).
     case meeting(String, jump: Jump? = nil)
     case todos
@@ -79,6 +80,8 @@ final class AppModel {
     var toastIsError = false
     let updater = Updater()
     let ask = AskChat()
+    /// Turning off "Let other apps read my meetings" couldn't be saved, so apps can still read them.
+    private(set) var mcpOffNotSaved = false
     /// Why the settings couldn't be read at launch, until it has been shown.
     private var configProblem: String?
     private var timers: [Timer] = []
@@ -164,13 +167,13 @@ final class AppModel {
 
         recording.resumeRecordings()
         library.watchMeetings()
-        // The first load happens before the window shows, so it opens on your last meeting rather
-        // than on whatever the sidebar selects by itself.
+        // Load the library before showing Home, so its recent meetings are ready at launch.
         library.tree = library.meetings.tree()
         if let tree = library.tree { library.setTodos(library.meetings.allTodos(in: tree)) }
         jobs.pending = Recordings.list().filter { $0.state == .recorded || $0.state == .processed }
         jobs.unchecked = Recordings.unchecked()
-        openLastMeeting()
+        // A recording picked up again above has opened its live view: Home only when nothing has.
+        if selection == nil { selection = .home }
         refresh()
         calendar.start()
         timers.append(Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
@@ -237,22 +240,10 @@ final class AppModel {
         }
     }
 
-    /// Opens the meeting you were last reading, or on first run the most recent one.
-    private func openLastMeeting() {
-        guard selection == nil, let tree = library.tree else { return }
-        if let last = UserDefaults.standard.string(forKey: "lastMeeting"), tree.find(last)?.kind == .meeting {
-            return openMeeting(last)
-        }
-        if let newest = tree.allMeetings.max(by: { (meetingDate($0) ?? .distantPast) < (meetingDate($1) ?? .distantPast) }) {
-            openMeeting(newest.path)
-        }
-    }
-
     func openMeeting(_ path: String, jump: Jump? = nil) {
         guard library.tree?.find(path)?.kind == .meeting else { return }
         folder = parentOf(path)
         selection = .meeting(path, jump: jump)
-        UserDefaults.standard.set(path, forKey: "lastMeeting")
     }
 
     /// Opens a meeting picked in the middle column, which stays as it is (all meetings, a folder, or
@@ -260,7 +251,6 @@ final class AppModel {
     func selectMeeting(_ path: String, jump: Jump? = nil) {
         guard library.tree?.find(path)?.kind == .meeting else { return }
         selection = .meeting(path, jump: jump)
-        UserDefaults.standard.set(path, forKey: "lastMeeting")
     }
 
     /// ⌥⌘F: the meeting list's search box, bringing the list back first if another screen is showing.
@@ -277,7 +267,6 @@ final class AppModel {
         folder = path
         if let first = listedIn(library.tree?.find(path)).first {
             selection = .meeting(first.path)
-            UserDefaults.standard.set(first.path, forKey: "lastMeeting")
         } else {
             selection = .folder(path)
         }
@@ -327,8 +316,13 @@ final class AppModel {
         saved.outputDir = config.outputDir
         // A control that sets what it already shows (a picker redrawn, a field losing focus) changes nothing.
         guard saved != config else { return }
+        // Turning MCP on approves the Meetings folder as it is now: one put in its place later isn't read.
+        let mcpChanged = saved.mcpEnabled != config.mcpEnabled
+        saved.mcpApprovedRoot = mcpChanged
+            ? (saved.mcpEnabled ? try? MCPServer.RootIdentity.approve(saved.meetingsRoot) : nil)
+            : config.mcpApprovedRoot
         config = saved
-        do { try saved.save() } catch { toast("Couldn’t save your settings: \(error.localizedDescription)", isError: true) }
+        persistSettings(disablingMCP: mcpChanged && !saved.mcpEnabled)
         recording.settingsChanged(saved)
         // To-dos turned off while their page is open: back to the meetings.
         if !saved.todosEnabled, selection == .todos { openFolder(folder) }
@@ -356,6 +350,22 @@ final class AppModel {
         saveConfig(c)
     }
 
+    func retrySavingMCPOff() {
+        guard mcpOffNotSaved, !config.mcpEnabled else { return }
+        persistSettings(disablingMCP: true)
+    }
+
+    private func persistSettings(disablingMCP: Bool = false, movingLibrary: Bool = false) {
+        do {
+            try config.save()
+            mcpOffNotSaved = false
+        } catch {
+            if disablingMCP { mcpOffNotSaved = true }
+            let detail = movingLibrary ? ", so Oatcake will be back on the old folder next time" : ""
+            toast("Couldn’t save your settings\(detail): \(error.localizedDescription)", isError: true)
+        }
+    }
+
     func chooseMeetingsFolder() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -364,7 +374,8 @@ final class AppModel {
         panel.prompt = "Choose"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         config.outputDir = url.path
-        do { try config.save() } catch { toast("Couldn’t save your settings, so Oatcake will be back on the old folder next time: \(error.localizedDescription)", isError: true) }
+        config.mcpApprovedRoot = config.mcpEnabled ? try? MCPServer.RootIdentity.approve(config.meetingsRoot) : nil
+        persistSettings(movingLibrary: true)
         library.open(url)
         refresh()
     }

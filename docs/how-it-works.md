@@ -52,11 +52,20 @@ your own, on your Mac or your network, instead.
 
 ## The window
 
-The window has three columns: the sidebar (a recording in progress, To-dos, Upcoming from your
-calendar, Needs review, and your folders, then any meetings at the top level, listed by their
-call's title), the meetings in the selected folder, and the meeting itself. A one-off call with no
+Oatcake opens on **Home**, or on a recording that was still going when it was last closed. Home
+shows upcoming calls, the ten most recent saved meetings across all folders, and a button to start
+a new recording or return to the one in progress. Click a recent meeting to open it, or **View all
+meetings** to open the library. When to-dos are enabled, Home also shows up to five open items,
+earliest due first, with their assignees and due dates. Add or tick off to-dos on Home, or choose
+**View all to-dos** to manage the full list.
+
+When browsing meetings, the window has three columns: the sidebar, the meetings in the selected
+folder, and the meeting itself. The house icon next to Settings returns to Home. The sidebar has
+a recording in progress, To-dos, Upcoming, Needs review, folders, and any meetings at the top
+level. The same sidebar is available on Home. A one-off call with no
 folder of its own is saved at the top level; drag it onto a folder to file it. Clicking the
-Meetings heading lists every meeting, and an empty folder offers **Record here**. Settings (⌘,) is
+Meetings heading lists every meeting, and an empty folder offers **Record here**. Drag the divider
+to resize the meeting list; it keeps that width when you switch screens. Settings (⌘,) is
 its own window, in panes; changes apply as you make them (see [Settings](settings.md)).
 
 ⌘N starts a new recording, ⌥⌘F searches every meeting from the box above the meeting list (its
@@ -80,6 +89,12 @@ and its **Join the call** button, the open to-dos from the latest earlier meetin
 that has any (ticking one updates its `todo.md`), and takes prep notes, which open the call's
 notes: type them one at a time or paste a list, which becomes a note per line. They're kept for
 that call until it's recorded (for up to 30 days), so you can write them ahead and come back.
+
+If you've set up [summary templates](settings.md#summaries), choose one on **New recording**.
+For a calendar event, Oatcake suggests the template from the latest saved meeting with the same
+title, or **Default** if there isn't a matching template. You can change the choice for this
+recording. Oatcake keeps it with the saved meeting and uses it for the first summary, whether
+that's written automatically or later. Selecting a template doesn't turn on automatic summaries.
 
 Your microphone is recorded as you; everything the Mac plays (Zoom, Meet, Slack, anything) is
 recorded as the other people. During the call, write one point per line: each is stamped with the
@@ -211,6 +226,13 @@ they're ready. Your notes steer what the summary focuses on but aren't copied in
 summary can't be written (the model's download was interrupted, a server of your own that's down),
 the meeting says why in plain words (the raw message is behind Details) and shows **Write summary**
 to try again later.
+
+Summaries, to-dos, drafts for sharing and Ask's answers call everyone they/them. The model only
+has a name to go on, and guessed wrong: a man with a name it read as a woman's was "she", and
+telling it his pronouns still left "she" in about 1 summary in 4. So every he/him/his and
+she/her/hers it writes is changed to they/them/their afterwards, with the verb after it agreeing
+("she needs" becomes "they need"). That's done for English only; in another language "he" or
+"her" can be another word.
 
 ### Reading and editing
 

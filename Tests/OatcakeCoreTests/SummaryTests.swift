@@ -38,8 +38,10 @@ import Testing
         let shared = try #require(sent[0].user.range(of: "I will send the deck on Friday.\n\n")).upperBound
         #expect(sent[1].user.hasPrefix(sent[0].user[..<shared]))
         #expect(sent[0].user.hasPrefix("Meeting: Weekly sync\nParticipants: John Doe, Jane Doe\n") && sent[0].user.contains("WooCommerce") && sent[0].user.contains("[00:03] Deck timing"))
-        // The summary is reasoned over and the to-dos aren't, until Settings says otherwise: 0.6 is Qwen's sampling with reasoning, 0.7 without.
-        #expect(server.requests.map { $0.json["temperature"] as? Double } == [0.6, 0.7])
+        // A server of your own keeps its own sampling, whatever the reasoning switches say: each request
+        // says only how long the reply may be and, for the to-dos, the shape it must fit.
+        #expect(server.requests.allSatisfy { $0.leavesSampling && $0.json["max_tokens"] as? Int == replyTokens })
+        #expect(server.requests[1].json["response_format"] != nil)
 
         // Oatcake's own instructions when there are none of yours.
         config.summaryInstructions = ""
@@ -49,7 +51,7 @@ import Testing
         _ = try await draftSummary(config, meeting: rel)
         #expect(server.requests[2].messages.user.hasSuffix(defaultSummaryInstructions))
         #expect(server.requests[3].messages.user.hasSuffix(defaultTodoInstructions + "\n" + todosFormat))
-        #expect(server.requests[2...].map { $0.json["temperature"] as? Double } == [0.7, 0.6])
+        #expect(server.requests[2...].allSatisfy { $0.leavesSampling })
 
         // A server that doesn't hold the model to the shape asked for: the summary is still written,
         // and the draft says the to-dos couldn't be read rather than passing for a call with none.
@@ -139,6 +141,76 @@ import Testing
         #expect(try store.read(rel).meta.template == nil)
     }
 
+    @Test func recordingTemplateSurvivesReloadAndIsUsedForTheFirstSummary() async throws {
+        let meetings = TestMeetings()
+        defer { meetings.remove() }
+        let recordings = meetings.root.appendingPathComponent(".recordings")
+        let server = try await StandIn.model { _ in "## Decisions\nShip on Friday.\n" }
+        var config = server.config
+        config.outputDir = meetings.root.path
+        config.keepAudio = true
+        config.todosEnabled = false
+        config.summaryInstructions = "Use the standard format."
+        config.summaryTemplates = [SummaryTemplate(name: "Weekly update", instructions: "List decisions first.")]
+        let store = Meetings(root: meetings.root)
+
+        func saveCall(_ id: String, started: String, template: String?) throws -> String {
+            let dir = recordings.appendingPathComponent(id)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let call = CallInfo(title: "Weekly sync", folder: "", startedAt: started, summaryTemplate: template)
+            try writeAtomic(dir.appendingPathComponent("call.json"), try encodeJSON(call))
+            let analysis = Analysis(title: call.title, startedAt: started, endedAt: started,
+                                    lines: [Line(speaker: me, start: 1, end: 3, text: "Ship on Friday.")],
+                                    speakers: [], echoLinesRemoved: 0, me: nil, warnings: [], embeddingModel: nil)
+            try writeAtomic(dir.appendingPathComponent("analysis.json"), try encodeJSON(analysis))
+            let recording = try #require(Recordings.get(id, recordings: recordings))
+            #expect(recording.summaryTemplate == template)
+            return try saveMeeting(config, recording, decisions: [:], folder: "")
+        }
+
+        let first = try saveCall("first", started: "2026-11-10T14:00:00Z", template: "Weekly update")
+        #expect(try store.read(first).summary.isEmpty)
+        #expect(try store.read(first).meta.template == "Weekly update")
+        #expect(latestMeeting(titled: "Weekly Sync!", in: store.tree())?.summaryTemplate == "Weekly update")
+        try await writeSummary(config, meeting: first)
+        #expect(server.requests.last?.messages.user.hasSuffix("List decisions first.") == true)
+
+        let second = try saveCall("second", started: "2026-11-17T14:00:00Z", template: nil)
+        let latest = try #require(latestMeeting(titled: "Weekly Sync!", in: store.tree()))
+        #expect(latest.path == second && latest.summaryTemplate == nil)
+        try await writeSummary(config, meeting: second)
+        #expect(server.requests.last?.messages.user.hasSuffix("Use the standard format.") == true)
+    }
+
+    /// A server of your own is sent as much of a call at once as its context holds, as you've set it:
+    /// a long call that fits goes in one request, a smaller window splits it sooner, and with none set
+    /// it's split as before. The prompt's own words and the room for the reply count against it too.
+    @Test func ownServerContextDecidesParts() async throws {
+        let meetings = TestMeetings()
+        defer { meetings.remove() }
+        let rel = "2026-11-09 1000 Planning"
+        let line = "**[00:00] Jane Doe:** " + String(repeating: "We went through the plan for the quarter in detail. ", count: 12)
+        let transcript = Array(repeating: line, count: 200).joined(separator: "\n\n") + "\n"
+        try meetings.write(rel, .transcript, transcript, meta: #"{"title":"Planning","startedAt":"2026-11-09T10:00:00.000Z","participants":["Jane Doe"]}"#)
+        let server = try await StandIn.model { $0.json["response_format"] == nil ? "## Plan\n- Agreed.\n" : #"{"todos":[]}"# }
+        var config = server.config
+        config.outputDir = meetings.root.path
+        let size = LocalModels.tokens(in: transcript)
+        #expect(size > 32_768 && size < 65_536)
+
+        var parts: [Int] = []
+        for context in [nil, 65_536, 16_384, size + 1_000, size + replyTokens + 3_000] {
+            config.llm.own.context = context
+            let before = server.requests.count
+            _ = try await draftSummary(config, meeting: rel)
+            let summaries = server.requests[before...].filter { $0.json["response_format"] == nil && $0.messages.user.contains("Transcript ([mm:ss]") }
+            parts.append(summaries.count)
+        }
+        // None set: 32,768, so two parts. Room for the whole call: one. A small window: more parts.
+        // Just bigger than the call, with no room for the instructions and the reply: still two.
+        #expect(parts[0] == 2 && parts[1] == 1 && parts[2] > parts[0] && parts[3] == 2 && parts[4] == 1)
+    }
+
     /// To-dos turned off: only the summary is asked for, and the meeting's todo.md is left as it was.
     @Test func noTodosWhenTurnedOff() async throws {
         let meetings = TestMeetings()
@@ -161,6 +233,30 @@ import Testing
         // Regenerate to-dos (hidden while they're off) still asks for them if it's asked.
         _ = try await draftSummary(config, meeting: rel, only: .todos)
         #expect(server.requests.count == 2 && server.requests[1].json["response_format"] != nil)
+    }
+
+    /// What comes back from the model as a summary, to-dos, a draft for sharing or an answer calls
+    /// everyone they/them: its he and she are guesses from a name.
+    @Test func everyoneIsThey() async throws {
+        let meetings = TestMeetings()
+        defer { meetings.remove() }
+        let rel = "Team/2026-11-09 1000 Weekly sync"
+        try meetings.write(rel, .transcript, "**[00:00] Andrea Doe:** I'm travelling next week.\n",
+                           meta: #"{"title":"Weekly sync","participants":["John Smith","Andrea Doe"]}"#)
+        let server = try await StandIn.model { request in
+            request.json["response_format"] == nil
+                ? "## Travel\n- Andrea Doe is travelling next week, so she is offline.\n- John Smith said he would cover.\n"
+                : #"{"todos":[{"task":"Send him the plan","owner":"Andrea Doe","due":null,"at":"00:00"}]}"#
+        }
+        var config = server.config
+        config.outputDir = meetings.root.path
+        try await writeSummary(config, meeting: rel)
+        let draft = try await draftForSharing(config, meeting: rel)
+        let answer = try await OatcakeCore.ask(config, meeting: rel, question: "Who is travelling?")
+        let neutral = "## Travel\n- Andrea Doe is travelling next week, so they are offline.\n- John Smith said they would cover.\n"
+        let saved = try Meetings(root: meetings.root).read(rel)
+        #expect(saved.summary == neutral && draft == neutral && answer == neutral.trimmed)
+        #expect(saved.todo == "- [ ] Send them the plan — Andrea Doe — [00:00]\n")
     }
 
     @Test func summaryPieces() {

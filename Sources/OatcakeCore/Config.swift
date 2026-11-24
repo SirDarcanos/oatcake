@@ -28,6 +28,9 @@ public struct LlmConfig: Codable, Equatable, Sendable {
         public var reasoningControl: ReasoningControl?
         public var baseUrl = ""
         public var model = ""
+        /// How many tokens the server is set to hold at once (Ollama's num_ctx, llama.cpp's -c), if
+        /// you've said: Oatcake plans each request to fit. It doesn't change the server's own setting.
+        public var context: Int?
         public init() {}
         // Read one by one, like Config: a key that's missing leaves the other alone.
         public init(from decoder: Decoder) throws {
@@ -35,7 +38,13 @@ public struct LlmConfig: Codable, Equatable, Sendable {
             reasoningControl = try? c.decodeIfPresent(ReasoningControl.self, forKey: .reasoningControl)
             baseUrl = (try? c.decodeIfPresent(String.self, forKey: .baseUrl)) ?? ""
             model = (try? c.decodeIfPresent(String.self, forKey: .model)) ?? ""
+            context = try? c.decodeIfPresent(Int.self, forKey: .context)
         }
+
+        /// The window Oatcake plans for: yours (never less than `minimumContext`), or else Qwen3's native one.
+        public var contextBudget: Int { context.map { max($0, Self.minimumContext) } ?? LocalModels.nativeContext }
+        /// Room for a reply as long as Oatcake allows one (8,192 tokens) and some of the call beside it.
+        public static let minimumContext = 16_384
     }
 
     /**
@@ -168,6 +177,10 @@ public struct Config: Codable, Equatable, Sendable {
     /// To-dos: collected from each call with its summary, and shown on the To-dos page and in each
     /// meeting. Off, none are collected or shown; todo.md files already saved are left as they are.
     public var todosEnabled: Bool
+    /// Other apps may read the saved meetings over MCP (`Oatcake --mcp`, which reads this for every
+    /// request), but only from the Meetings folder as it was when this was turned on.
+    public var mcpEnabled = false
+    public var mcpApprovedRoot: MCPServer.RootIdentity?
     /// Google Calendar's names for blocks that aren't calls.
     public static let defaultIgnoredEvents = ["Focus time", "Out of office", "Working location", "Task"]
     /// Events ignored one at a time from Upcoming, or a recurring one's whole series (isIgnored).
@@ -245,6 +258,8 @@ public struct Config: Codable, Equatable, Sendable {
         ignoredCalendarEvents = (try? c.decodeIfPresent([IgnoredEvent].self, forKey: .ignoredCalendarEvents)) ?? base.ignoredCalendarEvents
         afterCall = (try? c.decodeIfPresent(AfterCall.self, forKey: .afterCall)) ?? base.afterCall
         todosEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .todosEnabled)) ?? base.todosEnabled
+        mcpEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .mcpEnabled)) ?? false
+        mcpApprovedRoot = try? c.decodeIfPresent(MCPServer.RootIdentity.self, forKey: .mcpApprovedRoot)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -272,9 +287,12 @@ public struct Config: Codable, Equatable, Sendable {
         try c.encode(ignoredCalendarEvents, forKey: .ignoredCalendarEvents)
         try c.encode(afterCall, forKey: .afterCall)
         try c.encode(todosEnabled, forKey: .todosEnabled)
+        try c.encode(mcpEnabled, forKey: .mcpEnabled)
+        try c.encodeIfPresent(mcpApprovedRoot, forKey: .mcpApprovedRoot)
     }
 
     private enum CodingKeys: String, CodingKey {
+        case mcpEnabled, mcpApprovedRoot
         case myName, outputDir, asrModel, llm, keepAudio, mic, callReminders, updateCheck, callNotice, autoStop, liveTranscript, liveVoices, jargon, menuBarNextCall, summaryInstructions, todoInstructions, summaryTemplates, sharingInstructions, ignoredEvents, ignoredCalendarEvents, afterCall, todosEnabled
     }
 
