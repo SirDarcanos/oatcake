@@ -33,19 +33,21 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 
 ## Calendar
 
-- Your calendar's next calls under Upcoming in the sidebar, from its private iCal address.
+- Your calendar's next calls on Home and under Upcoming in the sidebar, from its private iCal
+  address.
   [Calendar settings](settings.md#calendar)
-- Clicking a call opens New recording for it, in the folder named like it or a new one for a
-  recurring meeting. [Calendar settings](settings.md#calendar)
-- **Join the call** for Meet, Zoom and Teams links. [Calendar settings](settings.md#calendar)
+- **Start recording** on Home, or clicking a call in the sidebar, opens New recording for it, in the
+  folder named like it or a new one for a recurring meeting. [Calendar settings](settings.md#calendar)
+- **Join the call** on Home opens a Meet, Zoom or Teams call without starting a recording.
+  [Calendar settings](settings.md#calendar)
 - A reminder 5 minutes before each call, whose button opens the call and starts recording.
   [Calendar settings](settings.md#calendar)
 - Your next call in the menu bar, with what's coming up in its menu.
   [The menu bar](how-it-works.md#the-menu-bar)
 - Events that aren't calls left out by their title ("Focus time", "Out of office"…) or by "Oatcake
   ignore" in the title. [Calendar settings](settings.md#calendar)
-- One event, one occurrence, or a series from then on ignored from Upcoming's right-click menu,
-  and brought back from Settings. [Calendar settings](settings.md#calendar)
+- One event, one occurrence, or a series from then on ignored from the sidebar's Upcoming
+  right-click menu, and brought back from Settings. [Calendar settings](settings.md#calendar)
 - The calendar's address kept in a file only your account can read.
   [Security](security.md)
 
