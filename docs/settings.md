@@ -157,20 +157,25 @@ shown but can't be changed, as it decides for itself.
 
 ### Local MCP server
 
-Turn on **Let other apps read my meetings** to let a compatible Model Context Protocol (MCP)
-client browse and search the current Meetings folder, read saved meeting documents, and list open
-and completed to-dos. The switch is off by default. Oatcake remembers it, but serves only while the
-app is running, including when it stays in the menu bar.
+Turn on **Let other apps read my meetings** to let an app that supports the Model Context Protocol
+(MCP), such as Claude Code or Claude Desktop, browse and search the current Meetings folder, read
+saved meetings' summaries, transcripts, notes and to-dos, and list open and completed to-dos. It's
+off to start with, and it only reads: drafts for sharing, recordings and settings aren't offered.
 
-When the status is **Running**, select and copy the JSON shown in Settings. If your client uses a
-different configuration format, enter `http://127.0.0.1:8765/mcp` as a Streamable HTTP endpoint and
-use the shown `Authorization` header. The client must run on the same Mac and support a bearer
-token. The JSON contains that token: anyone with it and access to the endpoint can read the whole
-library, so don't share it or commit it to a repository. A client using a hosted model may send it
-whatever meeting text it retrieves.
+While it's on, Settings shows what to add to the app's MCP settings: a server named `oatcake`
+whose command is Oatcake's own program (`/Applications/Oatcake.app/Contents/MacOS/Oatcake` for an
+installed copy) with the argument `--mcp`. An app that asks for the command and its arguments
+separately takes those two. The app starts that server itself and talks to it over its standard
+input and output, so it works whether or not Oatcake is open, and nothing listens on the network:
+there's no port or password. The server checks this switch before every request, so turning it
+off stops apps reading at once.
 
-If the Meetings folder is moved or replaced outside Oatcake, MCP stops sharing it. Check the folder
-in Storage and turn MCP off and on again to approve it, or choose the intended folder in Settings.
+Anything an app reads this way is in that app's hands: one that uses an online model may send it
+to that service.
+
+If the Meetings folder is moved or replaced outside Oatcake, apps can't read it until it's
+approved again: check the folder in Storage and turn the switch off and on again, or choose the
+intended folder there.
 
 ## Updates
 

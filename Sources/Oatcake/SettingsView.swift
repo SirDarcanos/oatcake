@@ -112,32 +112,37 @@ struct SettingsView: View {
         }
     }
 
+    /// Other apps' MCP access to the Meetings folder. They start `Oatcake --mcp` themselves, so
+    /// there's nothing here to start or stop: only whether it may read, and what to give an app.
     private var mcp: some View {
         Section {
             Toggle("Let other apps read my meetings", isOn: bind(\.mcpEnabled))
             if model.mcpOffNotSaved, !model.config.mcpEnabled {
-                Text("Off for this session. Oatcake couldn’t save the change, so sharing may resume when you reopen the app.")
+                Text("Oatcake couldn’t save this, so apps you’ve added it to can still read your meetings.")
                     .settingsHint(.amber)
                 Button("Retry Saving") { model.retrySavingMCPOff() }
-            } else {
-                Text(model.mcpStatus).settingsHint()
             }
-            if let json = model.mcpConfiguration {
+            if model.config.mcpEnabled {
+                if model.config.mcpApprovedRoot == nil {
+                    Text("Oatcake couldn’t check the Meetings folder, so apps can’t read it yet. Check it above, then turn this off and on again.")
+                        .settingsHint(.amber)
+                }
+                Text("Add Oatcake to an app that supports MCP with this:").settingsHint()
                 ScrollView {
-                    Text(verbatim: json)
+                    Text(verbatim: MCPServer.configuration(executable: Bundle.main.executablePath ?? ""))
                         .font(.system(.caption, design: .monospaced))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(8)
                 }
-                .frame(height: 150)
+                .frame(height: 130)
                 .background(.quaternary.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
                 .accessibilityLabel("MCP configuration")
             }
         } header: {
             Text("Local MCP server")
         } footer: {
-            Text("Runs only while Oatcake is open. The configuration contains a private token that gives connected apps read access to your whole Meetings folder. Only share it with apps you trust.")
+            Text("An app you add Oatcake to starts its reader itself, whether or not Oatcake is open, and can read your whole Meetings folder while this is on. An app that uses an online model may send what it reads to that service.")
                 .settingsHint()
         }
     }

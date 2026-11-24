@@ -1,7 +1,8 @@
 // Oatcake.app's one executable: the app, or with --analyse <recording folder> the helper that
 // analyses one recording, or with --live <recording folder> the one that transcribes a call while
-// it's recorded, or with --menu-bar the one that draws the menu bar item. All report as JSON lines
-// on standard output.
+// it's recorded, or with --menu-bar the one that draws the menu bar item, or with --mcp the MCP
+// server another app on this Mac starts to read your saved meetings. All report as JSON lines on
+// standard output.
 
 import Foundation
 import OatcakeCore
@@ -40,6 +41,9 @@ if let flag = CommandLine.arguments.firstIndex(of: HelperMode.analyse), flag + 1
         }
     }
     dispatchMain()
+} else if CommandLine.arguments.contains(HelperMode.mcp) {
+    // No window, no Dock icon: it answers the app that started it until that app closes its end.
+    exit(MCPServer.run())
 } else if CommandLine.arguments.contains(MenuBarLink.flag) {
     MainActor.assumeIsolated { MenuBarHelper.run() }
 } else {

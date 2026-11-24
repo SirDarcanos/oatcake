@@ -113,9 +113,10 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 
 ## Local MCP server
 
-[Enable MCP in Settings](settings.md#local-mcp-server) to let a compatible app on the same Mac
-browse and search your Meetings folder, read summaries, transcripts, notes and to-dos, and list
-both open and completed to-dos. The connection is read-only and runs only while Oatcake is running.
+[Turn it on in Settings](settings.md#local-mcp-server) to let an MCP app on the same Mac browse
+and search your Meetings folder, read summaries, transcripts, notes and to-dos, and list both open
+and completed to-dos. It only reads, and the app runs it itself, over its own input and output:
+nothing listens on the network.
 
 ## Getting started and staying up to date
 

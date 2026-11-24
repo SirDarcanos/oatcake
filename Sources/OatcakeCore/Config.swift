@@ -153,6 +153,8 @@ public struct Config: Codable, Equatable, Sendable {
     /// To-dos: collected from each call with its summary, and shown on the To-dos page and in each
     /// meeting. Off, none are collected or shown; todo.md files already saved are left as they are.
     public var todosEnabled: Bool
+    /// Other apps may read the saved meetings over MCP (`Oatcake --mcp`, which reads this for every
+    /// request), but only from the Meetings folder as it was when this was turned on.
     public var mcpEnabled = false
     public var mcpApprovedRoot: MCPServer.RootIdentity?
     /// Google Calendar's names for blocks that aren't calls.

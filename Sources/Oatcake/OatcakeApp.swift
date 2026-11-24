@@ -150,10 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        MainActor.assumeIsolated {
-            model.stopMCP()
-            model.recording.stopAllRecorders()
-        }
+        MainActor.assumeIsolated { model.recording.stopAllRecorders() }
     }
 
     /// Reminders show even while Oatcake is in front.

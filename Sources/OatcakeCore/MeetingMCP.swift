@@ -1,15 +1,12 @@
 import Foundation
 import Darwin
-import CoreFoundation
 
 /// The MCP view exposes only the saved meeting documents, never recordings or app settings.
 final class MeetingMCP: Sendable {
     private let fd: Int32
     private let configuredPath: String
     let identity: MCPServer.RootIdentity
-    static let versions = ["2025-11-25", "2025-06-18"]
     private static let files = ["summary", "transcript", "notes", "todo"]
-    private static let arguments = ["browse_meetings": [], "search_meetings": ["query"], "read_meeting": ["path"], "list_todos": []]
 
     init(root: URL, approved: MCPServer.RootIdentity?) throws {
         let configuredPath = root.standardizedFileURL.path
@@ -31,66 +28,9 @@ final class MeetingMCP: Sendable {
 
     deinit { if fd >= 0 { close(fd) } }
 
-    private static func tool(_ name: String, _ description: String, _ required: String? = nil) -> [String: Any] {
-        var schema: [String: Any] = ["type": "object", "additionalProperties": false, "properties": [String: Any]()]
-        if let required {
-            schema["properties"] = [required: ["type": "string"]]
-            schema["required"] = [required]
-        }
-        return ["name": name, "description": description, "inputSchema": schema,
-                "annotations": ["readOnlyHint": true, "openWorldHint": false]]
-    }
-
-    func respond(_ data: Data) -> Data? {
-        func encode(_ value: [String: Any]) -> Data { (try? JSONSerialization.data(withJSONObject: value)) ?? Data() }
-        guard let parsed = try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed) else {
-            return encode(["jsonrpc": "2.0", "id": NSNull(), "error": ["code": -32700, "message": "Parse error"]])
-        }
-        let request = parsed as? [String: Any]
-        let id = request?["id"]
-        let validID = id == nil || id is String || (id as? NSNumber).map { CFGetTypeID($0) != CFBooleanGetTypeID() } == true
-        func reply(_ key: String, _ value: [String: Any]) -> Data {
-            encode(["jsonrpc": "2.0", "id": (validID ? id : nil) ?? NSNull(), key: value])
-        }
-        guard validID, request?["jsonrpc"] as? String == "2.0", let method = request?["method"] as? String else {
-            return reply("error", ["code": -32600, "message": "Invalid request"])
-        }
-        guard id != nil else { return nil }
-        let params = request?["params"] as? [String: Any] ?? [:]
-        switch method {
-        case "initialize":
-            let requested = params["protocolVersion"] as? String ?? ""
-            return reply("result", ["protocolVersion": Self.versions.contains(requested) ? requested : Self.versions[0],
-                                    "serverInfo": ["name": "oatcake", "version": "1.0.0"], "capabilities": ["tools": [:]]])
-        case "ping": return reply("result", [:])
-        case "tools/list":
-            return reply("result", ["tools": [
-                Self.tool("browse_meetings", "List all folders and saved meetings, with their library-relative paths."),
-                Self.tool("search_meetings", "Find meetings containing all words in the query, across titles and meeting documents.", "query"),
-                Self.tool("read_meeting", "Read a saved meeting's summary, transcript, notes and to-dos by its library-relative path.", "path"),
-                Self.tool("list_todos", "List open and completed to-dos, including Oatcake's standalone list.")
-            ]])
-        case "tools/call":
-            guard let name = params["name"] as? String, let keys = Self.arguments[name] else {
-                return reply("error", ["code": -32602, "message": "Unknown or missing tool name"])
-            }
-            if let args = params["arguments"], !(args is [String: Any]) {
-                return reply("error", ["code": -32602, "message": "Tool arguments must be an object"])
-            }
-            let args = params["arguments"] as? [String: Any] ?? [:]
-            guard Set(args.keys) == Set(keys), args.values.allSatisfy({ $0 is String }) else {
-                return reply("error", ["code": -32602, "message": "Invalid tool arguments"])
-            }
-            let result = rootStillSelected() ? call(name, args) : nil
-            let text = result.map { String(decoding: encode($0), as: UTF8.self) } ?? "Invalid input or meeting unavailable."
-            var output: [String: Any] = ["content": [["type": "text", "text": text]]]
-            guard rootStillSelected() else {
-                return reply("result", ["isError": true, "content": [["type": "text", "text": "The Meetings folder changed or is unavailable. Turn MCP off and on again after checking Storage settings."]]])
-            }
-            if let result { output["structuredContent"] = result } else { output["isError"] = true }
-            return reply("result", output)
-        default: return reply("error", ["code": -32601, "message": "Method not found"])
-        }
+    /// Whether this is the folder the settings name, as it was approved.
+    func serves(_ root: URL, approved: MCPServer.RootIdentity) -> Bool {
+        root.standardizedFileURL.path == configuredPath && approved == identity
     }
 
     func rootStillSelected() -> Bool {
@@ -98,7 +38,8 @@ final class MeetingMCP: Sendable {
         return lstat(configuredPath, &current) == 0 && current.st_mode & S_IFMT == S_IFDIR && MCPServer.RootIdentity(current) == identity
     }
 
-    private func call(_ name: String, _ args: [String: Any]) -> [String: Any]? {
+    /// A tool's result, or nil for input that names nothing that can be read.
+    func call(_ name: String, _ args: [String: Any]) -> [String: Any]? {
         if name == "read_meeting" {
             guard let path = args["path"] as? String else { return nil }
             return atMeeting(fd, Array(path.utf8.split(separator: 47, omittingEmptySubsequences: false))[...]) { dir in

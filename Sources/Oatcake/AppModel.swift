@@ -79,11 +79,8 @@ final class AppModel {
     var toastIsError = false
     let updater = Updater()
     let ask = AskChat()
-    private var mcpServer: MCPServer?
-    private var mcpGeneration = UUID()
-    private(set) var mcpStatus = "Off"
+    /// Turning off "Let other apps read my meetings" couldn't be saved, so apps can still read them.
     private(set) var mcpOffNotSaved = false
-    private(set) var mcpConfiguration: String?
     /// Why the settings couldn't be read at launch, until it has been shown.
     private var configProblem: String?
     private var timers: [Timer] = []
@@ -169,7 +166,6 @@ final class AppModel {
 
         recording.resumeRecordings()
         library.watchMeetings()
-        updateMCP()
         // The first load happens before the window shows, so it opens on your last meeting rather
         // than on whatever the sidebar selects by itself.
         library.tree = library.meetings.tree()
@@ -333,14 +329,13 @@ final class AppModel {
         saved.outputDir = config.outputDir
         // A control that sets what it already shows (a picker redrawn, a field losing focus) changes nothing.
         guard saved != config else { return }
+        // Turning MCP on approves the Meetings folder as it is now: one put in its place later isn't read.
         let mcpChanged = saved.mcpEnabled != config.mcpEnabled
         saved.mcpApprovedRoot = mcpChanged
             ? (saved.mcpEnabled ? try? MCPServer.RootIdentity.approve(saved.meetingsRoot) : nil)
             : config.mcpApprovedRoot
-        if mcpChanged, !saved.mcpEnabled { stopMCP() }
         config = saved
         persistSettings(disablingMCP: mcpChanged && !saved.mcpEnabled)
-        if mcpChanged, saved.mcpEnabled { updateMCP() }
         recording.settingsChanged(saved)
         // To-dos turned off while their page is open: back to the meetings.
         if !saved.todosEnabled, selection == .todos { openFolder(folder) }
@@ -384,42 +379,6 @@ final class AppModel {
         }
     }
 
-    func stopMCP() {
-        mcpGeneration = UUID()
-        mcpServer?.stop()
-        mcpServer = nil
-        mcpConfiguration = nil
-        mcpStatus = "Off"
-    }
-
-    private func updateMCP() {
-        stopMCP()
-        guard config.mcpEnabled else { return }
-        let generation = mcpGeneration
-        mcpStatus = "Starting…"
-        do {
-            guard let approved = config.mcpApprovedRoot else {
-                throw OatcakeError("Check that the Meetings folder is accessible in Storage, then turn MCP off and on again.")
-            }
-            let token = try MCPServer.savedToken()
-            mcpServer = try MCPServer(root: config.meetingsRoot, approved: approved, token: token) { [weak self] status in
-                Task { @MainActor in
-                    guard let self, self.mcpGeneration == generation else { return }
-                    switch status {
-                    case .running:
-                        self.mcpStatus = "Running"
-                        self.mcpConfiguration = MCPServer.configuration(token: token)
-                    case .failed(let problem):
-                        self.mcpStatus = problem
-                        self.mcpConfiguration = nil
-                    }
-                }
-            }
-        } catch {
-            mcpStatus = "Couldn’t start MCP: \(error.localizedDescription)"
-        }
-    }
-
     func chooseMeetingsFolder() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -427,12 +386,10 @@ final class AppModel {
         panel.canCreateDirectories = true
         panel.prompt = "Choose"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        stopMCP()
         config.outputDir = url.path
         config.mcpApprovedRoot = config.mcpEnabled ? try? MCPServer.RootIdentity.approve(config.meetingsRoot) : nil
         persistSettings(movingLibrary: true)
         library.open(url)
-        updateMCP()
         refresh()
     }
 
