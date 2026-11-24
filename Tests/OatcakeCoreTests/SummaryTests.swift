@@ -277,4 +277,29 @@ import Testing
         #expect(parts.allSatisfy { LocalModels.tokens(in: $0) <= 800 })
         #expect(splitTranscript(whole, tokens: 100_000) == [whole])
     }
+
+    /// With a server of your own's reasoning switch chosen, each task's Reasoning switch goes with its
+    /// own request: the summary's with the summary, the to-dos' with the to-dos.
+    @Test func ownServerReasoningPerTask() async throws {
+        let meetings = TestMeetings()
+        defer { meetings.remove() }
+        let rel = "2026-11-09 1000 Weekly sync"
+        try meetings.write(rel, .transcript, "**[00:04] Jane Doe:** I will send the deck on Friday.\n",
+                           meta: #"{"title":"Weekly sync","startedAt":"2026-11-09T10:00:00.000Z","participants":["John Doe","Jane Doe"]}"#)
+        let server = try await StandIn.model { $0.json["response_format"] == nil ? "## Deck\n- Friday.\n" : #"{"todos":[]}"# }
+        var config = server.config
+        config.outputDir = meetings.root.path
+        config.llm.own.reasoningControl = .ollama
+        _ = try await draftSummary(config, meeting: rel)
+        // Summaries start with reasoning on and to-dos with it off.
+        #expect(server.requests.map { $0.json["reasoning_effort"] as? String } == ["medium", "none"])
+        config.llm.reasoning.summary = false
+        config.llm.reasoning.todos = true
+        _ = try await draftSummary(config, meeting: rel)
+        #expect(server.requests[2...].map { $0.json["reasoning_effort"] as? String } == ["none", "medium"])
+        // Left to the server: nothing about reasoning is sent, whatever the switches say.
+        config.llm.own.reasoningControl = nil
+        _ = try await draftSummary(config, meeting: rel)
+        #expect(server.requests[4...].allSatisfy { $0.json["reasoning_effort"] == nil && $0.json["chat_template_kwargs"] == nil })
+    }
 }

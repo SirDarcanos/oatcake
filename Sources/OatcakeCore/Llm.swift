@@ -56,10 +56,18 @@ public struct LocalChat: Sendable {
     var key: String?
     /// Oatcake's own server runs Qwen3, which takes its reasoning switch from the chat template.
     var qwen = false
+    /// A server of your own's reasoning switch, if you've said which it takes (Settings › Models).
+    var reasoningControl: LlmConfig.ReasoningControl?
 
     public init(baseUrl: String, model: String) {
         self.baseUrl = baseUrl
         self.model = model
+    }
+
+    /// A server of your own, as Settings › Models has it.
+    init(own: LlmConfig.Own) {
+        self.init(baseUrl: own.baseUrl, model: own.model)
+        reasoningControl = own.reasoningControl
     }
 
     init(baseUrl: String, model: String, key: String?, qwen: Bool) {
@@ -116,6 +124,13 @@ public struct LocalChat: Sendable {
             body["presence_penalty"] = 1.5
             body["chat_template_kwargs"] = ["enable_thinking": think]
         }
+        // A server of your own is told only in the way you've said it understands. "medium" is a level
+        // Ollama knows for every model that reasons; a model that only has on and off takes it as on.
+        switch reasoningControl {
+        case .ollama: body["reasoning_effort"] = think ? "medium" : "none"
+        case .llamaCpp: body["chat_template_kwargs"] = ["enable_thinking": think]
+        case nil: break
+        }
         // The schema is sent exactly as it's written. The server makes the model fill in a reply's
         // fields in the schema's order, and that order matters: asked for a to-do's time before
         // its task, the model walks the call minute by minute and makes a to-do of each. Passed
@@ -133,7 +148,15 @@ public struct LocalChat: Sendable {
         let (data, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
-            throw OatcakeError("The model at \(baseUrl) returned \(status): \(String(decoding: data, as: UTF8.self).prefix(300))")
+            let said = String(decoding: data, as: UTF8.self)
+            // Ollama refuses to turn reasoning on for a model that can't reason ("… does not support
+            // thinking", a 400 on its chat API). Asked again without the switch, that model just replies.
+            if reasoningControl == .ollama, think, status == 400, said.contains("does not support thinking") {
+                var plain = self
+                plain.reasoningControl = nil
+                return try await plain.complete(messages, schema: schema, think: think, maxTokens: maxTokens)
+            }
+            throw OatcakeError("The model at \(baseUrl) returned \(status): \(said.prefix(300))")
         }
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let choice = (json?["choices"] as? [[String: Any]])?.first
@@ -198,7 +221,7 @@ public func withModel<T: Sendable>(_ config: LlmConfig, tokens: Int, server: Mod
                                     _ work: (LocalChat, Int) async throws -> T) async throws -> T {
     guard let model = LocalModels.find(config.model) else {
         // A server of your own decides its window: the one you've told Oatcake, or else Qwen's native one.
-        return try await work(LocalChat(baseUrl: config.own.baseUrl, model: config.own.model), config.own.contextBudget)
+        return try await work(LocalChat(own: config.own), config.own.contextBudget)
     }
     let context = min(LocalModels.context(forTokens: tokens), LocalModels.maxContext(model))
     let chat = try await server.lease(model, context: context)

@@ -99,6 +99,64 @@ import Testing
         }
     }
 
+    /// A server of your own is told whether to reason only in the way you've said it takes: Ollama's
+    /// reasoning_effort, or llama.cpp's enable_thinking. Left to the server, neither is sent.
+    @Test func ownServerReasoningControl() async throws {
+        let server = try await StandIn.model { _ in "OK" }
+        func sent(_ control: LlmConfig.ReasoningControl?, think: Bool) async throws -> [String: Any] {
+            var own = server.config.llm.own
+            own.reasoningControl = control
+            _ = try await LocalChat(own: own).complete([ChatMessage("user", "Say OK.")], think: think)
+            return try #require(server.requests.last).json
+        }
+        let ollamaOn = try await sent(.ollama, think: true), ollamaOff = try await sent(.ollama, think: false)
+        #expect(ollamaOn["reasoning_effort"] as? String == "medium" && ollamaOff["reasoning_effort"] as? String == "none")
+        #expect(ollamaOn["chat_template_kwargs"] == nil && ollamaOff["chat_template_kwargs"] == nil)
+        let llamaOn = try await sent(.llamaCpp, think: true), llamaOff = try await sent(.llamaCpp, think: false)
+        #expect((llamaOn["chat_template_kwargs"] as? [String: Any])?["enable_thinking"] as? Bool == true && llamaOn["reasoning_effort"] == nil)
+        #expect((llamaOff["chat_template_kwargs"] as? [String: Any])?["enable_thinking"] as? Bool == false)
+        for think in [true, false] {
+            let left = try await sent(nil, think: think)
+            #expect(left["reasoning_effort"] == nil && left["chat_template_kwargs"] == nil)
+        }
+        // Oatcake's own Qwen is told as before, and never in Ollama's way.
+        _ = try await LocalChat(baseUrl: server.address + "/v1", model: "qwen3-8b", key: "made-up", qwen: true).complete([ChatMessage("user", "Say OK.")], think: false)
+        let qwen = try #require(server.requests.last).json
+        #expect((qwen["chat_template_kwargs"] as? [String: Any])?["enable_thinking"] as? Bool == false && qwen["reasoning_effort"] == nil)
+
+        // Settings: read on its own, and a value Oatcake doesn't know leaves it to the server.
+        var llm = server.config.llm
+        llm.own.reasoningControl = .llamaCpp
+        #expect(try JSONDecoder().decode(LlmConfig.self, from: JSONEncoder().encode(llm)).own.reasoningControl == .llamaCpp)
+        let unknown = try JSONDecoder().decode(LlmConfig.self, from: Data(#"{"model":"own","own":{"baseUrl":"http://localhost:11434/v1","model":"gemma4","reasoningControl":"lmstudio"}}"#.utf8))
+        #expect(unknown.own.reasoningControl == nil && unknown.own.model == "gemma4")
+    }
+
+    /// Ollama answers a request to reason, sent to a model that can't, with a 400 (its words, from
+    /// server/routes.go). Oatcake asks once more without reasoning_effort instead of failing the task.
+    @Test func ollamaModelThatCantReason() async throws {
+        let server = try await StandIn { request in
+            request.json["reasoning_effort"] as? String == "medium"
+                ? StandIn.Response(status: 400, body: Data(#"{"error":"\"llama3.2\" does not support thinking"}"#.utf8))
+                : .chat("OK")
+        }
+        var own = server.config.llm.own
+        own.reasoningControl = .ollama
+        #expect(try await LocalChat(own: own).complete([ChatMessage("user", "Say OK.")], think: true) == "OK")
+        #expect(server.requests.count == 2 && server.requests[1].json["reasoning_effort"] == nil)
+        // Turning reasoning off ("none") is never refused, so it's sent once as it is.
+        #expect(try await LocalChat(own: own).complete([ChatMessage("user", "Say OK.")], think: false) == "OK")
+        #expect(server.requests.count == 3 && server.requests[2].json["reasoning_effort"] as? String == "none")
+        // Any other refusal is still an error.
+        let other = try await StandIn { _ in StandIn.Response(status: 400, body: Data(#"{"error":"model not found"}"#.utf8)) }
+        var missing = other.config.llm.own
+        missing.reasoningControl = .ollama
+        await #expect(throws: OatcakeError.self) {
+            try await LocalChat(own: missing).complete([ChatMessage("user", "Say OK.")], think: true)
+        }
+        #expect(other.requests.count == 1)
+    }
+
     /// A model's file is carried on from where an earlier download stopped, and only kept when it's
     /// the file that was expected.
     @Test func downloads() async throws {

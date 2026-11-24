@@ -9,9 +9,23 @@ public struct LlmConfig: Codable, Equatable, Sendable {
     /// What `model` is when the model is on a server of your own.
     public static let ownServer = "own"
 
+    /**
+     * The switch a server of your own takes for whether its model reasons before it replies. Servers
+     * don't share one, so it's sent only once you've said which: then each task's Reasoning switch
+     * goes with its requests. Ollama's OpenAI-compatible API takes `reasoning_effort` ("none" turns
+     * reasoning off; any other level turns it on for a model that only has on and off); llama.cpp's
+     * server takes `enable_thinking` for a model whose chat template reads it, as Qwen3's does.
+     */
+    public enum ReasoningControl: String, Codable, Sendable {
+        case ollama
+        case llamaCpp = "llama.cpp"
+    }
+
     /// A model server of yours, such as Ollama or LM Studio: its chat API's address
     /// (http://localhost:11434/v1 for Ollama) and the model's name there.
     public struct Own: Codable, Equatable, Sendable {
+        /// Which reasoning switch the server takes, if you've said. None: it decides for itself.
+        public var reasoningControl: ReasoningControl?
         public var baseUrl = ""
         public var model = ""
         /// How many tokens the server is set to hold at once (Ollama's num_ctx, llama.cpp's -c), if
@@ -21,6 +35,7 @@ public struct LlmConfig: Codable, Equatable, Sendable {
         // Read one by one, like Config: a key that's missing leaves the other alone.
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
+            reasoningControl = try? c.decodeIfPresent(ReasoningControl.self, forKey: .reasoningControl)
             baseUrl = (try? c.decodeIfPresent(String.self, forKey: .baseUrl)) ?? ""
             model = (try? c.decodeIfPresent(String.self, forKey: .model)) ?? ""
             context = try? c.decodeIfPresent(Int.self, forKey: .context)
