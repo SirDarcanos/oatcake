@@ -52,11 +52,12 @@ your own, on your Mac or your network, instead.
 
 ## The window
 
-Oatcake opens on **Home**. It shows upcoming calls, the ten most recent saved meetings across
-all folders, and a button to start a new recording or return to the one in progress. Click a
-recent meeting to open it, or **View all meetings** to open the library. When to-dos are enabled,
-Home also shows up to five open items, earliest due first, with their assignees and due dates.
-Add or tick off to-dos on Home, or choose **View all to-dos** to manage the full list.
+Oatcake opens on **Home**, or on a recording that was still going when it was last closed. Home
+shows upcoming calls, the ten most recent saved meetings across all folders, and a button to start
+a new recording or return to the one in progress. Click a recent meeting to open it, or **View all
+meetings** to open the library. When to-dos are enabled, Home also shows up to five open items,
+earliest due first, with their assignees and due dates. Add or tick off to-dos on Home, or choose
+**View all to-dos** to manage the full list.
 
 When browsing meetings, the window has three columns: the sidebar, the meetings in the selected
 folder, and the meeting itself. The house icon next to Settings returns to Home. The sidebar has

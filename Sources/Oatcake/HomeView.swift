@@ -101,7 +101,7 @@ struct HomeView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
-                .accessibilityLabel("Join \(event.title)")
+                .accessibilityLabel("Join the call: \(event.title)")
             }
             if model.recording.live == nil {
                 Button { model.newRecording(event) } label: {
@@ -111,7 +111,7 @@ struct HomeView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.red)
                 .controlSize(.large)
-                .accessibilityLabel("Set up recording for \(event.title)")
+                .accessibilityLabel("Start recording: \(event.title)")
             }
         }
         .padding(.vertical, 10)

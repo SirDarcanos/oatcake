@@ -170,7 +170,8 @@ final class AppModel {
         if let tree = library.tree { library.setTodos(library.meetings.allTodos(in: tree)) }
         jobs.pending = Recordings.list().filter { $0.state == .recorded || $0.state == .processed }
         jobs.unchecked = Recordings.unchecked()
-        selection = .home
+        // A recording picked up again above has opened its live view: Home only when nothing has.
+        if selection == nil { selection = .home }
         refresh()
         calendar.start()
         timers.append(Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
