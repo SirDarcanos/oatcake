@@ -86,7 +86,7 @@ Everything Oatcake does today, with a link to where each is described. Planned w
   besides. [To-dos](how-it-works.md#to-dos)
 - To-dos can be turned off altogether. [General](settings.md#general)
 - Qwen3 8B or 4B, downloaded and run by Oatcake, or a model server of your own on your Mac or
-  network. [Language model](models.md#language-model)
+  network, sent as much at once as its context holds. [Language model](models.md#language-model)
 
 ## Meetings
 

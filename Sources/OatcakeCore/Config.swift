@@ -14,13 +14,22 @@ public struct LlmConfig: Codable, Equatable, Sendable {
     public struct Own: Codable, Equatable, Sendable {
         public var baseUrl = ""
         public var model = ""
+        /// How many tokens the server is set to hold at once (Ollama's num_ctx, llama.cpp's -c), if
+        /// you've said: Oatcake plans each request to fit. It doesn't change the server's own setting.
+        public var context: Int?
         public init() {}
         // Read one by one, like Config: a key that's missing leaves the other alone.
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             baseUrl = (try? c.decodeIfPresent(String.self, forKey: .baseUrl)) ?? ""
             model = (try? c.decodeIfPresent(String.self, forKey: .model)) ?? ""
+            context = (try? c.decodeIfPresent(Int.self, forKey: .context)) ?? nil
         }
+
+        /// The window Oatcake plans for: yours (never less than `minimumContext`), or else Qwen3's native one.
+        public var contextBudget: Int { context.map { max($0, Self.minimumContext) } ?? LocalModels.nativeContext }
+        /// Room for a reply as long as Oatcake allows one (8,192 tokens) and some of the call beside it.
+        public static let minimumContext = 16_384
     }
 
     /**

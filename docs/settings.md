@@ -101,7 +101,11 @@ their chosen colour with them, and so does merging them into someone who hasn't 
   is chosen to start with, and marked "recommended for this Mac"; one this Mac has too little
   memory for says so), or a model server of your own: Ollama, LM Studio or another with the same
   chat API (`http://localhost:11434/v1` for Ollama). Its address has to be this Mac, a machine on
-  your network or a private IP address, and no key is sent to it. **Download Now** fetches the
+  your network or a private IP address, and no key is sent to it. **Context**, for a server of your
+  own, is how many tokens it's set to hold (Ollama's `num_ctx`, llama.cpp's `-c`): Oatcake sends no
+  more than that at once, splitting a long call into parts if it has to. It doesn't change the
+  server's setting, so match it to the server. Empty means 32,768, and Oatcake needs at least
+  16,384. **Download Now** fetches the
   chosen model straight away rather than at your first call, **Stop** stops a download, **Remove…**
   deletes it (or **Remove Partial Download**), and **Test** asks it for one word. See
   [Language model](models.md#language-model).

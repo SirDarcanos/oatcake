@@ -139,6 +139,35 @@ import Testing
         #expect(try store.read(rel).meta.template == nil)
     }
 
+    /// A server of your own is sent as much of a call at once as its context holds, as you've set it:
+    /// a long call that fits goes in one request, a smaller window splits it sooner, and with none set
+    /// it's split as before. The prompt's own words and the room for the reply count against it too.
+    @Test func ownServerContextDecidesParts() async throws {
+        let meetings = TestMeetings()
+        defer { meetings.remove() }
+        let rel = "2026-11-09 1000 Planning"
+        let line = "**[00:00] Jane Doe:** " + String(repeating: "We went through the plan for the quarter in detail. ", count: 12)
+        let transcript = Array(repeating: line, count: 200).joined(separator: "\n\n") + "\n"
+        try meetings.write(rel, .transcript, transcript, meta: #"{"title":"Planning","startedAt":"2026-11-09T10:00:00.000Z","participants":["Jane Doe"]}"#)
+        let server = try await StandIn.model { $0.json["response_format"] == nil ? "## Plan\n- Agreed.\n" : #"{"todos":[]}"# }
+        var config = server.config
+        config.outputDir = meetings.root.path
+        let size = LocalModels.tokens(in: transcript)
+        #expect(size > 32_768 && size < 65_536)
+
+        var parts: [Int] = []
+        for context in [nil, 65_536, 16_384, size + 1_000, size + replyTokens + 3_000] {
+            config.llm.own.context = context
+            let before = server.requests.count
+            _ = try await draftSummary(config, meeting: rel)
+            let summaries = server.requests[before...].filter { $0.json["response_format"] == nil && $0.messages.user.contains("Transcript ([mm:ss]") }
+            parts.append(summaries.count)
+        }
+        // None set: 32,768, so two parts. Room for the whole call: one. A small window: more parts.
+        // Just bigger than the call, with no room for the instructions and the reply: still two.
+        #expect(parts[0] == 2 && parts[1] == 1 && parts[2] > parts[0] && parts[3] == 2 && parts[4] == 1)
+    }
+
     /// To-dos turned off: only the summary is asked for, and the meeting's todo.md is left as it was.
     @Test func noTodosWhenTurnedOff() async throws {
         let meetings = TestMeetings()
