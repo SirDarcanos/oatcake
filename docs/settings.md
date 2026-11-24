@@ -157,6 +157,28 @@ shown but can't be changed, as it decides for itself.
 - **Import from Granola** and **Import from Quill:** **Import…** picks an export (see
   [Importing](importing.md)).
 
+### Local MCP server
+
+Turn on **Let other apps read my meetings** to let an app that supports the Model Context Protocol
+(MCP), such as Claude Code or Claude Desktop, browse and search the current Meetings folder, read
+saved meetings' summaries, transcripts, notes and to-dos, and list open and completed to-dos. It's
+off to start with, and it only reads: drafts for sharing, recordings and settings aren't offered.
+
+While it's on, Settings shows what to add to the app's MCP settings: a server named `oatcake`
+whose command is Oatcake's own program (`/Applications/Oatcake.app/Contents/MacOS/Oatcake` for an
+installed copy) with the argument `--mcp`. An app that asks for the command and its arguments
+separately takes those two. The app starts that server itself and talks to it over its standard
+input and output, so it works whether or not Oatcake is open, and nothing listens on the network:
+there's no port or password. The server checks this switch before every request, so turning it
+off stops apps reading at once.
+
+Anything an app reads this way is in that app's hands: one that uses an online model may send it
+to that service.
+
+If the Meetings folder is moved or replaced outside Oatcake, apps can't read it until it's
+approved again: check the folder in Storage and turn the switch off and on again, or choose the
+intended folder there.
+
 ## Updates
 
 - **Check Now**, and what's new in a release that's waiting, with **Install and Relaunch** (or the

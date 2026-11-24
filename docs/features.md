@@ -114,6 +114,13 @@ Everything Oatcake does today, with a link to where each is described. Planned w
   Mac, with links to the meetings and times it drew on. [Ask](how-it-works.md#5-ask)
 - Follow-ups in the same conversation, as you move between meetings. [Ask](how-it-works.md#5-ask)
 
+## Local MCP server
+
+[Turn it on in Settings](settings.md#local-mcp-server) to let an MCP app on the same Mac browse
+and search your Meetings folder, read summaries, transcripts, notes and to-dos, and list both open
+and completed to-dos. It only reads, and the app runs it itself, over its own input and output:
+nothing listens on the network.
+
 ## Getting started and staying up to date
 
 - Install with one Terminal line, or by hand. [Install](install.md)

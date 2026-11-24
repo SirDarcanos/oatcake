@@ -80,6 +80,8 @@ final class AppModel {
     var toastIsError = false
     let updater = Updater()
     let ask = AskChat()
+    /// Turning off "Let other apps read my meetings" couldn't be saved, so apps can still read them.
+    private(set) var mcpOffNotSaved = false
     /// Why the settings couldn't be read at launch, until it has been shown.
     private var configProblem: String?
     private var timers: [Timer] = []
@@ -314,8 +316,13 @@ final class AppModel {
         saved.outputDir = config.outputDir
         // A control that sets what it already shows (a picker redrawn, a field losing focus) changes nothing.
         guard saved != config else { return }
+        // Turning MCP on approves the Meetings folder as it is now: one put in its place later isn't read.
+        let mcpChanged = saved.mcpEnabled != config.mcpEnabled
+        saved.mcpApprovedRoot = mcpChanged
+            ? (saved.mcpEnabled ? try? MCPServer.RootIdentity.approve(saved.meetingsRoot) : nil)
+            : config.mcpApprovedRoot
         config = saved
-        do { try saved.save() } catch { toast("Couldn’t save your settings: \(error.localizedDescription)", isError: true) }
+        persistSettings(disablingMCP: mcpChanged && !saved.mcpEnabled)
         recording.settingsChanged(saved)
         // To-dos turned off while their page is open: back to the meetings.
         if !saved.todosEnabled, selection == .todos { openFolder(folder) }
@@ -343,6 +350,22 @@ final class AppModel {
         saveConfig(c)
     }
 
+    func retrySavingMCPOff() {
+        guard mcpOffNotSaved, !config.mcpEnabled else { return }
+        persistSettings(disablingMCP: true)
+    }
+
+    private func persistSettings(disablingMCP: Bool = false, movingLibrary: Bool = false) {
+        do {
+            try config.save()
+            mcpOffNotSaved = false
+        } catch {
+            if disablingMCP { mcpOffNotSaved = true }
+            let detail = movingLibrary ? ", so Oatcake will be back on the old folder next time" : ""
+            toast("Couldn’t save your settings\(detail): \(error.localizedDescription)", isError: true)
+        }
+    }
+
     func chooseMeetingsFolder() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -351,7 +374,8 @@ final class AppModel {
         panel.prompt = "Choose"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         config.outputDir = url.path
-        do { try config.save() } catch { toast("Couldn’t save your settings, so Oatcake will be back on the old folder next time: \(error.localizedDescription)", isError: true) }
+        config.mcpApprovedRoot = config.mcpEnabled ? try? MCPServer.RootIdentity.approve(config.meetingsRoot) : nil
+        persistSettings(movingLibrary: true)
         library.open(url)
         refresh()
     }

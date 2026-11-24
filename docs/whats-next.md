@@ -20,8 +20,6 @@ None of this is built yet. It's what we'd like to add, in no fixed order.
 
 - Saved questions for Ask, and choosing the folder or person it looks through.
 - A page for each person: the meetings they were in and the to-dos they own.
-- A way for other tools and assistants to read your meetings (an MCP server over the Meetings
-  folder).
 
 **Transcription**
 
