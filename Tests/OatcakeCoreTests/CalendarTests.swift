@@ -6,6 +6,25 @@ import Network
 import Testing
 
 @Suite struct CalendarTests {
+    @Test func upcomingCallsThroughTomorrow() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        // 11pm Saturday local time, just before the spring clock change.
+        let now = parseISO("2026-03-08T04:00:00Z")!
+        func event(_ id: String, _ start: String, _ end: String, allDay: Bool = false) -> CalendarEvent {
+            CalendarEvent(id: id, title: "Planning", start: start, end: end, allDay: allDay, attendees: [])
+        }
+        let events = [
+            event("ended", "2026-03-08T03:00:00Z", "2026-03-08T04:00:00Z"),
+            event("in progress", "2026-03-08T03:30:00Z", "2026-03-08T04:30:00Z"),
+            event("next", "2026-03-08T04:15:00Z", "2026-03-08T04:45:00Z"),
+            event("all day", "2026-03-08T05:00:00Z", "2026-03-09T04:00:00Z", allDay: true),
+            event("tomorrow", "2026-03-09T03:45:00Z", "2026-03-09T04:15:00Z"),
+            event("too late", "2026-03-09T04:00:00Z", "2026-03-09T04:30:00Z"),
+        ]
+        #expect(upcomingCalls(events, at: now, calendar: calendar).map(\.id) == ["in progress", "next", "tomorrow"])
+    }
+
     /// The same feed and window through ical.js (the Electron version) gave calendar-expected.json.
     @Test func matchesIcalJs() throws {
         let text = try String(contentsOf: fixture("calendar.ics"), encoding: .utf8)

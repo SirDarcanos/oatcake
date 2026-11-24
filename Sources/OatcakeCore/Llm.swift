@@ -43,10 +43,11 @@ public struct ChatMessage: Sendable, Equatable {
 }
 
 /**
- * A chat server at a local address. Requests follow Qwen's own advice for its models: its sampling
- * settings for each mode, never greedy decoding, room for a long reply, and nothing of its
- * reasoning kept in the conversation. Whether it reasons before it replies is the caller's to say:
- * Settings › Summaries has a switch for each task (LlmConfig.Reasoning).
+ * A chat server at a local address. Requests to Oatcake's own server follow Qwen's own advice for
+ * its models: its sampling settings for each mode and never greedy decoding; a server of your own
+ * keeps its own sampling. Every request leaves room for a long reply, and nothing of the model's
+ * reasoning is kept in the conversation. Whether Oatcake's own model reasons before it replies is
+ * the caller's to say: Settings › Summaries has a switch for each task (LlmConfig.Reasoning).
  */
 public struct LocalChat: Sendable {
     public var baseUrl: String
@@ -101,16 +102,20 @@ public struct LocalChat: Sendable {
             "model": model,
             "messages": messages.map { ["role": $0.role, "content": $0.content] },
             "max_tokens": maxTokens,
-            // Qwen3's recommended sampling: thinking and non-thinking modes each have their own.
-            "temperature": think ? 0.6 : 0.7,
-            "top_p": think ? 0.95 : 0.8,
-            "top_k": 20,
-            "min_p": 0,
-            "presence_penalty": 1.5,
             // The server keeps its reading of a prompt, so a second question about the same call starts at once.
             "cache_prompt": true,
         ]
-        if qwen { body["chat_template_kwargs"] = ["enable_thinking": think] }
+        // Qwen3's recommended sampling: thinking and non-thinking modes each have their own. A server
+        // of your own keeps to its own sampling, which suits whatever model it runs. Qwen3 takes its
+        // reasoning switch from the chat template.
+        if qwen {
+            body["temperature"] = think ? 0.6 : 0.7
+            body["top_p"] = think ? 0.95 : 0.8
+            body["top_k"] = 20
+            body["min_p"] = 0
+            body["presence_penalty"] = 1.5
+            body["chat_template_kwargs"] = ["enable_thinking": think]
+        }
         // The schema is sent exactly as it's written. The server makes the model fill in a reply's
         // fields in the schema's order, and that order matters: asked for a to-do's time before
         // its task, the model walks the call minute by minute and makes a to-do of each. Passed
@@ -135,7 +140,8 @@ public struct LocalChat: Sendable {
         let reply = withoutReasoning(((choice?["message"] as? [String: Any])?["content"] as? String) ?? "")
         guard !reply.isEmpty else {
             // Its reasoning used up the room before it got to the reply.
-            throw OatcakeError(choice?["finish_reason"] as? String == "length" ? outOfRoomMessage : "The model gave an empty reply.")
+            if choice?["finish_reason"] as? String == "length" { throw ModelOutOfRoom() }
+            throw OatcakeError("The model gave an empty reply.")
         }
         return reply
     }
@@ -146,9 +152,39 @@ let wordsForNothing: Set<String> = ["null", "none", "n/a", "unknown", "not state
 
 let outOfRoomMessage = "The model ran out of room before it finished its reply. Trying again usually works."
 
+/// A reply that was all reasoning, cut off before the answer: the room it was given ran out.
+public struct ModelOutOfRoom: LocalizedError, Equatable {
+    public var errorDescription: String? { outOfRoomMessage }
+}
+
 /// A reply without the model's reasoning, for servers that leave it in the text between <think> tags.
 func withoutReasoning(_ reply: String) -> String {
     reply.replacingOccurrences(of: #"(?s)^\s*<think>.*?</think>"#, with: "", options: .regularExpression).trimmed
+}
+
+/// What Check it works in Settings › Models found.
+public enum ModelCheck: Equatable, Sendable {
+    /// The model's reply.
+    case replied(String)
+    /// The model answered, but was still reasoning when the check's small allowance ran out.
+    case stillReasoning
+}
+
+/**
+ * Check it works in Settings › Models: one short request with these settings, asking for a one-word
+ * reply. A server of your own decides for itself whether its model reasons first, and one that does
+ * can spend the check's little room on that. It still answered, so the model is working.
+ */
+public func checkModel(_ llm: LlmConfig, server: ModelServer = .shared) async throws -> ModelCheck {
+    do {
+        // A one-word reply needs no reasoning. Loading the model is most of the wait.
+        return .replied(try await withModel(llm, tokens: 100, server: server) { chat, _ in
+            try await chat.complete([ChatMessage("system", "Reply with the single word OK and nothing else."), ChatMessage("user", "Say OK.")],
+                                    think: false, maxTokens: 20)
+        })
+    } catch is ModelOutOfRoom {
+        return .stillReasoning
+    }
 }
 
 /**

@@ -162,6 +162,10 @@ public struct Config: Codable, Equatable, Sendable {
     /// To-dos: collected from each call with its summary, and shown on the To-dos page and in each
     /// meeting. Off, none are collected or shown; todo.md files already saved are left as they are.
     public var todosEnabled: Bool
+    /// Other apps may read the saved meetings over MCP (`Oatcake --mcp`, which reads this for every
+    /// request), but only from the Meetings folder as it was when this was turned on.
+    public var mcpEnabled = false
+    public var mcpApprovedRoot: MCPServer.RootIdentity?
     /// Google Calendar's names for blocks that aren't calls.
     public static let defaultIgnoredEvents = ["Focus time", "Out of office", "Working location", "Task"]
     /// Events ignored one at a time from Upcoming, or a recurring one's whole series (isIgnored).
@@ -239,6 +243,8 @@ public struct Config: Codable, Equatable, Sendable {
         ignoredCalendarEvents = (try? c.decodeIfPresent([IgnoredEvent].self, forKey: .ignoredCalendarEvents)) ?? base.ignoredCalendarEvents
         afterCall = (try? c.decodeIfPresent(AfterCall.self, forKey: .afterCall)) ?? base.afterCall
         todosEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .todosEnabled)) ?? base.todosEnabled
+        mcpEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .mcpEnabled)) ?? false
+        mcpApprovedRoot = try? c.decodeIfPresent(MCPServer.RootIdentity.self, forKey: .mcpApprovedRoot)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -266,9 +272,12 @@ public struct Config: Codable, Equatable, Sendable {
         try c.encode(ignoredCalendarEvents, forKey: .ignoredCalendarEvents)
         try c.encode(afterCall, forKey: .afterCall)
         try c.encode(todosEnabled, forKey: .todosEnabled)
+        try c.encode(mcpEnabled, forKey: .mcpEnabled)
+        try c.encodeIfPresent(mcpApprovedRoot, forKey: .mcpApprovedRoot)
     }
 
     private enum CodingKeys: String, CodingKey {
+        case mcpEnabled, mcpApprovedRoot
         case myName, outputDir, asrModel, llm, keepAudio, mic, callReminders, updateCheck, callNotice, autoStop, liveTranscript, liveVoices, jargon, menuBarNextCall, summaryInstructions, todoInstructions, summaryTemplates, sharingInstructions, ignoredEvents, ignoredCalendarEvents, afterCall, todosEnabled
     }
 

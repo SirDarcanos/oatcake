@@ -63,9 +63,9 @@ test copy's notifications alone.
   check that the recorder only records for Oatcake
 - `Sources/OatcakeCore/` — recordings, speech pipeline, voiceprints, the language model and its
   download, summaries and templates, meeting folders, renaming speakers, calendar and its private
-  address, Granola and Quill imports, Ask, updates
+  address, Granola and Quill imports, Ask, updates, the MCP server
 - `Sources/Oatcake/` — the app (SwiftUI); `--analyse` runs the analysis helper, `--live` the live
-  transcript's and `--menu-bar` the menu bar item's
+  transcript's, `--menu-bar` the menu bar item's and `--mcp` the MCP server other apps start
 - `Tests/OatcakeCoreTests/` — tests, a file for each area, including the calendar against
   ical.js's output
 - `Scripts/` — bundling, versioning, signing `latest.json`

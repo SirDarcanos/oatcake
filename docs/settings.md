@@ -41,14 +41,16 @@ Settings, with **Open Notification Settings**.
   `config.json`, and Settings shows only that one is saved and which server it's on, with how the
   last fetch went. **Replace…** pastes another in its place; **Remove…** deletes it. (0.4.0 to 0.5.2 kept it in your login Keychain, which asked for your login password
   after every update; the first launch of a later version moves it, asking that one last time.)
-  Without one, Upcoming is hidden.
+  Without one, Home offers **Connect calendar** and the sidebar hides Upcoming.
 
   Oatcake fetches it once an hour, or when you press ↻ next to Upcoming (⌘R), and keeps events
-  from yesterday to two weeks ahead in `calendar.json`. Upcoming in the sidebar lists up to six
-  events from the rest of today and tomorrow, leaving out all-day events and ones you declined. A
-  failed fetch keeps the last events and turns ↻ red; hover it for the reason.
+  from yesterday to two weeks ahead in `calendar.json`. Home lists timed events still in progress
+  or starting today or tomorrow, leaving out events you declined. Upcoming in the sidebar
+  shows up to six of those events. If a refresh fails, Oatcake warns you and keeps the
+  last fetched events.
 
-  Clicking an event opens New recording for it, named after it, in the folder with the same name
+  On Home, **Join the call** opens the call link without recording. **Start recording** (or clicking an event in
+  the sidebar) opens New recording for it, named after it, in the folder with the same name
   or path ("John & Jane 1:1" finds "John & Jane 1-1", "Product – Weekly sync" finds "Product ›
   Weekly sync"), or offering a new folder for a recurring event with none. **Join the call** opens
   its Meet, Zoom or Teams link (only links on those services' own domains count, so a look-alike
@@ -107,8 +109,9 @@ their chosen colour with them, and so does merging them into someone who hasn't 
   server's setting, so match it to the server. Empty means 32,768, and Oatcake needs at least
   16,384. **Download Now** fetches the
   chosen model straight away rather than at your first call, **Stop** stops a download, **Remove…**
-  deletes it (or **Remove Partial Download**), and **Test** asks it for one word. See
-  [Language model](models.md#language-model).
+  deletes it (or **Remove Partial Download**), and **Test** asks it for one word. A model on a
+  server of your own that reasons first can still be reasoning when the test's room for that word
+  runs out: it answered, so that's a pass too. See [Language model](models.md#language-model).
 
 (Earlier versions had speech to text in a pane of its own, Transcription.)
 
@@ -130,11 +133,12 @@ shown but can't be changed, as it decides for itself.
 - **Summary templates:** other summary instructions, each with a name, for the meetings that need a
   different summary (a one-to-one you lead, one with your own lead, a team meeting). **Add
   Template** starts one as a copy of the summary instructions; change its name and instructions in
-  place, or **Delete…** it. Pick one for a meeting from **Regenerate › Regenerate summary** (see
-  [Regenerate and summary templates](how-it-works.md#regenerate-and-summary-templates)); the
-  meeting keeps it (in its `meeting.json`) and every other meeting keeps the summary instructions.
+  place, or **Delete…** it. Pick one on [New recording](how-it-works.md#1-record) or change it from
+  [Regenerate › Regenerate summary](how-it-works.md#regenerate-and-summary-templates). The meeting
+  keeps the choice without changing your standard summary instructions.
   A meeting keeps its template by name: once that template is renamed or deleted, the meeting is
-  back on the summary instructions, until a template is given that name again. A template with no
+  back on the summary instructions, until a template is given that name again. A new name is saved
+  when you press Return, leave the field, switch pane or close Settings. A template with no
   instructions means the summary instructions. The summary starts at the model's
   first `## ` heading: anything written before it is left out.
 - **To-dos** (while to-dos are collected): what the model is told counts as a to-do. Oatcake's
@@ -158,6 +162,28 @@ shown but can't be changed, as it decides for itself.
   When on, the call's audio (both sides, mixed) is saved in the meeting's folder as `audio.m4a`.
 - **Import from Granola** and **Import from Quill:** **Import…** picks an export (see
   [Importing](importing.md)).
+
+### Local MCP server
+
+Turn on **Let other apps read my meetings** to let an app that supports the Model Context Protocol
+(MCP), such as Claude Code or Claude Desktop, browse and search the current Meetings folder, read
+saved meetings' summaries, transcripts, notes and to-dos, and list open and completed to-dos. It's
+off to start with, and it only reads: drafts for sharing, recordings and settings aren't offered.
+
+While it's on, Settings shows what to add to the app's MCP settings: a server named `oatcake`
+whose command is Oatcake's own program (`/Applications/Oatcake.app/Contents/MacOS/Oatcake` for an
+installed copy) with the argument `--mcp`. An app that asks for the command and its arguments
+separately takes those two. The app starts that server itself and talks to it over its standard
+input and output, so it works whether or not Oatcake is open, and nothing listens on the network:
+there's no port or password. The server checks this switch before every request, so turning it
+off stops apps reading at once.
+
+Anything an app reads this way is in that app's hands: one that uses an online model may send it
+to that service.
+
+If the Meetings folder is moved or replaced outside Oatcake, apps can't read it until it's
+approved again: check the folder in Storage and turn the switch off and on again, or choose the
+intended folder there.
 
 ## Updates
 

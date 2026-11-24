@@ -52,7 +52,9 @@ Summaries, to-dos, name suggestions and Ask's answers come from one model, run o
   (Settings › Models › Context), or 32,768 tokens. A call too long for this Mac (or for that
   server) is summarised in parts, which are then joined.
 - **A model of your own.** Any server with the same chat API on this Mac or your network (Ollama,
-  LM Studio, your own llama.cpp). Oatcake only talks to a local address, and sends no key.
+  LM Studio, your own llama.cpp). Oatcake only talks to a local address, and sends no key. It
+  sends none of Qwen's sampling settings either: the server's own apply, as they suit its model.
+  Each request still says how long the reply may be and, where one is needed, the JSON shape.
 
 Changing the model or llama.cpp's build is a deliberate change, like the speech models: change the
 revision and checksum together, then check summaries, to-dos and names on a known call.

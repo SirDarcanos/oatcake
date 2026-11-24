@@ -33,19 +33,21 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 
 ## Calendar
 
-- Your calendar's next calls under Upcoming in the sidebar, from its private iCal address.
+- Your calendar's next calls on Home and under Upcoming in the sidebar, from its private iCal
+  address.
   [Calendar settings](settings.md#calendar)
-- Clicking a call opens New recording for it, in the folder named like it or a new one for a
-  recurring meeting. [Calendar settings](settings.md#calendar)
-- **Join the call** for Meet, Zoom and Teams links. [Calendar settings](settings.md#calendar)
+- **Start recording** on Home, or clicking a call in the sidebar, opens New recording for it, in the
+  folder named like it or a new one for a recurring meeting. [Calendar settings](settings.md#calendar)
+- **Join the call** on Home opens a Meet, Zoom or Teams call without starting a recording.
+  [Calendar settings](settings.md#calendar)
 - A reminder 5 minutes before each call, whose button opens the call and starts recording.
   [Calendar settings](settings.md#calendar)
 - Your next call in the menu bar, with what's coming up in its menu.
   [The menu bar](how-it-works.md#the-menu-bar)
 - Events that aren't calls left out by their title ("Focus time", "Out of office"…) or by "Oatcake
   ignore" in the title. [Calendar settings](settings.md#calendar)
-- One event, one occurrence, or a series from then on ignored from Upcoming's right-click menu,
-  and brought back from Settings. [Calendar settings](settings.md#calendar)
+- One event, one occurrence, or a series from then on ignored from the sidebar's Upcoming
+  right-click menu, and brought back from Settings. [Calendar settings](settings.md#calendar)
 - The calendar's address kept in a file only your account can read.
   [Security](security.md)
 
@@ -73,7 +75,8 @@ Everything Oatcake does today, with a link to where each is described. Planned w
   background after the meeting is saved. [Save](how-it-works.md#4-save),
   [Language model](models.md#language-model)
 - Your own summary instructions, to-do instructions and jargon. [Summaries](settings.md#summaries)
-- Summary templates for different kinds of meeting, picked per meeting.
+- Summary templates for different kinds of meeting, picked before recording or when regenerating.
+  For calendar calls, Oatcake suggests the choice from the latest saved meeting with that title.
   [Regenerate and summary templates](how-it-works.md#regenerate-and-summary-templates)
 - Regenerate the summary or the to-dos alone. [Regenerate and summary
   templates](how-it-works.md#regenerate-and-summary-templates)
@@ -110,6 +113,13 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 - Questions about the meeting you have open or across all of them, answered by the model on this
   Mac, with links to the meetings and times it drew on. [Ask](how-it-works.md#5-ask)
 - Follow-ups in the same conversation, as you move between meetings. [Ask](how-it-works.md#5-ask)
+
+## Local MCP server
+
+[Turn it on in Settings](settings.md#local-mcp-server) to let an MCP app on the same Mac browse
+and search your Meetings folder, read summaries, transcripts, notes and to-dos, and list both open
+and completed to-dos. It only reads, and the app runs it itself, over its own input and output:
+nothing listens on the network.
 
 ## Getting started and staying up to date
 
