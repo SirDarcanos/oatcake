@@ -23,7 +23,7 @@ public struct LlmConfig: Codable, Equatable, Sendable {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             baseUrl = (try? c.decodeIfPresent(String.self, forKey: .baseUrl)) ?? ""
             model = (try? c.decodeIfPresent(String.self, forKey: .model)) ?? ""
-            context = (try? c.decodeIfPresent(Int.self, forKey: .context)) ?? nil
+            context = try? c.decodeIfPresent(Int.self, forKey: .context)
         }
 
         /// The window Oatcake plans for: yours (never less than `minimumContext`), or else Qwen3's native one.
