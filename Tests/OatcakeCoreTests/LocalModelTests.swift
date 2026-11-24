@@ -125,6 +125,31 @@ import Testing
         #expect(unknown.own.reasoningControl == nil && unknown.own.model == "gemma4")
     }
 
+    /// Ollama answers a request to reason, sent to a model that can't, with a 400 (its words, from
+    /// server/routes.go). Oatcake asks once more without reasoning_effort instead of failing the task.
+    @Test func ollamaModelThatCantReason() async throws {
+        let server = try await StandIn { request in
+            request.json["reasoning_effort"] as? String == "medium"
+                ? StandIn.Response(status: 400, body: Data(#"{"error":"\"llama3.2\" does not support thinking"}"#.utf8))
+                : .chat("OK")
+        }
+        var own = server.config.llm.own
+        own.reasoningControl = .ollama
+        #expect(try await LocalChat(own: own).complete([ChatMessage("user", "Say OK.")], think: true) == "OK")
+        #expect(server.requests.count == 2 && server.requests[1].json["reasoning_effort"] == nil)
+        // Turning reasoning off ("none") is never refused, so it's sent once as it is.
+        #expect(try await LocalChat(own: own).complete([ChatMessage("user", "Say OK.")], think: false) == "OK")
+        #expect(server.requests.count == 3 && server.requests[2].json["reasoning_effort"] as? String == "none")
+        // Any other refusal is still an error.
+        let other = try await StandIn { _ in StandIn.Response(status: 400, body: Data(#"{"error":"model not found"}"#.utf8)) }
+        var missing = other.config.llm.own
+        missing.reasoningControl = .ollama
+        await #expect(throws: OatcakeError.self) {
+            try await LocalChat(own: missing).complete([ChatMessage("user", "Say OK.")], think: true)
+        }
+        #expect(other.requests.count == 1)
+    }
+
     /// A model's file is carried on from where an earlier download stopped, and only kept when it's
     /// the file that was expected.
     @Test func downloads() async throws {

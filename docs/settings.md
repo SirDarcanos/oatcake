@@ -119,7 +119,8 @@ decides for itself, until you choose the **Reasoning switch** it takes in Settin
 **Ollama** (its `reasoning_effort`: `medium` to reason, `none` not to) or **llama.cpp** (the
 `enable_thinking` that Qwen3's chat template reads, as Oatcake's own server uses). Then each
 switch is sent with its task's requests. A model that can't turn reasoning off (GPT-OSS on Ollama)
-keeps its lowest level. **Leave it to the server**, the default, sends nothing about reasoning.
+keeps its lowest level; one on Ollama that can't reason at all is asked again without the switch.
+**Leave it to the server**, the default, sends nothing about reasoning.
 
 - **Jargon:** names, products and acronyms, separated by commas. The model is told to spell them
   as written, in summaries, to-dos, drafts, name suggestions and Ask's answers. Transcripts keep

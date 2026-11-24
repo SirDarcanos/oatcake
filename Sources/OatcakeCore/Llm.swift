@@ -143,7 +143,15 @@ public struct LocalChat: Sendable {
         let (data, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
-            throw OatcakeError("The model at \(baseUrl) returned \(status): \(String(decoding: data, as: UTF8.self).prefix(300))")
+            let said = String(decoding: data, as: UTF8.self)
+            // Ollama refuses to turn reasoning on for a model that can't reason ("… does not support
+            // thinking", a 400 on its chat API). Asked again without the switch, that model just replies.
+            if reasoningControl == .ollama, think, status == 400, said.contains("does not support thinking") {
+                var plain = self
+                plain.reasoningControl = nil
+                return try await plain.complete(messages, schema: schema, think: think, maxTokens: maxTokens)
+            }
+            throw OatcakeError("The model at \(baseUrl) returned \(status): \(said.prefix(300))")
         }
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let choice = (json?["choices"] as? [[String: Any]])?.first
