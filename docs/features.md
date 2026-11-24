@@ -73,7 +73,8 @@ Everything Oatcake does today, with a link to where each is described. Planned w
   background after the meeting is saved. [Save](how-it-works.md#4-save),
   [Language model](models.md#language-model)
 - Your own summary instructions, to-do instructions and jargon. [Summaries](settings.md#summaries)
-- Summary templates for different kinds of meeting, picked per meeting.
+- Summary templates for different kinds of meeting, picked before recording or when regenerating.
+  For calendar calls, Oatcake suggests the choice from the latest saved meeting with that title.
   [Regenerate and summary templates](how-it-works.md#regenerate-and-summary-templates)
 - Regenerate the summary or the to-dos alone. [Regenerate and summary
   templates](how-it-works.md#regenerate-and-summary-templates)

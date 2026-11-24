@@ -126,9 +126,9 @@ shown but can't be changed, as it decides for itself.
 - **Summary templates:** other summary instructions, each with a name, for the meetings that need a
   different summary (a one-to-one you lead, one with your own lead, a team meeting). **Add
   Template** starts one as a copy of the summary instructions; change its name and instructions in
-  place, or **Delete…** it. Pick one for a meeting from **Regenerate › Regenerate summary** (see
-  [Regenerate and summary templates](how-it-works.md#regenerate-and-summary-templates)); the
-  meeting keeps it (in its `meeting.json`) and every other meeting keeps the summary instructions.
+  place, or **Delete…** it. Pick one on [New recording](how-it-works.md#1-record) or change it from
+  [Regenerate › Regenerate summary](how-it-works.md#regenerate-and-summary-templates). The meeting
+  keeps the choice without changing your standard summary instructions.
   A meeting keeps its template by name: once that template is renamed or deleted, the meeting is
   back on the summary instructions, until a template is given that name again. A template with no
   instructions means the summary instructions. The summary starts at the model's

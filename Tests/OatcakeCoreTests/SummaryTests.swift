@@ -139,6 +139,47 @@ import Testing
         #expect(try store.read(rel).meta.template == nil)
     }
 
+    @Test func recordingTemplateSurvivesReloadAndIsUsedForTheFirstSummary() async throws {
+        let meetings = TestMeetings()
+        defer { meetings.remove() }
+        let recordings = meetings.root.appendingPathComponent(".recordings")
+        let server = try await StandIn.model { _ in "## Decisions\nShip on Friday.\n" }
+        var config = server.config
+        config.outputDir = meetings.root.path
+        config.keepAudio = true
+        config.todosEnabled = false
+        config.summaryInstructions = "Use the standard format."
+        config.summaryTemplates = [SummaryTemplate(name: "Weekly update", instructions: "List decisions first.")]
+        let store = Meetings(root: meetings.root)
+
+        func saveCall(_ id: String, started: String, template: String?) throws -> String {
+            let dir = recordings.appendingPathComponent(id)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let call = CallInfo(title: "Weekly sync", folder: "", startedAt: started, summaryTemplate: template)
+            try writeAtomic(dir.appendingPathComponent("call.json"), try encodeJSON(call))
+            let analysis = Analysis(title: call.title, startedAt: started, endedAt: started,
+                                    lines: [Line(speaker: me, start: 1, end: 3, text: "Ship on Friday.")],
+                                    speakers: [], echoLinesRemoved: 0, me: nil, warnings: [], embeddingModel: nil)
+            try writeAtomic(dir.appendingPathComponent("analysis.json"), try encodeJSON(analysis))
+            let recording = try #require(Recordings.get(id, recordings: recordings))
+            #expect(recording.summaryTemplate == template)
+            return try saveMeeting(config, recording, decisions: [:], folder: "")
+        }
+
+        let first = try saveCall("first", started: "2026-11-10T14:00:00Z", template: "Weekly update")
+        #expect(try store.read(first).summary.isEmpty)
+        #expect(try store.read(first).meta.template == "Weekly update")
+        #expect(latestMeeting(titled: "Weekly Sync!", in: store.tree())?.summaryTemplate == "Weekly update")
+        try await writeSummary(config, meeting: first)
+        #expect(server.requests.last?.messages.user.hasSuffix("List decisions first.") == true)
+
+        let second = try saveCall("second", started: "2026-11-17T14:00:00Z", template: nil)
+        let latest = try #require(latestMeeting(titled: "Weekly Sync!", in: store.tree()))
+        #expect(latest.path == second && latest.summaryTemplate == nil)
+        try await writeSummary(config, meeting: second)
+        #expect(server.requests.last?.messages.user.hasSuffix("Use the standard format.") == true)
+    }
+
     /// To-dos turned off: only the summary is asked for, and the meeting's todo.md is left as it was.
     @Test func noTodosWhenTurnedOff() async throws {
         let meetings = TestMeetings()
