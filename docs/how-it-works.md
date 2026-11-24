@@ -56,7 +56,8 @@ The window has three columns: the sidebar (a recording in progress, To-dos, Upco
 calendar, Needs review, and your folders, then any meetings at the top level, listed by their
 call's title), the meetings in the selected folder, and the meeting itself. A one-off call with no
 folder of its own is saved at the top level; drag it onto a folder to file it. Clicking the
-Meetings heading lists every meeting, and an empty folder offers **Record here**. Settings (⌘,) is
+Meetings heading lists every meeting, and an empty folder offers **Record here**. Drag the divider
+to resize the meeting list; it keeps that width when you switch screens. Settings (⌘,) is
 its own window, in panes; changes apply as you make them (see [Settings](settings.md)).
 
 ⌘N starts a new recording, ⌥⌘F searches every meeting from the box above the meeting list (its
