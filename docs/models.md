@@ -48,7 +48,9 @@ Summaries, to-dos, name suggestions and Ask's answers come from one model, run o
 - **How much it reads at once.** As little as the job needs, up to what this Mac's memory allows
   (the 8B takes about 5 GB plus 0.14 GB for every thousand tokens; an hour's call is around
   12,000). Qwen3 reads 32,768 tokens natively; a longer call stretches that with YaRN, by no more
-  than it needs. A call too long for this Mac is summarised in parts, which are then joined.
+  than it needs. A server of your own is sent as much at once as you've told Oatcake it holds
+  (Settings › Models › Context), or 32,768 tokens. A call too long for this Mac (or for that
+  server) is summarised in parts, which are then joined.
 - **A model of your own.** Any server with the same chat API on this Mac or your network (Ollama,
   LM Studio, your own llama.cpp). Oatcake only talks to a local address, and sends no key. It
   sends none of Qwen's sampling settings either: the server's own apply, as they suit its model.

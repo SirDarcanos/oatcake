@@ -13,6 +13,23 @@ import Testing
         #expect(config.jargonLine.hasSuffix("Automattic, WooCommerce."))
     }
 
+    /// A server of your own's context, as you've told Oatcake: none to start with (Qwen3's native
+    /// window is planned for, as before), saved with the rest, read on its own, and never planned for
+    /// below the minimum. Oatcake's own models are sized as before.
+    @Test func ownServerContext() throws {
+        var llm = LlmConfig(model: LlmConfig.ownServer)
+        #expect(llm.own.context == nil && llm.own.contextBudget == 32_768 && largestContext(llm) == 32_768)
+        llm.own.context = 131_072
+        let saved = try JSONDecoder().decode(LlmConfig.self, from: JSONEncoder().encode(llm))
+        #expect(saved.own.context == 131_072 && largestContext(saved) == 131_072)
+        llm.own.context = 4_096
+        #expect(largestContext(llm) == LlmConfig.Own.minimumContext)
+        let unreadable = try JSONDecoder().decode(LlmConfig.self, from: Data(#"{"model":"own","own":{"baseUrl":"http://localhost:11434/v1","model":"llama3.1","context":"big"}}"#.utf8))
+        #expect(unreadable.own.context == nil && unreadable.own.model == "llama3.1" && largestContext(unreadable) == 32_768)
+        let qwen = LocalModels.all[0]
+        #expect(largestContext(with(llm) { $0.model = qwen.id }) == LocalModels.maxContext(qwen))
+    }
+
     /// Settings from when the choice was a provider: a model server of your own carries over, and
     /// anything that sent transcripts elsewhere becomes the model Oatcake runs itself.
     @Test func olderModelSettings() throws {

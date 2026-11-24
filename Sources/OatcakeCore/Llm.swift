@@ -197,8 +197,8 @@ public func checkModel(_ llm: LlmConfig, server: ModelServer = .shared) async th
 public func withModel<T: Sendable>(_ config: LlmConfig, tokens: Int, server: ModelServer = .shared,
                                     _ work: (LocalChat, Int) async throws -> T) async throws -> T {
     guard let model = LocalModels.find(config.model) else {
-        // A server of your own decides its window; Qwen's native one is assumed.
-        return try await work(LocalChat(baseUrl: config.own.baseUrl, model: config.own.model), LocalModels.nativeContext)
+        // A server of your own decides its window: the one you've told Oatcake, or else Qwen's native one.
+        return try await work(LocalChat(baseUrl: config.own.baseUrl, model: config.own.model), config.own.contextBudget)
     }
     let context = min(LocalModels.context(forTokens: tokens), LocalModels.maxContext(model))
     let chat = try await server.lease(model, context: context)
@@ -214,7 +214,7 @@ public func withModel<T: Sendable>(_ config: LlmConfig, tokens: Int, server: Mod
 
 /// The most tokens the chosen model can be given at once on this Mac.
 public func largestContext(_ config: LlmConfig) -> Int {
-    LocalModels.find(config.model).map { LocalModels.maxContext($0) } ?? LocalModels.nativeContext
+    LocalModels.find(config.model).map { LocalModels.maxContext($0) } ?? config.own.contextBudget
 }
 
 /**

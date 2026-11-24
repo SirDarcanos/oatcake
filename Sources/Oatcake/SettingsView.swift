@@ -348,6 +348,19 @@ struct SettingsView: View {
                     if llm.own.model.trimmed.isEmpty { Text("Required").font(.callout).foregroundStyle(Color.amber) }
                 }
                 .font(.system(.body, design: .monospaced))
+                // How much Oatcake sends at once. The server keeps its own setting: this only has to match it.
+                TextField(value: bindLlm(\.own.context), format: .number.grouping(.never),
+                          prompt: Text(String(LocalModels.nativeContext))) {
+                    Text("Context").font(.body)
+                    if let context = llm.own.context, context < LlmConfig.Own.minimumContext {
+                        Text("Oatcake needs at least \(LlmConfig.Own.minimumContext.formatted()) tokens, and plans for that")
+                            .font(.callout).foregroundStyle(Color.amber)
+                    } else {
+                        Text("Tokens your server is set to hold (Ollama’s num_ctx, llama.cpp’s -c). This tells Oatcake how much to send at once; it doesn’t change the server. Empty: \(LocalModels.nativeContext.formatted()).")
+                            .settingsHint()
+                    }
+                }
+                .font(.system(.body, design: .monospaced))
             }
             TestRow(missing: testBlocker(llm)).id(llm.model)
         } header: {
