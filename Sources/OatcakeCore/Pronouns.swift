@@ -10,11 +10,12 @@ import NaturalLanguage
  * What the model wrote (a summary, to-dos, a draft for sharing, an answer) with he/him/his and
  * she/her/hers made they/them/their, and the verb after a subject agreeing ("she needs" → "they
  * need", "she's seen" → "they've seen"). English only: in another language "he" or "her" can be
- * another word altogether, so anything else is left as it is.
+ * another word altogether, so anything else is left as it is. `names` (the meeting's participants)
+ * are left whole: He is a surname too.
  */
-public func theyThem(_ text: String) -> String {
+public func theyThem(_ text: String, names: [String] = []) -> String {
     guard !text.isEmpty, NLLanguageRecognizer.dominantLanguage(for: text) == .english else { return text }
-    return text.components(separatedBy: "\n").map(theyThemLine).joined(separator: "\n")
+    return text.components(separatedBy: "\n").map { theyThemLine($0, names: names) }.joined(separator: "\n")
 }
 
 /// Words that can come between a subject and its verb: "she still needs".
@@ -27,7 +28,7 @@ private let afterHave: Set = ["been", "got", "had", "done", "seen", "gone", "mad
 private let notNouns: Set = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "today", "tomorrow", "tonight", "yesterday"]
 private let gendered: Set = ["he", "him", "his", "himself", "she", "her", "hers", "herself"]
 
-private func theyThemLine(_ line: String) -> String {
+private func theyThemLine(_ line: String, names: [String]) -> String {
     guard line.range(of: #"(?i)\b(he|him|his|himself|she|her|hers|herself)\b"#, options: .regularExpression) != nil else { return line }
     let tagger = NLTagger(tagSchemes: [.lexicalClass, .lemma])
     tagger.string = line
@@ -38,6 +39,14 @@ private func theyThemLine(_ line: String) -> String {
     }
     func word(_ i: Int) -> (range: Range<String.Index>, text: String, tag: NLTag?)? { words.indices.contains(i) ? words[i] : nil }
     func isNoun(_ i: Int) -> Bool { word(i).map { $0.tag == .noun && !notNouns.contains($0.text.lowercased()) } ?? false }
+    func isNumber(_ i: Int) -> Bool { word(i).map { $0.tag == .number || $0.text.first?.isNumber == true } ?? false }
+    func isCapitalised(_ i: Int) -> Bool { word(i).map { $0.text.first?.isUppercase == true && $0.text.first?.isLetter == true } ?? false }
+    /// The end of a sentence or clause: nothing, or punctuation, comes next ("the call was his.").
+    func endsHere(_ i: Int) -> Bool { word(i).map { $0.text.first?.isLetter != true && $0.text.first?.isNumber != true } ?? true }
+    // Where a participant's name is in the line: a pronoun's spelling in there is part of the name.
+    let named = names.filter { !$0.trimmed.isEmpty }.flatMap { name in
+        line.ranges(of: name.trimmed)
+    }
     func skippingBetween(_ i: Int) -> Int {
         var j = i
         while let between = word(j), betweenSubjectAndVerb.contains(between.text.lowercased()) { j += 1 }
@@ -46,16 +55,20 @@ private func theyThemLine(_ line: String) -> String {
     var edits: [(Range<String.Index>, String)] = []
     for (i, w) in words.enumerated() {
         let lower = w.text.lowercased()
-        guard gendered.contains(lower) else { continue }
-        // A possessive is followed by a noun, or by an adjective and then a noun: "her trip", "her
-        // new plan", but "making her unavailable on Tuesday" and "send her the plan".
-        let beforeNoun = isNoun(i + 1) || word(i + 1)?.tag == .adjective && isNoun(i + 2)
+        guard gendered.contains(lower), !named.contains(where: { $0.overlaps(w.range) }) else { continue }
+        // A capitalised He or Her next to another capitalised word is a name ("Lily He", "He Wei"),
+        // not the start of a sentence: a pronoun there is followed by a word in lower case.
+        if w.text.first?.isUppercase == true, isCapitalised(i - 1) || isCapitalised(i + 1) { continue }
+        // A possessive is followed by a noun, a number, or an adjective and then a noun: "her trip",
+        // "her 2 PRs", "her new plan", but "making her unavailable on Tuesday" and "send her the plan".
+        let beforeNoun = isNoun(i + 1) || isNumber(i + 1) || word(i + 1)?.tag == .adjective && isNoun(i + 2)
         var they = switch lower {
         case "he", "she": "they"
         case "him": "them"
         case "himself", "herself": "themselves"
         case "hers": "theirs"
-        case "his": beforeNoun ? "their" : "theirs"
+        // "theirs" only where nothing follows it ("the call was his."), since the tagger can read a noun as a verb.
+        case "his": endsHere(i + 1) ? "theirs" : "their"
         default: beforeNoun ? "their" : "them"
         }
         if w.text.first?.isUppercase == true { they = they.prefix(1).uppercased() + they.dropFirst() }
@@ -67,7 +80,11 @@ private func theyThemLine(_ line: String) -> String {
         if let plural = agreeing[v] {
             edits.append((verb.range, plural))
         } else if v == "'s" || v == "’s" {
-            edits.append((verb.range, "\(v.first!)" + (afterHave.contains(word(skippingBetween(j + 1))?.text.lowercased() ?? "") ? "ve" : "re")))
+            // "she's" is "she has" before a past participle ("she's booked it"), "she is" otherwise.
+            let after = word(skippingBetween(j + 1))
+            let participle = after.map { afterHave.contains($0.text.lowercased())
+                || $0.tag == .verb && ($0.text.lowercased().hasSuffix("ed") || $0.text.lowercased().hasSuffix("en")) } ?? false
+            edits.append((verb.range, "\(v.first!)" + (participle ? "ve" : "re")))
         } else if verb.tag == .verb, v.hasSuffix("s"), !v.hasSuffix("ss"),
                   let lemma = tagger.tag(at: verb.range.lowerBound, unit: .word, scheme: .lemma).0?.rawValue, lemma != v {
             edits.append((verb.range, lemma))
