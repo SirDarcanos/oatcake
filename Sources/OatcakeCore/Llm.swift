@@ -101,15 +101,18 @@ public struct LocalChat: Sendable {
             "model": model,
             "messages": messages.map { ["role": $0.role, "content": $0.content] },
             "max_tokens": maxTokens,
-            // Qwen3's recommended sampling: thinking and non-thinking modes each have their own.
-            "temperature": think ? 0.6 : 0.7,
-            "top_p": think ? 0.95 : 0.8,
-            "top_k": 20,
-            "min_p": 0,
-            "presence_penalty": 1.5,
             // The server keeps its reading of a prompt, so a second question about the same call starts at once.
             "cache_prompt": true,
         ]
+        // Qwen3's recommended sampling: thinking and non-thinking modes each have their own. A server
+        // of your own keeps to its own sampling, which suits whatever model it runs.
+        if qwen {
+            body["temperature"] = think ? 0.6 : 0.7
+            body["top_p"] = think ? 0.95 : 0.8
+            body["top_k"] = 20
+            body["min_p"] = 0
+            body["presence_penalty"] = 1.5
+        }
         if qwen { body["chat_template_kwargs"] = ["enable_thinking": think] }
         // The schema is sent exactly as it's written. The server makes the model fill in a reply's
         // fields in the schema's order, and that order matters: asked for a to-do's time before
