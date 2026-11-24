@@ -1,44 +1,63 @@
-// The speech models: FluidAudio's Core ML builds of Silero (finds speech), Parakeet (speech to
-// text), and pyannote + WeSpeaker (who spoke when, and voice fingerprints). They run on the
-// Neural Engine and download from Hugging Face on first use, about 500 MB.
+// The speech models: FluidAudio's Core ML builds of Silero (finds speech), Parakeet, Bark or
+// SenseVoice (speech to text), and pyannote + WeSpeaker (who spoke when, and voice fingerprints).
+// They run on the Mac, mostly on the Neural Engine, and download from Hugging Face on first use:
+// nothing else goes over the network.
 
 import FluidAudio
 import Foundation
 
 public enum SpeechModels {
+    /// What decodes the speech: a Parakeet-family model (Parakeet itself, or Bark, a retraining of
+    /// it), which gives each word's time, or SenseVoice, which gives the text alone.
+    enum Decoder: Sendable, Equatable {
+        case parakeet(AsrModelVersion)
+        case senseVoice
+    }
+
     public struct AsrChoice: Sendable {
         public let key: String
         public let title: String
         public let detail: String
-        let version: AsrModelVersion
+        let decoder: Decoder
     }
 
     /// The transcription models Settings offers.
     public static let asr: [AsrChoice] = [
-        AsrChoice(key: "parakeet-en", title: "Parakeet English", detail: "English only. The most accurate for English calls.", version: .v2),
+        AsrChoice(key: "parakeet-en", title: "Parakeet English", detail: "English only. The most accurate for English calls.",
+                  decoder: .parakeet(.v2)),
+        AsrChoice(key: "bark-en", title: "Bark English",
+                  detail: "English only. A retraining of Parakeet for conversation that leaves out “um”, false starts and repeated words. About 420 MB more to download.",
+                  decoder: .parakeet(.bark3Clean)),
         AsrChoice(key: "parakeet-multilingual", title: "Parakeet — 25 European languages",
-                  detail: "Detects the language of each call.", version: .ultra),
+                  detail: "Detects the language of each call.", decoder: .parakeet(.ultra)),
+        AsrChoice(key: "sensevoice", title: "SenseVoice — Chinese, Cantonese, Japanese, Korean and English",
+                  detail: "Detects the language of each line. Each stretch of speech goes to one voice, so a quick back-and-forth is split less finely. About 460 MB more to download.",
+                  decoder: .senseVoice),
     ]
     public static let defaultAsr = "parakeet-en"
 
-    /// A config value, including the Electron version's names for the same two choices.
+    /// A config value, including the Electron version's names for the same choices. One it doesn't
+    /// know (from a newer version, say) is the default.
     public static func asrChoice(_ key: String) -> AsrChoice {
-        switch key {
-        case "parakeet-multilingual", "parakeet-tdt-v3": asr[1]
-        default: asr[0]
-        }
+        let key = key == "parakeet-tdt-v3" ? "parakeet-multilingual" : key
+        return asr.first { $0.key == key } ?? asr[0]
     }
 
     static let root = Paths.models.appendingPathComponent("FluidAudio", isDirectory: true)
     static func asrDirectory(_ version: AsrModelVersion) -> URL {
         root.appendingPathComponent(AsrModels.defaultCacheDirectory(for: version).lastPathComponent, isDirectory: true)
     }
+    /// SenseVoice's files, in Oatcake's models folder rather than FluidAudio's own.
+    static let senseVoiceDirectory = root.appendingPathComponent(Repo.senseVoiceSmall.folderName, isDirectory: true)
     static let diarizerDirectory = root.appendingPathComponent("speaker-diarization-coreml", isDirectory: true)
 
     /// Whether anything still has to be downloaded for this transcription model.
     static func needsDownload(_ key: String) -> Bool {
-        let version = asrChoice(key).version
-        return !AsrModels.modelsExist(at: asrDirectory(version), version: version)
+        let speech = switch asrChoice(key).decoder {
+        case .parakeet(let version): AsrModels.modelsExist(at: asrDirectory(version), version: version)
+        case .senseVoice: SenseVoiceModels.modelsExist(at: senseVoiceDirectory)
+        }
+        return !speech
             || !FileManager.default.exists(root.appendingPathComponent("Models/silero-vad"))
             || !FileManager.default.exists(diarizerDirectory)
     }
@@ -51,17 +70,32 @@ public enum SpeechModels {
     static let pinnedRevisions = [
         "FluidInference/parakeet-tdt-0.6b-v2-coreml": "ee09c569f73759e6d44c9bd16766f477b2b36d39",
         "FluidInference/parakeet-ultra-coreml": "95eaa59a39d4394f047a4dc5cce480388a60d1b6",
+        "FluidInference/bark-3.0-coreml": "73b0c0da665d29ea0332e9f0d32da8e26a4cdb38",
+        "FluidInference/sensevoice-small-coreml": "74bdbe74b2258f25b5400db72f6cbfbef7c74ded",
         "FluidInference/silero-vad-coreml": "b419383c55c110e2c9271fa6ee0ea83d03c70d96",
     ]
 
     static func loadTranscriber(_ key: String) async throws -> Transcriber {
         ModelRegistry.revisionOverrides = pinnedRevisions
-        let version = asrChoice(key).version
         let vad = try await VadManager(config: .default, modelDirectory: root)
-        let models = try await AsrModels.downloadAndLoad(to: asrDirectory(version), version: version)
-        let asr = AsrManager(config: .default)
-        try await asr.loadModels(models)
-        return Transcriber(vad: vad, asr: asr)
+        switch asrChoice(key).decoder {
+        case .parakeet(let version):
+            let models = try await AsrModels.downloadAndLoad(to: asrDirectory(version), version: version)
+            let asr = AsrManager(config: .default)
+            try await asr.loadModels(models)
+            return Transcriber(vad: vad, decoder: .parakeet(asr))
+        case .senseVoice:
+            // The fp16 encoder, on the Neural Engine (FluidAudio's default). Downloaded the way its
+            // own loader does it, but into Oatcake's folder.
+            let directory = senseVoiceDirectory
+            let models = try await ModelHub.loadWithRecovery(
+                .senseVoiceSmall, directory: root,
+                requiredFiles: [ModelNames.SenseVoice.preprocessorFile, ModelNames.SenseVoice.encoderFile, ModelNames.SenseVoice.vocabularyFile],
+                variant: SenseVoiceEncoderPrecision.fp16.rawValue
+            ) { try SenseVoiceModels.load(from: directory) }
+            // "withitn": punctuation, and numbers written as numbers. FluidAudio's default leaves both out.
+            return Transcriber(vad: vad, decoder: .senseVoice(SenseVoiceManager(models: models, textNorm: 14)))
+        }
     }
 
     /// `live`: for fingerprints of the live transcript's lines, a line or two at a time. A batch of one
@@ -110,14 +144,19 @@ public struct Utterance: Sendable {
     public var words: [Word]
 }
 
-/// Silero finds the stretches of speech (up to 14 s each), and Parakeet decodes each one.
+/// Silero finds the stretches of speech (up to 14 s each), and the speech model decodes each one.
 final class Transcriber {
-    private let vad: VadManager
-    private let asr: AsrManager
+    enum Decoder {
+        case parakeet(AsrManager)
+        case senseVoice(SenseVoiceManager)
+    }
 
-    init(vad: VadManager, asr: AsrManager) {
+    private let vad: VadManager
+    private let decoder: Decoder
+
+    init(vad: VadManager, decoder: Decoder) {
         self.vad = vad
-        self.asr = asr
+        self.decoder = decoder
     }
 
     /// Speech is cut into stretches at pauses, 14 s at most.
@@ -129,12 +168,20 @@ final class Transcriber {
         return config
     }
 
-    /// Decodes the speech between two times in `samples`; nil when Parakeet hears no words in it.
+    /// Decodes the speech between two times in `samples`; nil when the model hears no words in it.
     private func decode(_ samples: [Float], from start: Double, to end: Double) async throws -> Utterance? {
         let minimum = ASRConstants.minimumRequiredSamples(forSampleRate: sampleRate)
         var chunk = Array(slice(samples, start, end))
         // Very short stretches are padded with silence up to the model's minimum.
         if chunk.count < minimum { chunk += [Float](repeating: 0, count: minimum - chunk.count) }
+        let asr: AsrManager
+        switch decoder {
+        case .parakeet(let manager): asr = manager
+        case .senseVoice(let manager):
+            // Text alone, without each word's time: the stretch goes to one voice whole.
+            let text = try await senseVoice(manager, chunk)
+            return text.isEmpty ? nil : Utterance(start: start, end: end, text: text, words: [])
+        }
         var state = TdtDecoderState.make(decoderLayers: await asr.decoderLayerCount)
         let result = try await asr.transcribe(chunk, decoderState: &state)
         let text = result.text.trimmed
@@ -143,6 +190,20 @@ final class Transcriber {
             Word(text: $0.word, start: start + $0.startTime, end: start + $0.endTime)
         }
         return Utterance(start: start, end: end, text: text, words: words)
+    }
+
+    /**
+     * SenseVoice's text for a stretch of speech. Now and then it returns nothing for one, not even
+     * the language it heard (a Japanese test sentence did, read by one voice of three), which is the
+     * model failing rather than silence: the two halves are tried on their own, once.
+     */
+    private func senseVoice(_ manager: SenseVoiceManager, _ chunk: [Float], halved: Bool = false) async throws -> String {
+        let result = try await manager.transcribeDetailed(audio: chunk)
+        guard result.text.trimmed.isEmpty, result.language == nil, !halved, chunk.count >= 2 * sampleRate else { return result.text.trimmed }
+        let half = chunk.count / 2
+        let first = try await senseVoice(manager, Array(chunk[..<half]), halved: true)
+        let second = try await senseVoice(manager, Array(chunk[half...]), halved: true)
+        return [first, second].filter { !$0.isEmpty }.joined(separator: " ")
     }
 
     func transcribe(_ samples: [Float], progress: (Double) -> Void) async throws -> [Utterance] {
