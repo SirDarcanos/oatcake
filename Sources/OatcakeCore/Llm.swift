@@ -43,10 +43,11 @@ public struct ChatMessage: Sendable, Equatable {
 }
 
 /**
- * A chat server at a local address. Requests follow Qwen's own advice for its models: its sampling
- * settings for each mode, never greedy decoding, room for a long reply, and nothing of its
- * reasoning kept in the conversation. Whether it reasons before it replies is the caller's to say:
- * Settings › Summaries has a switch for each task (LlmConfig.Reasoning).
+ * A chat server at a local address. Requests to Oatcake's own server follow Qwen's own advice for
+ * its models: its sampling settings for each mode and never greedy decoding; a server of your own
+ * keeps its own sampling. Every request leaves room for a long reply, and nothing of the model's
+ * reasoning is kept in the conversation. Whether Oatcake's own model reasons before it replies is
+ * the caller's to say: Settings › Summaries has a switch for each task (LlmConfig.Reasoning).
  */
 public struct LocalChat: Sendable {
     public var baseUrl: String
@@ -101,16 +102,20 @@ public struct LocalChat: Sendable {
             "model": model,
             "messages": messages.map { ["role": $0.role, "content": $0.content] },
             "max_tokens": maxTokens,
-            // Qwen3's recommended sampling: thinking and non-thinking modes each have their own.
-            "temperature": think ? 0.6 : 0.7,
-            "top_p": think ? 0.95 : 0.8,
-            "top_k": 20,
-            "min_p": 0,
-            "presence_penalty": 1.5,
             // The server keeps its reading of a prompt, so a second question about the same call starts at once.
             "cache_prompt": true,
         ]
-        if qwen { body["chat_template_kwargs"] = ["enable_thinking": think] }
+        // Qwen3's recommended sampling: thinking and non-thinking modes each have their own. A server
+        // of your own keeps to its own sampling, which suits whatever model it runs. Qwen3 takes its
+        // reasoning switch from the chat template.
+        if qwen {
+            body["temperature"] = think ? 0.6 : 0.7
+            body["top_p"] = think ? 0.95 : 0.8
+            body["top_k"] = 20
+            body["min_p"] = 0
+            body["presence_penalty"] = 1.5
+            body["chat_template_kwargs"] = ["enable_thinking": think]
+        }
         // The schema is sent exactly as it's written. The server makes the model fill in a reply's
         // fields in the schema's order, and that order matters: asked for a to-do's time before
         // its task, the model walks the call minute by minute and makes a to-do of each. Passed

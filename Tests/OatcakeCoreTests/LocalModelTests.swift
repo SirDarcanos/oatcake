@@ -76,12 +76,19 @@ import Testing
         #expect(plain["temperature"] as? Double == 0.7 && plain["top_p"] as? Double == 0.8 && plain["max_tokens"] as? Int == 20)
         #expect((plain["chat_template_kwargs"] as? [String: Any])?["enable_thinking"] as? Bool == false && plain["response_format"] == nil)
 
-        // A server of your own gets no key and no switch it may not know.
+        // A server of your own gets no key, no switch it may not know, and none of Qwen's sampling:
+        // it keeps its own. The room for the reply and the shape it must fit still go.
         let yours = try await withModel(server.config.llm, tokens: 100) { chat, context in
             #expect(context == LocalModels.nativeContext)
             return try await chat.complete([ChatMessage("user", "Say OK.")])
         }
         #expect(yours == "OK" && server.requests.last?.headers["authorization"] == nil && server.requests.last?.json["chat_template_kwargs"] == nil)
+        let mine = LocalChat(baseUrl: server.address + "/v1", model: "stand-in")
+        _ = try await mine.complete([ChatMessage("user", "Say OK.")], schema: todosSchema, think: true)
+        _ = try await mine.complete([ChatMessage("user", "Say OK.")], think: false, maxTokens: 20)
+        let ownSent = server.requests.suffix(2)
+        #expect(ownSent.allSatisfy { $0.leavesSampling } && ownSent.first?.json["max_tokens"] as? Int == 8_192 && ownSent.last?.json["max_tokens"] as? Int == 20)
+        #expect(String(decoding: ownSent.first!.body, as: UTF8.self).contains("\"schema\":" + todosSchema) && ownSent.last?.json["response_format"] == nil)
 
         // A reply that's all reasoning, cut off before the answer, is an error rather than an empty summary.
         let cut = try await StandIn { _ in

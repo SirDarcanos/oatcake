@@ -29,8 +29,8 @@ import Testing
         #expect(sent.user.contains("To-dos:\n- Send the deck — Jane Doe — due Friday\n- Book a room — John Doe — done\n"))
         #expect(sent.user.hasSuffix(defaultSharingInstructions + "\n\nFor this draft only: Keep it to three bullets."))
         #expect(!sent.user.contains("off the record") && !sent.user.contains("Private aside") && !sent.user.contains("[00:04]"))
-        // Reasoned over until its own switch says otherwise (0.6 is Qwen's sampling with reasoning).
-        #expect(server.requests[0].json["temperature"] as? Double == 0.6)
+        // A server of your own keeps its own sampling.
+        #expect(server.requests[0].leavesSampling)
         // Nothing is written until the app puts it in place.
         #expect(try Meetings(root: meetings.root).read(rel).draft.isEmpty)
 
@@ -43,7 +43,7 @@ import Testing
         _ = try await draftForSharing(config, meeting: rel)
         let second = server.requests[1].messages.user
         #expect(second.hasSuffix("\n\nWrite it in French.") && !second.contains("To-dos:") && !second.contains("For this draft only"))
-        #expect(server.requests[1].json["temperature"] as? Double == 0.7)
+        #expect(server.requests[1].leavesSampling)
     }
 
     @Test func noSummaryNoDraft() async throws {

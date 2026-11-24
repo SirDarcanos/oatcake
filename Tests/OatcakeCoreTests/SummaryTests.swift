@@ -38,8 +38,10 @@ import Testing
         let shared = try #require(sent[0].user.range(of: "I will send the deck on Friday.\n\n")).upperBound
         #expect(sent[1].user.hasPrefix(sent[0].user[..<shared]))
         #expect(sent[0].user.hasPrefix("Meeting: Weekly sync\nParticipants: John Doe, Jane Doe\n") && sent[0].user.contains("WooCommerce") && sent[0].user.contains("[00:03] Deck timing"))
-        // The summary is reasoned over and the to-dos aren't, until Settings says otherwise: 0.6 is Qwen's sampling with reasoning, 0.7 without.
-        #expect(server.requests.map { $0.json["temperature"] as? Double } == [0.6, 0.7])
+        // A server of your own keeps its own sampling, whatever the reasoning switches say: each request
+        // says only how long the reply may be and, for the to-dos, the shape it must fit.
+        #expect(server.requests.allSatisfy { $0.leavesSampling && $0.json["max_tokens"] as? Int == replyTokens })
+        #expect(server.requests[1].json["response_format"] != nil)
 
         // Oatcake's own instructions when there are none of yours.
         config.summaryInstructions = ""
@@ -49,7 +51,7 @@ import Testing
         _ = try await draftSummary(config, meeting: rel)
         #expect(server.requests[2].messages.user.hasSuffix(defaultSummaryInstructions))
         #expect(server.requests[3].messages.user.hasSuffix(defaultTodoInstructions + "\n" + todosFormat))
-        #expect(server.requests[2...].map { $0.json["temperature"] as? Double } == [0.7, 0.6])
+        #expect(server.requests[2...].allSatisfy { $0.leavesSampling })
 
         // A server that doesn't hold the model to the shape asked for: the summary is still written,
         // and the draft says the to-dos couldn't be read rather than passing for a call with none.

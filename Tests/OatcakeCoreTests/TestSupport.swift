@@ -26,6 +26,8 @@ final class StandIn: @unchecked Sendable {
             func content(_ role: String) -> String { all.last { $0["role"] as? String == role }?["content"] as? String ?? "" }
             return (content("system"), content("user"))
         }
+        /// None of the sampling settings Oatcake's own Qwen gets: a server of your own keeps its own.
+        var leavesSampling: Bool { ["temperature", "top_p", "top_k", "min_p", "presence_penalty"].allSatisfy { json[$0] == nil } }
     }
     struct Response: Sendable {
         var status = 200
