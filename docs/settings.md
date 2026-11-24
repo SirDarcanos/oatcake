@@ -103,8 +103,9 @@ their chosen colour with them, and so does merging them into someone who hasn't 
   chat API (`http://localhost:11434/v1` for Ollama). Its address has to be this Mac, a machine on
   your network or a private IP address, and no key is sent to it. **Download Now** fetches the
   chosen model straight away rather than at your first call, **Stop** stops a download, **Remove…**
-  deletes it (or **Remove Partial Download**), and **Test** asks it for one word. See
-  [Language model](models.md#language-model).
+  deletes it (or **Remove Partial Download**), and **Test** asks it for one word. A model on a
+  server of your own that reasons first can still be reasoning when the test's room for that word
+  runs out: it answered, so that's a pass too. See [Language model](models.md#language-model).
 
 (Earlier versions had speech to text in a pane of its own, Transcription.)
 

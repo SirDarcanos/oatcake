@@ -87,7 +87,7 @@ import Testing
         let cut = try await StandIn { _ in
             StandIn.Response(body: Data(#"{"choices":[{"message":{"content":""},"finish_reason":"length"}]}"#.utf8))
         }
-        await #expect(throws: OatcakeError(outOfRoomMessage)) {
+        await #expect(throws: ModelOutOfRoom()) {
             _ = try await LocalChat(baseUrl: cut.address + "/v1", model: "m").complete([ChatMessage("user", "Hello")])
         }
     }
@@ -133,5 +133,27 @@ import Testing
         await #expect(throws: OatcakeError.self) { try await ModelDownload.fetch(model(sha256: String(repeating: "0", count: 64)), to: file) { _ in } }
         #expect(!FileManager.default.fileExists(atPath: file.path) && !FileManager.default.fileExists(atPath: part.path))
         #expect(server.requests.last?.headers["range"] == nil)
+    }
+
+    /// Check it works in Settings › Models. A server of your own whose model reasons first can spend
+    /// the check's few tokens on that: it answered, so the check passes. Anything else still fails.
+    @Test func checkModelPassesAModelStillReasoning() async throws {
+        let replying = try await StandIn.model { _ in "OK" }
+        #expect(try await checkModel(replying.config.llm) == .replied("OK"))
+        let sent = try #require(replying.requests.last?.json)
+        #expect(sent["max_tokens"] as? Int == 20)
+
+        let reasoning = try await StandIn { _ in
+            StandIn.Response(body: Data(#"{"choices":[{"message":{"content":"","reasoning_content":"The user wants"},"finish_reason":"length"}]}"#.utf8))
+        }
+        #expect(try await checkModel(reasoning.config.llm) == .stillReasoning)
+
+        // An empty reply that wasn't cut off, or an error from the server, isn't working.
+        let empty = try await StandIn { _ in
+            StandIn.Response(body: Data(#"{"choices":[{"message":{"content":""},"finish_reason":"stop"}]}"#.utf8))
+        }
+        await #expect(throws: OatcakeError("The model gave an empty reply.")) { _ = try await checkModel(empty.config.llm) }
+        let failing = try await StandIn { _ in StandIn.Response(status: 404, body: Data(#"{"error":"model not found"}"#.utf8)) }
+        await #expect(throws: OatcakeError.self) { _ = try await checkModel(failing.config.llm) }
     }
 }

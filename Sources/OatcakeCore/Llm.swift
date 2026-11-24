@@ -135,7 +135,8 @@ public struct LocalChat: Sendable {
         let reply = withoutReasoning(((choice?["message"] as? [String: Any])?["content"] as? String) ?? "")
         guard !reply.isEmpty else {
             // Its reasoning used up the room before it got to the reply.
-            throw OatcakeError(choice?["finish_reason"] as? String == "length" ? outOfRoomMessage : "The model gave an empty reply.")
+            if choice?["finish_reason"] as? String == "length" { throw ModelOutOfRoom() }
+            throw OatcakeError("The model gave an empty reply.")
         }
         return reply
     }
@@ -146,9 +147,39 @@ let wordsForNothing: Set<String> = ["null", "none", "n/a", "unknown", "not state
 
 let outOfRoomMessage = "The model ran out of room before it finished its reply. Trying again usually works."
 
+/// A reply that was all reasoning, cut off before the answer: the room it was given ran out.
+public struct ModelOutOfRoom: LocalizedError, Equatable {
+    public var errorDescription: String? { outOfRoomMessage }
+}
+
 /// A reply without the model's reasoning, for servers that leave it in the text between <think> tags.
 func withoutReasoning(_ reply: String) -> String {
     reply.replacingOccurrences(of: #"(?s)^\s*<think>.*?</think>"#, with: "", options: .regularExpression).trimmed
+}
+
+/// What Check it works in Settings › Models found.
+public enum ModelCheck: Equatable, Sendable {
+    /// The model's reply.
+    case replied(String)
+    /// The model answered, but was still reasoning when the check's small allowance ran out.
+    case stillReasoning
+}
+
+/**
+ * Check it works in Settings › Models: one short request with these settings, asking for a one-word
+ * reply. A server of your own decides for itself whether its model reasons first, and one that does
+ * can spend the check's little room on that. It still answered, so the model is working.
+ */
+public func checkModel(_ llm: LlmConfig, server: ModelServer = .shared) async throws -> ModelCheck {
+    do {
+        // A one-word reply needs no reasoning. Loading the model is most of the wait.
+        return .replied(try await withModel(llm, tokens: 100, server: server) { chat, _ in
+            try await chat.complete([ChatMessage("system", "Reply with the single word OK and nothing else."), ChatMessage("user", "Say OK.")],
+                                    think: false, maxTokens: 20)
+        })
+    } catch is ModelOutOfRoom {
+        return .stillReasoning
+    }
 }
 
 /**
