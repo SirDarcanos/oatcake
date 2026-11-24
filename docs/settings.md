@@ -41,14 +41,16 @@ Settings, with **Open Notification Settings**.
   `config.json`, and Settings shows only that one is saved and which server it's on, with how the
   last fetch went. **Replace…** pastes another in its place; **Remove…** deletes it. (0.4.0 to 0.5.2 kept it in your login Keychain, which asked for your login password
   after every update; the first launch of a later version moves it, asking that one last time.)
-  Without one, Upcoming is hidden.
+  Without one, Home offers **Connect calendar** and the sidebar hides Upcoming.
 
   Oatcake fetches it once an hour, or when you press ↻ next to Upcoming (⌘R), and keeps events
-  from yesterday to two weeks ahead in `calendar.json`. Upcoming in the sidebar lists up to six
-  events from the rest of today and tomorrow, leaving out all-day events and ones you declined. A
-  failed fetch keeps the last events and turns ↻ red; hover it for the reason.
+  from yesterday to two weeks ahead in `calendar.json`. Home lists timed events still in progress
+  or starting today or tomorrow, leaving out events you declined. Upcoming in the sidebar
+  shows up to six of those events. If a refresh fails, Oatcake warns you and keeps the
+  last fetched events.
 
-  Clicking an event opens New recording for it, named after it, in the folder with the same name
+  On Home, **Join the call** opens the call link without recording. **Start recording** (or clicking an event in
+  the sidebar) opens New recording for it, named after it, in the folder with the same name
   or path ("John & Jane 1:1" finds "John & Jane 1-1", "Product – Weekly sync" finds "Product ›
   Weekly sync"), or offering a new folder for a recurring event with none. **Join the call** opens
   its Meet, Zoom or Teams link (only links on those services' own domains count, so a look-alike

@@ -9,6 +9,7 @@ import SwiftUI
 
 /// What the detail pane shows.
 enum Selection: Equatable {
+    case home
     /// A meeting, optionally opened on a tab at a transcript time (the nonce makes a repeat jump count).
     case meeting(String, jump: Jump? = nil)
     case todos
@@ -164,13 +165,12 @@ final class AppModel {
 
         recording.resumeRecordings()
         library.watchMeetings()
-        // The first load happens before the window shows, so it opens on your last meeting rather
-        // than on whatever the sidebar selects by itself.
+        // Load the library before showing Home, so its recent meetings are ready at launch.
         library.tree = library.meetings.tree()
         if let tree = library.tree { library.setTodos(library.meetings.allTodos(in: tree)) }
         jobs.pending = Recordings.list().filter { $0.state == .recorded || $0.state == .processed }
         jobs.unchecked = Recordings.unchecked()
-        openLastMeeting()
+        selection = .home
         refresh()
         calendar.start()
         timers.append(Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
@@ -237,22 +237,10 @@ final class AppModel {
         }
     }
 
-    /// Opens the meeting you were last reading, or on first run the most recent one.
-    private func openLastMeeting() {
-        guard selection == nil, let tree = library.tree else { return }
-        if let last = UserDefaults.standard.string(forKey: "lastMeeting"), tree.find(last)?.kind == .meeting {
-            return openMeeting(last)
-        }
-        if let newest = tree.allMeetings.max(by: { (meetingDate($0) ?? .distantPast) < (meetingDate($1) ?? .distantPast) }) {
-            openMeeting(newest.path)
-        }
-    }
-
     func openMeeting(_ path: String, jump: Jump? = nil) {
         guard library.tree?.find(path)?.kind == .meeting else { return }
         folder = parentOf(path)
         selection = .meeting(path, jump: jump)
-        UserDefaults.standard.set(path, forKey: "lastMeeting")
     }
 
     /// Opens a meeting picked in the middle column, which stays as it is (all meetings, a folder, or
@@ -260,7 +248,6 @@ final class AppModel {
     func selectMeeting(_ path: String, jump: Jump? = nil) {
         guard library.tree?.find(path)?.kind == .meeting else { return }
         selection = .meeting(path, jump: jump)
-        UserDefaults.standard.set(path, forKey: "lastMeeting")
     }
 
     /// ⌥⌘F: the meeting list's search box, bringing the list back first if another screen is showing.
@@ -277,7 +264,6 @@ final class AppModel {
         folder = path
         if let first = listedIn(library.tree?.find(path)).first {
             selection = .meeting(first.path)
-            UserDefaults.standard.set(first.path, forKey: "lastMeeting")
         } else {
             selection = .folder(path)
         }

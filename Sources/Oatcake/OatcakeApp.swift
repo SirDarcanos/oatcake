@@ -251,6 +251,8 @@ struct DetailView: View {
     var body: some View {
         Group {
             switch model.selection {
+            case .home:
+                HomeView()
             case .meeting(let path, let jump):
                 if let node = model.library.tree?.find(path), node.kind == .meeting {
                     MeetingView(node: node, jump: jump)
