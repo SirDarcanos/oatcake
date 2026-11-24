@@ -128,16 +128,15 @@ struct SettingsView: View {
                         .settingsHint(.amber)
                 }
                 Text("Add Oatcake to an app that supports MCP with this:").settingsHint()
-                ScrollView {
-                    Text(verbatim: MCPServer.configuration(executable: Bundle.main.executablePath ?? ""))
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
-                }
-                .frame(height: 130)
-                .background(.quaternary.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
-                .accessibilityLabel("MCP configuration")
+                // All of it in view: it's short, and it's there to be selected and copied whole.
+                Text(verbatim: MCPServer.configuration(executable: Bundle.main.executablePath ?? ""))
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                    .background(.quaternary.opacity(0.15), in: RoundedRectangle(cornerRadius: 6))
+                    .accessibilityLabel("MCP configuration")
             }
         } header: {
             Text("Local MCP server")

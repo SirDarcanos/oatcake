@@ -18,6 +18,11 @@ struct MCPTests {
         #expect(server["command"] as? String == "/Applications/Oatcake.app/Contents/MacOS/Oatcake")
         #expect(server["args"] as? [String] == ["--mcp"])
         #expect(server.count == 2)
+        #expect(try #require(json.range(of: "\"command\"")).lowerBound < (try #require(json.range(of: "\"args\""))).lowerBound)
+        // A path that needs escaping still makes valid JSON.
+        let odd = MCPServer.configuration(executable: #"/Users/jane "doe"/Oatcake.app/Contents/MacOS/Oatcake"#)
+        let oddServer = (try #require(JSONSerialization.jsonObject(with: Data(odd.utf8)) as? [String: Any]))["mcpServers"] as? [String: Any]
+        #expect((oddServer?["oatcake"] as? [String: Any])?["command"] as? String == #"/Users/jane "doe"/Oatcake.app/Contents/MacOS/Oatcake"#)
     }
 
     /// A Meetings folder with one meeting, a nested folder, and the things that mustn't be read:

@@ -49,9 +49,20 @@ public final class MCPServer {
 
     /// What to add to an app's MCP settings: Oatcake's own executable, run with --mcp.
     public static func configuration(executable: String) -> String {
-        let config = ["mcpServers": ["oatcake": ["command": executable, "args": [HelperMode.mcp]] as [String: Any]]]
-        let data = (try? JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])) ?? Data()
-        return String(decoding: data, as: UTF8.self)
+        // Written out rather than serialised, so "command" comes before "args" as in clients' own examples.
+        let quoted = { (text: String) in
+            String(decoding: (try? JSONSerialization.data(withJSONObject: text, options: [.fragmentsAllowed, .withoutEscapingSlashes])) ?? Data(), as: UTF8.self)
+        }
+        return """
+            {
+              "mcpServers": {
+                "oatcake": {
+                  "command": \(quoted(executable)),
+                  "args": [\(quoted(HelperMode.mcp))]
+                }
+              }
+            }
+            """
     }
 
     /// Serves the app that started it until that app closes its end. Returns the exit status.
