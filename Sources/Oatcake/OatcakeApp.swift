@@ -40,6 +40,7 @@ extension FocusedValues {
 /// File › New Recording and Move to Trash, and Edit › Find in Transcript and Search Meetings.
 struct AppCommands: Commands {
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     @FocusedValue(\.trashMeetings) private var trashMeetings
     @AppStorage(TextScale.key) private var textScale = 1.0
     let model: AppModel
@@ -48,6 +49,10 @@ struct AppCommands: Commands {
         // The menus are built at launch, before (and whether or not) the window is: this is where
         // the app learns how to open it, for the menu bar item, reminders and launch itself.
         let _ = model.openMainWindow = { openWindow(id: "main") }
+        let _ = model.recording.menuBar.settings = {
+            NSApp.activate()
+            openSettings()
+        }
         CommandGroup(replacing: .newItem) {
             Button("New Recording") { model.newRecording() }.keyboardShortcut("n")
             // The sidebar's own buttons for these sit in section headers, out of reach of the keyboard and VoiceOver.

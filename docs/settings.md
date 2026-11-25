@@ -1,8 +1,9 @@
 # Settings
 
-Settings (⌘,) is its own window, with a pane for each part of Oatcake; changes apply as you make
-them. They're stored in `~/Library/Application Support/Oatcake/config.json`, apart from the
-calendar's address (see [Calendar](#calendar)). If `config.json` can't be read, Oatcake starts on
+Open Settings with ⌘, or choose **Settings** from Oatcake's menu bar icon. It opens in its own
+window, with a pane for each part of Oatcake; changes apply as you make them. They're stored in
+`~/Library/Application Support/Oatcake/config.json`, apart from the calendar's address (see
+[Calendar](#calendar)). If `config.json` can't be read, Oatcake starts on
 its defaults, says so when it opens, and keeps the file beside it as `config.unreadable.json`. A
 switch that works by notification says so when notifications are turned off for Oatcake in System
 Settings, with **Open Notification Settings**.

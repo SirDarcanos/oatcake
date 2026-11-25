@@ -19,6 +19,7 @@ final class MenuBarItem {
     var stop: () -> Void = {}
     var open: () -> Void = {}
     var record: () -> Void = {}
+    var settings: () -> Void = {}
     var openEvent: (CalendarEvent) -> Void = { _ in }
 
     private var helper: Process?
@@ -99,6 +100,7 @@ final class MenuBarItem {
         case .stop: stop()
         case .open: open()
         case .record: record()
+        case .settings: settings()
         case .openEvent(let event): openEvent(event)
         case .quit: NSApp.terminate(nil)
         }
@@ -212,6 +214,8 @@ final class StatusItem: NSObject, NSMenuDelegate {
         case nil:
             break
         }
+        if menu.numberOfItems > 0 { menu.addItem(.separator()) }
+        add("Settings", #selector(openSettings))
         menu.addItem(.separator())
         add("Open Oatcake", #selector(openApp))
         add("Quit Oatcake", #selector(quit))
@@ -221,6 +225,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
     @objc private func stopRecording() { bringOatcakeForward(); send(.stop) }
     @objc private func openApp() { bringOatcakeForward(); send(.open) }
     @objc private func newRecording() { bringOatcakeForward(); send(.record) }
+    @objc private func openSettings() { bringOatcakeForward(); send(.settings) }
     @objc private func openListed(_ sender: NSMenuItem) {
         guard listed.indices.contains(sender.tag) else { return }
         bringOatcakeForward()

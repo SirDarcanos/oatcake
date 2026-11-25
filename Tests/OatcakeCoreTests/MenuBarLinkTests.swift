@@ -18,7 +18,7 @@ import Testing
             #expect(line.hasSuffix("\n") && !line.dropLast().contains("\n"))
             #expect(MenuBarLink.read(MenuBarContent.self, String(line.dropLast())) == content)
         }
-        let chosen: [MenuBarAction] = [.stop, .open, .record, .openEvent(event), .quit]
+        let chosen: [MenuBarAction] = [.stop, .open, .record, .settings, .openEvent(event), .quit]
         for action in chosen {
             #expect(MenuBarLink.read(MenuBarAction.self, String(decoding: MenuBarLink.line(action).dropLast(), as: UTF8.self)) == action)
         }
