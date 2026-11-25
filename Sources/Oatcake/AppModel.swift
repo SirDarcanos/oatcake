@@ -451,7 +451,9 @@ final class AppModel {
 
     // MARK: - Status
 
-    // A finished recording is no longer live, but the refresh still has to find it and start analysis.
+    /// Work that closing the window shouldn't end: anything an update waits for, a model on its way
+    /// down, and a read of the recordings under way (a call that has just stopped is no longer being
+    /// recorded, but isn't being analysed until that read finds it).
     var hasWorkInFlight: Bool { refreshing || busyReason != nil || downloads.isDownloading }
 
     /// What quitting now would interrupt, as a question to ask first; nil when it would interrupt

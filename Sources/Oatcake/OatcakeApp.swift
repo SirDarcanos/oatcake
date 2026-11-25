@@ -75,6 +75,7 @@ struct AppCommands: Commands {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     lazy var model = AppModel()
+    /// Looks every couple of seconds for the end of the work that kept Oatcake open with no window.
     private var waitingToQuit: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -97,6 +98,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
+    /// With Settings › General › Run in the background on, closing the last window leaves Oatcake in
+    /// the menu bar, out of the Dock, still checking for calls; showWindow brings the Dock icon back.
+    /// With it off, closing the last window quits, but not under work that's still going (a call
+    /// being recorded or analysed, a summary being written, an import, a model on its way down):
+    /// Oatcake stays until that has ended, then quits. Opening a window again calls that off.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         waitingToQuit?.invalidate()
         if model.config.runInBackground {
