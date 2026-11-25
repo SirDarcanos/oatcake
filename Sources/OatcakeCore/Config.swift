@@ -146,6 +146,8 @@ public struct Config: Codable, Equatable, Sendable {
     public var callReminders: Bool
     /// Look for a new release 20 seconds after launch and once a day.
     public var updateCheck: Bool
+    /// Keep checking for calls after the last window closes.
+    public var runInBackground: Bool
     /// A notification offering to record when a calling app starts using the microphone.
     public var callNotice: Bool
     /// Stop recording once the calling app has let go of the microphone and the call audio has gone quiet.
@@ -205,7 +207,7 @@ public struct Config: Codable, Equatable, Sendable {
     }
 
     init(myName: String, outputDir: String, asrModel: String, llm: LlmConfig, keepAudio: Bool, mic: MicChoice?, callReminders: Bool, updateCheck: Bool,
-         callNotice: Bool = true, autoStop: Bool = true, liveTranscript: Bool = true, liveVoices: Bool = true, jargon: [String] = [], menuBarNextCall: Bool = true,
+         runInBackground: Bool = true, callNotice: Bool = true, autoStop: Bool = true, liveTranscript: Bool = true, liveVoices: Bool = true, jargon: [String] = [], menuBarNextCall: Bool = true,
          summaryInstructions: String = "", todoInstructions: String = "", ignoredEvents: [String] = Config.defaultIgnoredEvents,
          afterCall: AfterCall = .review, summaryTemplates: [SummaryTemplate] = [], todosEnabled: Bool = true,
          sharingInstructions: String = "") {
@@ -217,6 +219,7 @@ public struct Config: Codable, Equatable, Sendable {
         self.mic = mic
         self.callReminders = callReminders
         self.updateCheck = updateCheck
+        self.runInBackground = runInBackground
         self.callNotice = callNotice
         self.autoStop = autoStop
         self.liveTranscript = liveTranscript
@@ -244,6 +247,7 @@ public struct Config: Codable, Equatable, Sendable {
         mic = try? c.decodeIfPresent(MicChoice.self, forKey: .mic)
         callReminders = (try? c.decodeIfPresent(Bool.self, forKey: .callReminders)) ?? base.callReminders
         updateCheck = (try? c.decodeIfPresent(Bool.self, forKey: .updateCheck)) ?? base.updateCheck
+        runInBackground = (try? c.decodeIfPresent(Bool.self, forKey: .runInBackground)) ?? base.runInBackground
         callNotice = (try? c.decodeIfPresent(Bool.self, forKey: .callNotice)) ?? base.callNotice
         autoStop = (try? c.decodeIfPresent(Bool.self, forKey: .autoStop)) ?? base.autoStop
         liveTranscript = (try? c.decodeIfPresent(Bool.self, forKey: .liveTranscript)) ?? base.liveTranscript
@@ -273,6 +277,7 @@ public struct Config: Codable, Equatable, Sendable {
         if let mic { try c.encode(mic, forKey: .mic) } else { try c.encodeNil(forKey: .mic) }
         try c.encode(callReminders, forKey: .callReminders)
         try c.encode(updateCheck, forKey: .updateCheck)
+        try c.encode(runInBackground, forKey: .runInBackground)
         try c.encode(callNotice, forKey: .callNotice)
         try c.encode(autoStop, forKey: .autoStop)
         try c.encode(liveTranscript, forKey: .liveTranscript)
@@ -293,7 +298,7 @@ public struct Config: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case mcpEnabled, mcpApprovedRoot
-        case myName, outputDir, asrModel, llm, keepAudio, mic, callReminders, updateCheck, callNotice, autoStop, liveTranscript, liveVoices, jargon, menuBarNextCall, summaryInstructions, todoInstructions, summaryTemplates, sharingInstructions, ignoredEvents, ignoredCalendarEvents, afterCall, todosEnabled
+        case myName, outputDir, asrModel, llm, keepAudio, mic, callReminders, updateCheck, runInBackground, callNotice, autoStop, liveTranscript, liveVoices, jargon, menuBarNextCall, summaryInstructions, todoInstructions, summaryTemplates, sharingInstructions, ignoredEvents, ignoredCalendarEvents, afterCall, todosEnabled
     }
 
     /// For the model: how to spell the names and terms you've listed, or "" when there are none.

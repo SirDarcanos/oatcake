@@ -11,6 +11,9 @@ Settings, with **Open Notification Settings**.
 
 - **Your name:** labels your microphone track in every transcript, and is who "Mine" means on the
   To-dos page.
+- **Run in the background** (on to start with): closing the last window takes Oatcake out of the
+  Dock and keeps it in the menu bar so it can still check for calls and send reminders. Turn it
+  off to quit when the last window closes, once any recording or work has finished.
 - **Microphone:** "Same as Mac" follows System Settings › Sound; a chosen mic is used until it's
   unplugged, then the Mac's input until it's back. It can also be changed on the record screen
   and during the call (see [Record](how-it-works.md#1-record)).
@@ -64,8 +67,9 @@ Settings, with **Open Notification Settings**.
   until dealt with.
 - **Show my next call in the menu bar** (on to start with, with a calendar connected): Oatcake's
   oatcake with the time until it starts, and what's coming up in its menu (see
-  [The menu bar](how-it-works.md#the-menu-bar)). With this on, closing Oatcake's window leaves it
-  running in the menu bar, so reminders and call notices keep working.
+  [The menu bar](how-it-works.md#the-menu-bar)). Turning this off hides calendar details, not the
+  icon while **Run in the background** is on. That setting controls whether reminders and call
+  notices still work with the window closed.
 - **Events that aren't calls:** events whose titles start with one of these names, as whole words
   ("Focus time", "Out of office", "Working location" and "Task" to begin with; "Task" doesn't leave
   out "Taskforce sync"), or that have "Oatcake ignore" anywhere in the title, are left out of

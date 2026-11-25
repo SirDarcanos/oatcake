@@ -75,7 +75,6 @@ struct AppCommands: Commands {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     lazy var model = AppModel()
-    /// Looks every couple of seconds for the end of the work that kept Oatcake open with no window.
     private var waitingToQuit: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -98,28 +97,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    /// Closing the window quits, unless a call is being recorded or the menu bar is showing your
-    /// next call: then Oatcake stays in the menu bar (its menu reopens the window, or quits). Nor
-    /// does it quit under work that's still going: a call being analysed, a summary being written,
-    /// an import, or a model on its way down. The Dock icon brings the window back.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        MainActor.assumeIsolated {
-            let staysInMenuBar = model.recording.isRecording || model.recording.showsNextCallInMenuBar
-            if !staysInMenuBar, model.hasWorkInFlight { quitWhenWorkEnds() }
-            return !staysInMenuBar && !model.hasWorkInFlight
-        }
-    }
-
-    /// The window was closed while work was going on, which kept Oatcake open. Once that work has
-    /// ended, with still no window and nothing in the menu bar, Oatcake quits, as closing the window
-    /// would have. Opening a window again calls it off.
-    private func quitWhenWorkEnds() {
         waitingToQuit?.invalidate()
+        if model.config.runInBackground {
+            // With no windows to switch to, leave only the menu bar item for reopening Oatcake.
+            sender.setActivationPolicy(.accessory)
+            return false
+        }
+        guard model.hasWorkInFlight else { return true }
+
+        // Closing a window must not interrupt a recording or work needed to save it.
         waitingToQuit = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                let hasWindow = NSApp.windows.contains { $0.isVisible && $0.canBecomeMain }
-                if hasWindow || self.model.recording.isRecording || self.model.recording.showsNextCallInMenuBar {
+                if self.model.config.runInBackground || NSApp.windows.contains(where: { $0.isVisible && $0.canBecomeMain }) {
                     self.waitingToQuit?.invalidate()
                 } else if !self.model.hasWorkInFlight {
                     self.waitingToQuit?.invalidate()
@@ -127,6 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 }
             }
         }
+        return false
     }
 
     /// Quitting asks first when it would end a recording or interrupt work that's under way.
@@ -143,7 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
     }
 
-    /// Clicking the Dock icon while Oatcake is only in the menu bar brings its window back.
+    /// Opening Oatcake again (including from a pinned Dock icon) brings its window back.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag { MainActor.assumeIsolated { model.showWindow() } }
         return true
