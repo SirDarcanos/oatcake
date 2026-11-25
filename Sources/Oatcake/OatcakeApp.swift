@@ -47,12 +47,9 @@ struct AppCommands: Commands {
 
     var body: some Commands {
         // The menus are built at launch, before (and whether or not) the window is: this is where
-        // the app learns how to open it, for the menu bar item, reminders and launch itself.
+        // the app learns how to open it (and Settings), for the menu bar item, reminders and launch itself.
         let _ = model.openMainWindow = { openWindow(id: "main") }
-        let _ = model.recording.menuBar.settings = {
-            NSApp.activate()
-            openSettings()
-        }
+        let _ = model.openSettingsWindow = { openSettings() }
         CommandGroup(replacing: .newItem) {
             Button("New Recording") { model.newRecording() }.keyboardShortcut("n")
             // The sidebar's own buttons for these sit in section headers, out of reach of the keyboard and VoiceOver.
