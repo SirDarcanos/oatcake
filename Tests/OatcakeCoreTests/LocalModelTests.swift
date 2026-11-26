@@ -106,7 +106,7 @@ import Testing
         let partWay = try await StandIn { _ in
             StandIn.Response(body: Data(#"{"choices":[{"message":{"content":"Decisions:\n\n- Jane will send the"},"finish_reason":"length"}]}"#.utf8))
         }
-        await #expect(throws: ModelOutOfRoom()) {
+        await #expect(throws: ModelOutOfRoom(reply: "Decisions:\n\n- Jane will send the")) {
             _ = try await LocalChat(baseUrl: partWay.address + "/v1", model: "m").complete([ChatMessage("user", "Hello")])
         }
         let unclosed = try await StandIn { _ in
@@ -234,6 +234,12 @@ import Testing
             StandIn.Response(body: Data(#"{"choices":[{"message":{"content":"","reasoning_content":"The user wants"},"finish_reason":"length"}]}"#.utf8))
         }
         #expect(try await checkModel(reasoning.config.llm) == .stillReasoning)
+        // One that simply says more than the check has room for has replied: only summaries and the
+        // like need a reply that's whole.
+        let wordy = try await StandIn { _ in
+            StandIn.Response(body: Data(#"{"choices":[{"message":{"content":"OK, here I am and ready to"},"finish_reason":"length"}]}"#.utf8))
+        }
+        #expect(try await checkModel(wordy.config.llm) == .replied("OK, here I am and ready to"))
 
         // An empty reply that wasn't cut off, or an error from the server, isn't working.
         let empty = try await StandIn { _ in

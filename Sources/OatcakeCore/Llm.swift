@@ -162,8 +162,8 @@ public struct LocalChat: Sendable {
         let choice = (json?["choices"] as? [[String: Any]])?.first
         // Out of room, whatever it had written by then: its reasoning used it all, or the reply was cut
         // off part way (a summary that stops mid-sentence, to-dos with half their JSON).
-        if choice?["finish_reason"] as? String == "length" { throw ModelOutOfRoom() }
         let reply = withoutReasoning(((choice?["message"] as? [String: Any])?["content"] as? String) ?? "")
+        if choice?["finish_reason"] as? String == "length" { throw ModelOutOfRoom(reply: reply) }
         guard !reply.isEmpty else { throw OatcakeError("The model gave an empty reply.") }
         return reply
     }
@@ -177,6 +177,8 @@ let outOfRoomMessage = "The model ran out of room before it finished its reply. 
 /// A reply cut off before it was finished, or before it began after the model's reasoning: the room it
 /// was given ran out.
 public struct ModelOutOfRoom: LocalizedError, Equatable {
+    /// What it had written of its reply by then, without its reasoning.
+    public var reply = ""
     public var errorDescription: String? { outOfRoomMessage }
 }
 
@@ -206,8 +208,9 @@ public func checkModel(_ llm: LlmConfig, server: ModelServer = .shared) async th
             try await chat.complete([ChatMessage("system", "Reply with the single word OK and nothing else."), ChatMessage("user", "Say OK.")],
                                     think: false, maxTokens: 20)
         })
-    } catch is ModelOutOfRoom {
-        return .stillReasoning
+    } catch let cut as ModelOutOfRoom {
+        // A reply that ran past the check's few tokens is a reply all the same.
+        return cut.reply.isEmpty ? .stillReasoning : .replied(cut.reply)
     }
 }
 
