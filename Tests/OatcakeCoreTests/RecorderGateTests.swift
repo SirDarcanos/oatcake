@@ -48,9 +48,14 @@ import Testing
         let folder = URL(fileURLWithPath: "/tmp/oatcake-door-\(UUID().uuidString.prefix(8))", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
+        // What an Oatcake that has gone left behind is cleared away; this process's own, and anything else, isn't.
+        let leftover = folder.appendingPathComponent("oatcake-99999-0a1b2c3d.sock"), own = folder.appendingPathComponent("oatcake-\(getpid())-0a1b2c3d.sock")
+        let unrelated = folder.appendingPathComponent("oatcake-notes.sock")
+        for file in [leftover, own, unrelated] { try Data().write(to: file) }
         let door = RecorderDoor(directory: folder)
         let mine = folder.appendingPathComponent("2026-11-14T10-00-00-000Z")
         let socket = try door.expect(mine)
+        #expect(!FileManager.default.exists(leftover) && FileManager.default.exists(own) && FileManager.default.exists(unrelated))
         #expect(ask(socket, about: "/tmp/somewhere-else") == RecorderGate.no)
         #expect(ask(socket, about: mine.path) == RecorderGate.yes)
         // Once: a second recorder asking about the same recording is turned away.
