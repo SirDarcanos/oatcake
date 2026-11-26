@@ -404,11 +404,12 @@ public actor ModelServer {
                 process = nil
                 throw OatcakeError("The language model couldn’t start. \(tail.isEmpty ? "" : "llama.cpp said: …\(tail)")")
             }
-            if await chat.isReady() {
-                // Another program that took the port in the moment after freePort() gave it up
-                // answers too. llama.cpp, unable to take it, has stopped by now: round again, to
-                // say so, rather than send that program the transcript.
-                guard server.isRunning else { continue }
+            // Another program that took the port in the moment after freePort() gave it up answers
+            // too, even before llama.cpp has tried for it. So the answer counts only once llama.cpp
+            // has said in its log that it's listening there, which it does once it holds the port.
+            // One that couldn't take it stops instead, and the guard above says so.
+            if await chat.isReady(), server.isRunning,
+               Self.saysListening((try? String(contentsOf: log, encoding: .utf8)) ?? "", port: port) {
                 running = (model.id, context, chat)
                 return chat
             }
@@ -461,6 +462,17 @@ public actor ModelServer {
               SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckNestedCode | kSecCSStrictValidate), nil) == errSecSuccess else {
             throw OatcakeError("Oatcake.app isn’t as it was built (something in it has been changed, added or taken away), so the language model wasn’t started. Quit Oatcake and open it again; if this comes back, install Oatcake again.")
         }
+    }
+
+    /**
+     * Whether llama.cpp's log says it's listening on this Mac's own address at `port`. At the pinned
+     * build (Scripts/bundle.sh) that's "srv  server_on_li: listening on http://127.0.0.1:54321",
+     * written by server_on_listening in tools/server/server.cpp once the port is bound and the model
+     * loaded. A new build of llama.cpp needs this checking again: if the words change, the model
+     * never counts as started.
+     */
+    static func saysListening(_ log: String, port: Int) -> Bool {
+        log.range(of: #"listening on http://127\.0\.0\.1:\#(port)(?!\d)"#, options: .regularExpression) != nil
     }
 
     /// A port nobody is listening on, from the system.

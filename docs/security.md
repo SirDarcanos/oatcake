@@ -14,8 +14,8 @@
   as part of the app (below). It listens only on this Mac's own address, at a port picked each
   time, behind a key made up each time, and is told nothing but text: it can't open files, run
   commands or reach the network through Oatcake. The port is given up for a moment before
-  llama.cpp takes it, so once something answers there Oatcake checks that llama.cpp is still
-  running (one that couldn't take the port stops at once) before sending it anything. A model
+  llama.cpp takes it, so an answer there counts only once llama.cpp has said in its log that it's
+  listening on that port (one that couldn't take the port says so and stops instead). A model
   server of your own has to be at a local address, and a redirect from it isn't followed (see
   [Language model](models.md#language-model)).
 - What's said on a call ends up in front of the model, so its replies are treated as text from a

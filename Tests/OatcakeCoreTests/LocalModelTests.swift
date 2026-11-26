@@ -284,6 +284,27 @@ import Testing
         try FileManager.default.copyItem(at: URL(fileURLWithPath: "/usr/bin/false"), to: server)
         try runCapturing("/usr/bin/codesign", ["--force", "--sign", "-", server.path])
         #expect(throws: OatcakeError.self) { try ModelServer.checkSealed(replaced.app) }
+
+        // The other half of the check, that the app on the disk is the copy that's running (an app
+        // changed and then signed again as a whole is otherwise whole), can't be tried from here:
+        // the copy running is the test runner, not an app this test can sign again. It was tried by
+        // hand when written, on a small program that signed itself again on the disk.
+    }
+
+    /// The model's server counts as started only once llama.cpp has said it's listening on the
+    /// port it was given: before then, whatever answers there may be another program's. The lines
+    /// are as the pinned build writes them.
+    @Test func startedOnlyWhenLlamaListens() {
+        let loaded = "srv  server_run_i: model loaded\n"
+        #expect(!ModelServer.saysListening(loaded, port: 54321))
+        let listening = loaded + "srv  server_on_li: listening on http://127.0.0.1:54321\n"
+        #expect(ModelServer.saysListening(listening, port: 54321))
+        // Another port, even one that starts the same, isn't this one.
+        #expect(!ModelServer.saysListening(listening, port: 5432) && !ModelServer.saysListening(listening, port: 4321))
+        // With llama.cpp's own prefix and timestamp on the line, if they're turned on.
+        #expect(ModelServer.saysListening("0.02.153.441 I srv  server_on_li: listening on http://127.0.0.1:54321\n", port: 54321))
+        // One that couldn't take the port says so instead.
+        #expect(!ModelServer.saysListening("srv         start: couldn't bind HTTP server socket, hostname: 127.0.0.1, port: 54321\n", port: 54321))
     }
 
     /// A model server of your own that answers with a redirect isn't followed: the transcript would
