@@ -2,9 +2,9 @@ import AVFoundation
 import OatcakeCore
 import SwiftUI
 
-/// "October 29th, 2026 · 16:30 · 32 min" for a recording.
+/// "Thursday 29 October 2026 · 16:30 · 32 minutes" for a recording, as a meeting's date is written.
 func recordingMeta(_ rec: Recording) -> String {
-    [longDate(rec.startedAt), hhmm(rec.startedAt), rec.endedAt.map { minutes($0.timeIntervalSince(rec.startedAt)) }]
+    [longDay(rec.startedAt), timeOfDay(rec.startedAt), rec.endedAt.map { longDuration($0.timeIntervalSince(rec.startedAt)) }]
         .compactMap { $0 }.joined(separator: " · ")
 }
 
@@ -310,7 +310,7 @@ struct ReviewView: View {
                     Avatar(name: myName, size: 30, remember: false, color: colors[myName])
                     VStack(alignment: .leading, spacing: 1) {
                         Text("\(myName) · your microphone").fontWeight(.semibold)
-                        Text("\(minutes(meTalk)) talking").font(.callout).foregroundStyle(.secondary)
+                        Text("\(longDuration(meTalk)) talking").font(.callout).foregroundStyle(.secondary)
                     }
                 }
                 if let quotes = analysis.me?.quotes, !quotes.isEmpty { clips(quotes) }
@@ -340,7 +340,7 @@ struct ReviewView: View {
                 Avatar(name: shown, size: 30, remember: false, color: v.mixed ? Color(nsColor: .systemGray) : colors[shown])
                 VStack(alignment: .leading, spacing: 1) {
                     Text(shown).fontWeight(.semibold)
-                    Text("\(v.leftOut || (v.name.trimmed.isEmpty && !v.mixed) ? "" : "\(label(analysis, s.id)) · ")\(minutes(s.seconds)) talking")
+                    Text("\(v.leftOut || (v.name.trimmed.isEmpty && !v.mixed) ? "" : "\(label(analysis, s.id)) · ")\(longDuration(s.seconds)) talking")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()

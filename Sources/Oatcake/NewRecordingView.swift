@@ -6,8 +6,8 @@ private let newFolder = "\u{0}new"
 
 private func eventWhen(_ e: CalendarEvent) -> String {
     let cal = Calendar.current
-    let day = cal.isDateInToday(e.startDate) ? "Today" : cal.isDateInTomorrow(e.startDate) ? "Tomorrow" : weekday(e.startDate)
-    return ["\(day) · \(hhmm(e.startDate))–\(hhmm(e.endDate))", e.callLink.flatMap(callApp)].compactMap { $0 }.joined(separator: " · ")
+    let day = cal.isDateInToday(e.startDate) ? "Today" : cal.isDateInTomorrow(e.startDate) ? "Tomorrow" : weekdayName(e.startDate)
+    return ["\(day) · \(timeOfDay(e.startDate))–\(timeOfDay(e.endDate))", e.callLink.flatMap(callApp)].compactMap { $0 }.joined(separator: " · ")
 }
 
 struct NewRecordingView: View {

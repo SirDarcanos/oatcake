@@ -549,7 +549,7 @@ struct MeetingView: View {
         let length = parseISO(meta.endedAt).flatMap { end in parseISO(meta.startedAt).map { end.timeIntervalSince($0) } }
         let withWhom = (meta.participants ?? []).filter { $0 != model.config.myName }
             .map { $0.replacingOccurrences(of: #"\s*\(.*\)$"#, with: "", options: .regularExpression) }
-        return [date.map { "\(weekday($0)), \(longDate($0))" }, date.map(hhmm), length.map(minutes),
+        return [date.map { longDay($0) }, date.map { timeOfDay($0) }, length.map(longDuration),
                 !granola && !withWhom.isEmpty ? "with \(withWhom.joined(separator: ", "))" : nil]
             .compactMap { $0 }.joined(separator: " · ")
     }

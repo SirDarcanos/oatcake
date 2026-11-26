@@ -251,7 +251,7 @@ struct TodosView: View {
                 .accessibilityLabel(late ? "Overdue, due \(dueLabel(item, today: today))" : dueLabel(item, today: today))
                 .font(.callout).monospacedDigit()
                 .foregroundStyle(late ? AnyShapeStyle(.red) : item.dueDate == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
-                // Room for the overdue mark beside "Mon, Nov 23".
+                // Room for the overdue mark beside "Mon 23 Nov".
                 .frame(width: 112, alignment: .trailing)
         }
         .padding(.vertical, 7)
@@ -260,7 +260,7 @@ struct TodosView: View {
     private func dueLabel(_ item: TodoItem, today: Date) -> String {
         guard let due = item.dueDate else { return "No date" }
         let d = Int((due.timeIntervalSince(today) / day).rounded())
-        return d == 0 ? "Today" : d == 1 ? "Tomorrow" : item.todo.due
+        return d == 0 ? "Today" : d == 1 ? "Tomorrow" : shortDay(due, now: today)
     }
 
     private var addField: some View {

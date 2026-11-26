@@ -226,7 +226,7 @@ struct SettingsView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(item.title)
-                            Text(item.series ? "This and following events" : parseISO(item.start).map { "\(shortWeekday($0)) \(hhmm($0))" } ?? "Once")
+                            Text(item.series ? "This and following events" : parseISO(item.start).map { dayAndTime($0) } ?? "Once")
                                 .settingsHint()
                         }
                         Spacer()
@@ -913,7 +913,7 @@ private struct PeopleSection: View {
     private func detail(_ voice: KnownVoice) -> String {
         if voice.calls == 0 { return "Recognised again after the next call you save with them" }
         let calls = "From \(voice.calls) call\(voice.calls == 1 ? "" : "s")"
-        return voice.lastSaved.map { "\(calls) · last \(shortDate($0))" } ?? calls
+        return voice.lastSaved.map { "\(calls) · last \(compactDate($0))" } ?? calls
     }
 }
 
@@ -975,7 +975,7 @@ private struct UpdatesSection: View {
     private func status(_ u: Updater) -> String {
         if u.checking { return "Checking…" }
         if let available = u.available { return "Oatcake \(available.version) is available." }
-        if let checked = u.checkedAt { return "Up to date · checked at \(hhmm(checked))" }
+        if let checked = u.checkedAt { return "Up to date · checked at \(timeOfDay(checked))" }
         return "Not checked yet."
     }
 }

@@ -51,7 +51,7 @@ final class CalendarController {
         let fetchID = source.fetchID
         if fetches[fetchID] != nil { return "Updating…" }
         if let failure = caches[fetchID]?.failure { return failure }
-        if let updated = parseISO(caches[fetchID]?.updatedAt) { return "Updated \(shortWeekday(updated)) at \(hhmm(updated))" }
+        if let updated = parseISO(caches[fetchID]?.updatedAt) { return "Updated \(weekdayName(updated, short: true)) at \(timeOfDay(updated))" }
         return "Not fetched yet"
     }
 

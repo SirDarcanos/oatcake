@@ -220,7 +220,7 @@ struct SidebarView: View {
                 Button { model.newRecording(event) } label: { eventRow(event, next: next, now: now, calendars: calendars) }
                     .buttonStyle(.plain)
                     .accessibilityValue(names)
-                    .help("\(event.title) · \(hhmm(event.startDate))–\(hhmm(event.endDate))\(service) · \(names)")
+                    .help("\(event.title) · \(timeOfDay(event.startDate))–\(timeOfDay(event.endDate))\(service) · \(names)")
                     // A call you won't record that you can't rename or decline (someone else's
                     // recurring meeting): only Oatcake stops showing it.
                     .contextMenu {
@@ -270,13 +270,13 @@ struct SidebarView: View {
             color = starting ? AnyShapeStyle(.secondary) : AnyShapeStyle(.red)
             bold = !starting
         } else if e == next && minsToNext <= 60 {
-            label = "in \(minsToNext)m"
+            label = "in \(shortDuration(Double(minsToNext) * 60))"
             color = AnyShapeStyle(.tint)
         } else if e.startDate <= now {
             label = "Now"
             color = AnyShapeStyle(.tint)
         } else {
-            label = Calendar.current.isDate(e.startDate, inSameDayAs: now) ? hhmm(e.startDate) : "\(shortWeekday(e.startDate)) \(hhmm(e.startDate))"
+            label = Calendar.current.isDate(e.startDate, inSameDayAs: now) ? timeOfDay(e.startDate) : dayAndTime(e.startDate)
             color = AnyShapeStyle(.secondary)
             bold = false
         }
@@ -316,9 +316,9 @@ struct SidebarView: View {
         }
     }
 
-    /// "21:10" today, otherwise "Nov 4, 21:10": tells two recordings of the same call apart.
+    /// "21:10" today, otherwise "4 Nov at 21:10": tells two recordings of the same call apart.
     private func jobWhen(_ d: Date) -> String {
-        Calendar.current.isDateInToday(d) ? hhmm(d) : "\(shortMonth(d)) \(gregorian.component(.day, from: d)), \(hhmm(d))"
+        Calendar.current.isDateInToday(d) ? timeOfDay(d) : dateAndTime(d)
     }
 }
 

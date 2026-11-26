@@ -360,7 +360,7 @@ final class AppModel {
         guard let item = series ? IgnoredEvent.series(of: event) : .occurrence(event) else { return }
         saveConfig(with(config) { $0.ignoredCalendarEvents = withoutEnded($0.ignoredCalendarEvents, now: Date()).filter { !$0.covers(item) } + [item] })
         toast(series ? "“\(event.title)” is ignored from now on. Settings › Calendars can bring it back."
-                     : "“\(event.title)”, \(shortWeekday(event.startDate)) \(hhmm(event.startDate)), is ignored. Settings › Calendars can bring it back.")
+                     : "“\(event.title)”, \(dayAndTime(event.startDate)), is ignored. Settings › Calendars can bring it back.")
     }
 
     func stopIgnoring(_ item: IgnoredEvent) {

@@ -72,7 +72,7 @@ struct HomeView: View {
 
     private func callRow(_ event: CalendarEvent, now: Date, first: Bool, actionable: Bool) -> some View {
         let day = Calendar.current.isDate(event.startDate, inSameDayAs: now) ? "Today" : "Tomorrow"
-        let time = event.startDate <= now ? "In progress" : "\(day) at \(hhmm(event.startDate))"
+        let time = event.startDate <= now ? "In progress" : "\(day) at \(timeOfDay(event.startDate))"
         let calendars = model.calendar.labels(for: event)
         let names = calendars.map(\.name).joined(separator: ", ")
         return HStack(spacing: 12) {

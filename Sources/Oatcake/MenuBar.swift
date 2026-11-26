@@ -167,7 +167,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
             let label = nextCallLabel(events, now: now)
             let next = events.first { $0.startDate > now } ?? events.first
             (symbol, title, tip, accessibilityLabel) = ("oatcake", label.isEmpty ? "" : " " + label,
-                                                       next.map { "\($0.title) · \(hhmm($0.startDate))–\(hhmm($0.endDate))" } ?? "Nothing coming up on your calendar",
+                                                       next.map { "\($0.title) · \(timeOfDay($0.startDate))–\(timeOfDay($0.endDate))" } ?? "Nothing coming up on your calendar",
                                                        "Oatcake, next call")
         }
         // Set only on a change: this runs twice a second during a recording.
@@ -209,7 +209,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
             if listed.isEmpty { add("Nothing else today or tomorrow", nil) }
             for (index, event) in listed.enumerated() {
                 let when = event.startDate <= now ? "Now" : Calendar.current.isDate(event.startDate, inSameDayAs: now)
-                    ? hhmm(event.startDate) : "\(shortWeekday(event.startDate)) \(hhmm(event.startDate))"
+                    ? timeOfDay(event.startDate) : dayAndTime(event.startDate)
                 add("\(when)   \(event.title)", #selector(openListed(_:)), tag: index)
             }
             menu.addItem(.separator())
@@ -290,5 +290,5 @@ func nextCallLabel(_ events: [CalendarEvent], now: Date) -> String {
     let minutesAway = next.map { Int(($0.startDate.timeIntervalSince(now) / 60).rounded(.up)) }
     if events.contains(where: { $0.startDate <= now && $0.endDate > now }), (minutesAway ?? .max) > 15 { return "now" }
     guard let minutesAway, minutesAway < 24 * 60 else { return "" }
-    return minutesAway < 60 ? "\(minutesAway)m" : "\(minutesAway / 60)h\(minutesAway % 60 == 0 ? "" : " \(minutesAway % 60)m")"
+    return shortDuration(Double(minutesAway) * 60)
 }

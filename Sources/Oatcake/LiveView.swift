@@ -130,7 +130,7 @@ struct LiveView: View {
         if let stoppingAt = model.recording.stoppingAt {
             Notice(tone: .amber) {
                 Text("The call seems to have ended").fontWeight(.semibold)
-                Text("Recording stops in \(max(0, Int(stoppingAt.timeIntervalSinceNow.rounded(.up)))) seconds.")
+                Text("Recording stops in \(longDuration(stoppingAt.timeIntervalSinceNow.rounded(.up))).")
                 Button("Keep recording") { model.recording.keepRecording() }.padding(.top, 4)
             }
             .padding(.top, 16)
@@ -147,14 +147,14 @@ struct LiveView: View {
         let now = Date()
         if let since = model.recording.micQuietSince, now.timeIntervalSince(since) >= 30 {
             Notice(tone: .amber) {
-                Text("Your microphone has been silent for \(Int(now.timeIntervalSince(since))) seconds").fontWeight(.semibold)
+                Text("Your microphone has been silent for \(longDuration(now.timeIntervalSince(since)))").fontWeight(.semibold)
                 Text("Check it isn’t muted, or switch to another microphone using the button below.")
             }
             .padding(.top, 16)
         }
         if let since = model.recording.callQuietSince, now.timeIntervalSince(since) >= 30 {
             Notice(tone: .amber) {
-                Text("No call audio for \(Int(now.timeIntervalSince(since))) seconds").fontWeight(.semibold)
+                Text("No call audio for \(longDuration(now.timeIntervalSince(since)))").fontWeight(.semibold)
                 Text("If people are talking, allow Oatcake in System Settings › Privacy & Security › Screen & System Audio Recording.")
             }
             .padding(.top, 16)

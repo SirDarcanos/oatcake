@@ -102,10 +102,10 @@ struct MeetingListView: View {
         let calendars = model.calendar.labels(for: m.calendarIDs)
         return VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
-                Text(date.map { "\(shortWeekday($0)), \(compactDate($0))" } ?? m.name).fontWeight(.semibold).lineLimit(1)
+                Text(date.map { shortDay($0) } ?? m.name).fontWeight(.semibold).lineLimit(1)
                 if let date {
                     Text("·").foregroundStyle(.tertiary)
-                    Text(hhmm(date)).foregroundStyle(.secondary).monospacedDigit()
+                    Text(timeOfDay(date)).foregroundStyle(.secondary).monospacedDigit()
                 }
                 Spacer(minLength: 4)
                 if m.granola {

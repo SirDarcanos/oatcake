@@ -1,38 +1,8 @@
-// Dates, times and people, formatted the way the design shows them.
+// People, folders and paths, formatted the way the design shows them. Dates, times and lengths of
+// time are the core's (Dates.swift).
 
 import OatcakeCore
 import SwiftUI
-
-private let months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
-private let weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-
-func ordinal(_ d: Int) -> String {
-    let suffix = (11...13).contains(d % 100) ? "th" : [1: "st", 2: "nd", 3: "rd"][d % 10] ?? "th"
-    return "\(d)\(suffix)"
-}
-
-private var cal: Calendar { gregorian }
-
-/// "October 29th, 2026"
-func longDate(_ d: Date) -> String { "\(months[cal.component(.month, from: d) - 1]) \(ordinal(cal.component(.day, from: d))), \(cal.component(.year, from: d))" }
-/// "October 29th"
-func shortDate(_ d: Date) -> String { "\(months[cal.component(.month, from: d) - 1]) \(ordinal(cal.component(.day, from: d)))" }
-/// "Thursday"
-func weekday(_ d: Date) -> String { weekdays[cal.component(.weekday, from: d) - 1] }
-/// "Thu"
-func shortWeekday(_ d: Date) -> String { String(weekday(d).prefix(3)) }
-/// "Oct"
-func shortMonth(_ d: Date) -> String { String(months[cal.component(.month, from: d) - 1].prefix(3)) }
-/// "Oct 29", or "Oct 29, 2025" in another year: a day in a list or beside a name.
-func compactDate(_ d: Date, now: Date = Date()) -> String {
-    let day = "\(shortMonth(d)) \(cal.component(.day, from: d))"
-    return cal.component(.year, from: d) == cal.component(.year, from: now) ? day : "\(day), \(cal.component(.year, from: d))"
-}
-/// "16:30"
-func hhmm(_ d: Date) -> String { String(format: "%02d:%02d", cal.component(.hour, from: d), cal.component(.minute, from: d)) }
-
-/// "32 min", or "under a minute".
-func minutes(_ seconds: Double) -> String { seconds < 60 ? "under a minute" : "\(Int((seconds / 60).rounded())) min" }
 
 /// The meeting's folder path for display: "Team 51 › Leads sync". "" is the top level.
 func folderPath(_ rel: String) -> String { rel.isEmpty ? "Meetings" : rel.split(separator: "/").joined(separator: " › ") }
@@ -59,24 +29,10 @@ func ownerLabel(_ owner: String, _ myName: String) -> String { isMe(owner, myNam
 let todoChangedMessage = "That to-do has changed in its meeting since this list was read, so it wasn’t ticked. The list has been read again."
 
 
-/// When a meeting happened: meeting.json, or the "2026-10-02 1400 Title" folder name.
-func meetingDate(_ node: TreeNode) -> Date? {
-    if let d = node.startedAt { return d }
-    let digits = node.name.prefix(15)
-    guard digits.range(of: #"^\d{4}-\d{2}-\d{2} \d{4}$"#, options: .regularExpression) != nil else { return nil }
-    let n = { (from: Int, len: Int) in Int(digits.dropFirst(from).prefix(len)) ?? 0 }
-    return cal.date(from: DateComponents(year: n(0, 4), month: n(5, 2), day: n(8, 2), hour: n(11, 2), minute: n(13, 2)))
-}
-
 /// The title to show: meeting.json's, or the folder name without its date.
 func meetingTitle(_ node: TreeNode) -> String {
     if let t = node.title, !t.isEmpty { return t }
     return node.name.replacingOccurrences(of: #"^\d{4}-\d{2}-\d{2} \d{4} "#, with: "", options: .regularExpression)
-}
-
-private func newestFirst(_ a: TreeNode, _ b: TreeNode) -> Bool {
-    let da = meetingDate(a) ?? .distantPast, db = meetingDate(b) ?? .distantPast
-    return da != db ? da > db : a.name > b.name
 }
 
 /// What the middle column lists: a folder's own meetings, or every meeting for the top level.

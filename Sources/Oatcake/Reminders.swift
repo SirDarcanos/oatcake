@@ -92,7 +92,7 @@ enum Reminders {
             let minutes = Int((event.startDate.timeIntervalSinceNow / 60).rounded())
             let content = UNMutableNotificationContent()
             content.title = event.title
-            content.body = [minutes > 0 ? "In \(minutes) min" : "Starting now", "\(hhmm(event.startDate))–\(hhmm(event.endDate))",
+            content.body = [minutes > 0 ? "In \(longDuration(Double(minutes) * 60))" : "Starting now", "\(timeOfDay(event.startDate))–\(timeOfDay(event.endDate))",
                             event.callLink.flatMap(callApp)].compactMap { $0 }.joined(separator: " · ")
             content.categoryIdentifier = category
             // The request ID identifies the occurrence; Notification Center doesn’t need the invite.

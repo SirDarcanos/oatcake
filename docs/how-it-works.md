@@ -65,7 +65,8 @@ meetings at the top level. A one-off call with no folder of its own is saved at 
 drag it onto a folder to file it. Clicking the Meetings heading lists every meeting, and an empty
 folder offers **Record here** (except while New recording is open beside it). Drag the divider to resize the meeting list; it keeps that width
 when you switch screens. Settings (⌘, or the menu bar item) is its own window, in panes; changes
-apply as you make them (see [Settings](settings.md)).
+apply as you make them (see [Settings](settings.md)). Dates and times are written the way your
+Mac's region writes them ("Thu 29 Oct" or "Thu, Oct 29"), on its 12- or 24-hour clock.
 
 Oatcake opens on **Home**, or on a recording that was still going when it was last closed. Home
 shows upcoming calls (the one on now or next has **Join the call** and **Start recording**). The
