@@ -1,6 +1,6 @@
 // The menu bar item. While a call is being recorded it shows the running time, with Stop in its
 // menu (which asks first, in Oatcake's window, as the window's own Stop does). Otherwise, it
-// shows Oatcake's icon, with the time until your next call if enabled in Settings › Calendar.
+// shows Oatcake's icon, with the time until your next call if enabled in Settings › Calendars.
 //
 // It's drawn by a helper: Oatcake's own program run a second time (with --menu-bar) as a
 // menu-bar-only app. macOS doesn't draw a Dock app's menu bar menu over another app's full-screen

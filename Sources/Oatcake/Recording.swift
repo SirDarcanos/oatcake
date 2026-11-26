@@ -168,12 +168,13 @@ final class RecordingController {
     /// A recording started straight from a calendar event carries the event, any prep notes written
     /// for it on New recording, and who else is invited.
     private func startOptions(_ event: CalendarEvent) -> Recordings.StartOptions {
-        .init(eventId: event.id, prep: PrepNotes.load(event.id), attendees: otherAttendees(event, myName: config.myName).map(attendeeName))
+        .init(eventId: event.id, prep: PrepNotes.load(event.id),
+              attendees: otherAttendees(event, myName: config.myName).map(attendeeName), calendarIDs: calendar.sourceIDs(for: event))
     }
 
     /// The link to the call being recorded, when it was started from a calendar event that has one.
     var liveCallLink: URL? {
-        guard let id = live?.eventId, let link = calendar.cache?.events.first(where: { $0.id == id })?.callLink else { return nil }
+        guard let id = live?.eventId, let link = calendar.rawEvents.first(where: { $0.id == id })?.callLink else { return nil }
         return URL(string: link)
     }
 
@@ -638,7 +639,7 @@ final class RecordingController {
         // A call that couldn't be recorded isn't shown as one that is.
         if let live, recorderFailure == nil {
             menuBar.show(.recording(title: live.title, elapsed: status.state == .recording ? status.elapsed ?? 0 : nil))
-        } else if config.menuBarNextCall && calendar.cache != nil {
+        } else if config.menuBarNextCall && calendar.hasCalendars {
             let now = Date()
             menuBar.show(.upcoming(calendar.events.filter { !$0.allDay && $0.endDate > now }))
         } else if config.runInBackground {

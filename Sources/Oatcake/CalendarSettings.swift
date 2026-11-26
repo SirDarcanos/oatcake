@@ -1,0 +1,125 @@
+import OatcakeCore
+import SwiftUI
+
+struct CalendarSettingsEdit: Identifiable {
+    let id = UUID()
+    let existing: CalendarController.Label?
+}
+
+struct CalendarSettingsRows: View {
+    let calendar: CalendarController
+    @Binding var editor: CalendarSettingsEdit?
+
+    var body: some View {
+        Group {
+            if let problem = calendar.settingsProblem {
+                Text(problem).settingsHint()
+            }
+            ForEach(calendar.calendars) { source in
+                LabeledContent {
+                    Button("Edit…") { editor = CalendarSettingsEdit(existing: source) }
+                        .accessibilityLabel("Edit \(source.name)")
+                        .help("Edit \(source.name)")
+                } label: {
+                    HStack(spacing: 6) {
+                        CalendarBadges(calendars: [source])
+                        Text(source.name)
+                    }
+                    Text(calendar.status(for: source.id)).settingsHint()
+                }
+            }
+            Button("Add Calendar…") { editor = CalendarSettingsEdit(existing: nil) }
+                .help("Add a calendar")
+                .disabled(calendar.settingsProblem != nil)
+        }
+    }
+}
+
+struct CalendarEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    let calendar: CalendarController
+    let existing: CalendarController.Label?
+    @ViewState private var name: String
+    @ViewState private var colour: SwatchColour
+    @ViewState private var address = ""
+    @ViewState private var problem: String?
+    @ViewState private var removing = false
+
+    init(calendar: CalendarController, existing: CalendarController.Label?) {
+        self.calendar = calendar
+        self.existing = existing
+        _name = ViewState(initialValue: existing?.name ?? "")
+        _colour = ViewState(initialValue: existing?.colour ?? calendar.nextColour)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(existing == nil ? "Add Calendar" : "Edit Calendar").font(.title2.weight(.semibold))
+            Form {
+                TextField("Name", text: $name, prompt: Text("Work or Personal"))
+                LabeledContent("Badge colour") {
+                    CalendarColourButton(title: name.trimmed.isEmpty ? "Badge colour" : "\(name.trimmed)’s colour",
+                                         colour: colour) { colour = $0 }
+                }
+                SecureField("Private iCal address", text: $address,
+                            prompt: Text(existing == nil ? "Paste the address" : "Leave blank to keep the saved address"))
+            }
+            if let problem {
+                Text(problem).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                if existing != nil {
+                    Button("Remove Calendar…", role: .destructive) { removing = true }
+                }
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(existing == nil ? "Add" : "Save") { save() }.keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 450)
+        .alert("Remove this calendar?", isPresented: $removing) {
+            Button("Remove", role: .destructive) {
+                guard let existing else { return }
+                do { try calendar.remove(existing.id); dismiss() }
+                catch { problem = error.localizedDescription }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Its events will no longer appear in Oatcake unless they’re on another connected calendar. Your saved meetings are unchanged.")
+        }
+    }
+
+    private func save() {
+        do {
+            try calendar.save(id: existing?.id, name: name, colour: colour, address: address)
+            dismiss()
+        } catch { problem = error.localizedDescription }
+    }
+}
+
+private struct CalendarColourButton: View {
+    let title: String
+    let colour: SwatchColour
+    let choose: (SwatchColour) -> Void
+    @ViewState private var showing = false
+
+    var body: some View {
+        Button { showing = true } label: {
+            // A body-text baseline keeps the circle centred alongside the Form’s label.
+            Text("●").hidden().frame(width: 22, height: 22)
+                .overlay { Circle().fill(colour.swatch) }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Choose \(title)")
+        .accessibilityLabel(title)
+        .accessibilityValue(colour.title)
+        .popover(isPresented: $showing, arrowEdge: .bottom) {
+            ColourSwatchPopover(title: title, selected: colour, choose: { choice in
+                choose(choice)
+                showing = false
+            })
+        }
+    }
+}

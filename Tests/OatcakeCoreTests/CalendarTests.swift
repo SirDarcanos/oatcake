@@ -6,6 +6,18 @@ import Network
 import Testing
 
 @Suite struct CalendarTests {
+    /// A byte-order mark in front, or an alarm left without its END, still reads as a whole feed.
+    @Test func byteOrderMarkAndUnclosedAlarm() throws {
+        let ics = "\u{FEFF}BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:a\r\nDTSTART:20261110T100000Z\r\nDTEND:20261110T110000Z\r\n"
+            + "SUMMARY:Weekly sync\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+        let calendar = parseICal(ics)
+        #expect(calendar.name == "VCALENDAR" && calendar.closed)
+        let events = parseCalendar(ics, from: parseISO("2026-11-10T00:00:00Z")!, to: parseISO("2026-11-11T00:00:00Z")!)
+        #expect(events.map(\.title) == ["Weekly sync"])
+        // Cut off part-way: not a whole feed.
+        #expect(!parseICal("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:a\r\n").closed)
+    }
+
     @Test func upcomingCallsThroughTomorrow() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "America/New_York")!

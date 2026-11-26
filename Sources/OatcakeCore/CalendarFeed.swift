@@ -1,5 +1,5 @@
-// The calendar's private iCal address: fetched at most once an hour, its events from a day ago to
-// two weeks ahead kept in calendar.json. Recurring events are expanded here (RFC 5545 RRULE,
+// Each calendar's private iCal address: fetched at most once an hour, its events from a day ago to
+// two weeks ahead kept in its own cache file (CalendarSource.cacheFile). Recurring events are expanded here (RFC 5545 RRULE,
 // EXDATE, RDATE and moved or cancelled occurrences), in the event's own time zone.
 
 import Foundation
@@ -51,7 +51,14 @@ public struct CalendarCache: Codable, Equatable, Sendable {
     public var updatedAt: String?
     /// Why the last fetch failed, if it did: the reason alone ("the calendar took too long to answer").
     public var error: String?
-    public var events: [CalendarEvent] = []
+    public var events: [CalendarEvent]
+
+    public init(checkedAt: String? = nil, updatedAt: String? = nil, error: String? = nil, events: [CalendarEvent] = []) {
+        self.checkedAt = checkedAt
+        self.updatedAt = updatedAt
+        self.error = error
+        self.events = events
+    }
 
     /// The failed fetch as a sentence to show.
     public var failure: String? { error.map { Self.failurePrefix + $0 } }
@@ -61,7 +68,7 @@ public struct CalendarCache: Codable, Equatable, Sendable {
 
     public func save(to file: URL = Paths.calendar) throws {
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try writeAtomic(file, try encodeJSON(self))
+        try writeAtomic(file, try encodeJSON(self), permissions: 0o600)
     }
 
     /// Fresh for an hour; the refresh button fetches regardless.
@@ -83,7 +90,7 @@ extension CalendarCache {
     }
 }
 
-/// Timed calls still in progress or starting before the end of tomorrow, in the calendar feed's order.
+/// Timed calls still in progress or starting before the end of tomorrow, in the supplied order.
 public func upcomingCalls(_ events: [CalendarEvent], at now: Date, calendar: Calendar = .current) -> [CalendarEvent] {
     guard let end = calendar.date(byAdding: .day, value: 2, to: calendar.startOfDay(for: now)) else { return [] }
     return events.filter { !$0.allDay && $0.endDate > now && $0.startDate < end }
@@ -101,7 +108,7 @@ public func eventHappening(_ events: [CalendarEvent], at now: Date, unless recor
 
 /**
  * Whether an event is left out of Upcoming, the menu bar and reminders: its title starts with one of
- * `ignored` (Settings › Calendar) as whole words, or has "Oatcake ignore" anywhere in it. Case and
+ * `ignored` (Settings › Calendars) as whole words, or has "Oatcake ignore" anywhere in it. Case and
  * surrounding spaces don't count. iCal doesn't say which events are Google's focus time or
  * out-of-office blocks, so their titles are all there is to go on.
  */
@@ -131,7 +138,7 @@ public struct IgnoredEvent: Codable, Equatable, Hashable, Sendable, Identifiable
     public var id: String
     /// Every occurrence of a recurring event, not just one.
     public var series: Bool
-    /// What Settings › Calendar lists it as.
+    /// What Settings › Calendars lists it as.
     public var title: String
     /// When the occurrence starts and ends; nil for a series. Once it has ended it's forgotten.
     public var start: String?
@@ -152,7 +159,19 @@ public struct IgnoredEvent: Codable, Equatable, Hashable, Sendable, Identifiable
 
 /// Whether Upcoming's Ignore covers this event: the occurrence itself, or its whole series.
 public func isIgnored(_ event: CalendarEvent, _ ignored: [IgnoredEvent]) -> Bool {
-    ignored.contains { $0.series ? $0.id == event.seriesId : $0.id == event.id }
+    ignored.contains { item in
+        guard item.series else { return item.id == event.id }
+        if let seriesId = event.seriesId { return item.id == seriesId }
+        // A second feed may publish the same invite without its recurrence rule.
+        return event.id == occurrenceID(uid: item.id, start: event.start)
+    }
+}
+
+private func occurrenceID(uid: String, start: String) -> String { "\(uid)@\(start)" }
+
+/// Look up the reminder’s occurrence ID in the current, filtered calendar events.
+public func currentEvent(forReminder id: String, in events: [CalendarEvent]) -> CalendarEvent? {
+    events.first { $0.id == id }
 }
 
 /// Without ignored occurrences that have ended: there's nothing left of them to ignore.
@@ -191,8 +210,7 @@ public func findCallLink(_ text: String) -> String? {
  * Downloads the calendar and keeps the events from a day ago to two weeks ahead. A failed fetch keeps
  * the previous events and records the error. The address is a secret, so it never appears in errors.
  */
-public func fetchCalendar(_ address: String, cache: URL = Paths.calendar) async -> CalendarCache {
-    let previous = CalendarCache.load(cache)
+public func fetchCalendar(_ address: String, previous: CalendarCache) async -> CalendarCache {
     let checkedAt = isoString(Date())
     let https = address.trimmed.replacingOccurrences(of: "^webcal:", with: "https:", options: [.regularExpression, .caseInsensitive])
     do {
@@ -206,11 +224,16 @@ public func fetchCalendar(_ address: String, cache: URL = Paths.calendar) async 
         guard status == 200 else {
             throw OatcakeError("the calendar address returned \(status) \(HTTPURLResponse.localizedString(forStatusCode: status))".trimmed)
         }
+        let calendar = parseICal(String(decoding: data, as: UTF8.self))
+        guard calendar.name == "VCALENDAR", calendar.closed else {
+            throw OatcakeError("the address didn’t return a complete iCal feed")
+        }
         let now = Date()
-        let events = parseCalendar(String(decoding: data, as: UTF8.self), from: now.addingTimeInterval(-86_400), to: now.addingTimeInterval(14 * 86_400))
+        let events = parseCalendar(calendar, from: now.addingTimeInterval(-86_400), to: now.addingTimeInterval(14 * 86_400))
         return CalendarCache(checkedAt: checkedAt, updatedAt: checkedAt, error: nil, events: events)
     } catch {
-        let message = (error as? URLError)?.code == .timedOut ? "the calendar took too long to answer" : error.localizedDescription
+        let message = (error as? URLError)?.code == .timedOut ? "the calendar took too long to answer"
+            : (error as? OatcakeError)?.message ?? "Oatcake couldn’t reach the calendar"
         var cache = previous
         cache.checkedAt = checkedAt
         cache.error = message
@@ -226,6 +249,7 @@ func calendarURL(_ address: String) throws -> URL {
     guard scheme == "https" || (scheme == "http" && ["127.0.0.1", "localhost", "::1"].contains(host)) else {
         throw OatcakeError("the calendar address has to start with https://")
     }
+    guard !host.isEmpty else { throw OatcakeError("that isn't a web address") }
     return url
 }
 
@@ -242,6 +266,7 @@ final class ICalComponent {
     let name: String
     var properties: [ICalProperty] = []
     var children: [ICalComponent] = []
+    var closed = false
     init(name: String) { self.name = name }
 
     func first(_ name: String) -> ICalProperty? { properties.first { $0.name == name } }
@@ -250,6 +275,8 @@ final class ICalComponent {
 }
 
 func parseICal(_ text: String) -> ICalComponent {
+    // A byte-order mark in front would hide the first BEGIN.
+    let text = text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text
     // Unfold: a line starting with a space or tab continues the one before.
     var lines: [String] = []
     for raw in text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n").components(separatedBy: "\n") {
@@ -268,7 +295,13 @@ func parseICal(_ text: String) -> ICalComponent {
             stack.last!.children.append(child)
             stack.append(child)
         } else if property.name == "END" {
-            if stack.count > 1 { stack.removeLast() }
+            // Closes the component it names. One left open inside it (an alarm with no END, say) is
+            // closed with it, rather than keeping everything after it from being read.
+            let name = property.value.uppercased()
+            if let index = stack.lastIndex(where: { $0.name == name }), index > 0 {
+                stack[index].closed = true
+                stack.removeSubrange(index...)
+            }
         } else {
             stack.last!.properties.append(property)
         }
@@ -433,7 +466,10 @@ struct ICalEvent {
 
 /// Expands an iCalendar feed into the occurrences that overlap [from, to).
 public func parseCalendar(_ text: String, from: Date, to: Date) -> [CalendarEvent] {
-    let calendar = parseICal(text)
+    parseCalendar(parseICal(text), from: from, to: to)
+}
+
+private func parseCalendar(_ calendar: ICalComponent, from: Date, to: Date) -> [CalendarEvent] {
     // VTIMEZONE blocks name zones; Outlook's own names ("GMT Standard Time") are matched through
     // the IANA location some feeds include alongside.
     var aliases: [String: TimeZone] = [:]
@@ -478,9 +514,10 @@ public func parseCalendar(_ text: String, from: Date, to: Date) -> [CalendarEven
         let links = [c.first("X-GOOGLE-CONFERENCE")?.value, c.first("LOCATION")?.value, c.first("DESCRIPTION")?.value]
             .compactMap { $0.map(unescapeText) }.joined(separator: " ")
         let title = event.summary
+        let stampedStart = isoString(start)
         events.append(CalendarEvent(
-            id: "\(event.uid)@\(isoString(start))", seriesId: seriesId, title: title.isEmpty ? "Untitled event" : title,
-            start: isoString(start), end: isoString(end), allDay: isDate,
+            id: occurrenceID(uid: event.uid, start: stampedStart), seriesId: seriesId, title: title.isEmpty ? "Untitled event" : title,
+            start: stampedStart, end: isoString(end), allDay: isDate,
             attendees: attendees.map {
                 CalendarEvent.Attendee(name: $0.name == $0.email ? nil : $0.name, email: $0.email, declined: $0.declined ? true : nil, resource: $0.resource ? true : nil)
             },

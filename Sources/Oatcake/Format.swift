@@ -102,9 +102,7 @@ func otherAttendees(_ event: CalendarEvent, myName: String) -> [CalendarEvent.At
 
 /// Labels that aren't a person: their avatars are grey.
 private let notAPerson = #"^(Voice \d+|Several people|Microphone|System audio|Call audio|Unknown)$"#
-private let hues: [Double] = [265, 25, 160, 330, 200, 60, 295, 130, 230, 0, 95, 180]
-/// What each hue is called, for choosing one (Settings › People).
-let hueNames = ["Indigo", "Red", "Green", "Magenta", "Sky", "Orange", "Purple", "Leaf", "Blue", "Raspberry", "Mustard", "Teal"]
+private let hues = SwatchColour.allCases.map(\.hue)
 private let colorsKey = "personColors"
 /// Colours you chose, by full name: apart from the first-name colours above, which a one-word name
 /// ("Jane") would otherwise share with everyone of that first name.
@@ -116,8 +114,9 @@ let colorsChangedKey = "personColorsChanged"
 private func firstNameKey(_ name: String) -> String { (name.trimmed.split(separator: " ").first.map(String.init) ?? name).lowercased() }
 private func fullNameKey(_ name: String) -> String { name.trimmed.lowercased() }
 
-/// The palette's colours as avatars show them, in its order.
-var paletteColors: [Color] { hues.map { oklch(0.55, 0.15, $0) } }
+extension SwatchColour {
+    var swatch: Color { oklch(0.55, 0.15, hue) }
+}
 
 /// The colour you chose for someone in Settings › People (an index into the palette), if you did.
 func chosenColor(_ name: String) -> Int? {

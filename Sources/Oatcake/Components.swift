@@ -9,6 +9,45 @@ extension Color {
     static let line = Color.primary.opacity(0.09)
 }
 
+struct ColourSwatchPopover: View {
+    let title: String
+    let selected: SwatchColour?
+    let choose: (SwatchColour) -> Void
+    var reset: (() -> Void)? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title).font(.headline)
+            ColourSwatches(selected: selected, choose: choose)
+            if let reset {
+                Button("Use the colour Oatcake gave them", action: reset).buttonStyle(.link)
+            }
+        }
+        .padding(16)
+    }
+}
+
+private struct ColourSwatches: View {
+    let selected: SwatchColour?
+    let choose: (SwatchColour) -> Void
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.fixed(26), spacing: 8), count: 6), spacing: 8) {
+            ForEach(SwatchColour.allCases, id: \.self) { colour in
+                Button { choose(colour) } label: {
+                    Circle().fill(colour.swatch).frame(width: 22, height: 22)
+                        .overlay(Circle().strokeBorder(Color.primary, lineWidth: 2).padding(-3).opacity(selected == colour ? 1 : 0))
+                }
+                .buttonStyle(.plain)
+                .help(colour.title)
+                .accessibilityLabel(colour.title)
+                .accessibilityAddTraits(selected == colour ? .isSelected : [])
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
 struct Avatar: View {
     let name: String
     var size: CGFloat = 24

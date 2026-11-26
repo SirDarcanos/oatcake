@@ -35,22 +35,22 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 
 ## Calendar
 
-- Your calendar's next calls on Home and under Upcoming in the sidebar, from its private iCal
-  address.
-  [Calendar settings](settings.md#calendar)
+- Upcoming calls from multiple private iCal feeds, in one list on Home and in the sidebar, with a
+  coloured dot for each source calendar. The names and dots are shown in New recording, and
+  the dots carry over to saved meetings. [Calendar settings](settings.md#calendars)
 - **Start recording** on Home, or clicking a call in the sidebar, opens New recording for it, in the
-  folder named like it or a new one for a recurring meeting. [Calendar settings](settings.md#calendar)
+  folder named like it or a new one for a recurring meeting. [Calendar settings](settings.md#calendars)
 - **Join the call** on Home opens a Meet, Zoom or Teams call without starting a recording.
-  [Calendar settings](settings.md#calendar)
+  [Calendar settings](settings.md#calendars)
 - A reminder 5 minutes before each call, whose button opens the call and starts recording.
-  [Calendar settings](settings.md#calendar)
+  [Calendar settings](settings.md#calendars)
 - Your next call in the menu bar, with what's coming up in its menu.
   [The menu bar](how-it-works.md#the-menu-bar)
 - Events that aren't calls left out by their title ("Focus time", "Out of office"…) or by "Oatcake
-  ignore" in the title. [Calendar settings](settings.md#calendar)
+  ignore" in the title. [Calendar settings](settings.md#calendars)
 - One event, one occurrence, or a series from then on ignored from the sidebar's Upcoming
-  right-click menu, and brought back from Settings. [Calendar settings](settings.md#calendar)
-- The calendar's address kept in a file only your account can read.
+  right-click menu, and brought back from Settings. [Calendar settings](settings.md#calendars)
+- Private calendar addresses kept in a file only your account can read.
   [Security](security.md)
 
 ## Transcription and voices

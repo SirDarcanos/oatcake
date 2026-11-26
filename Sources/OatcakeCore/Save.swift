@@ -142,10 +142,11 @@ public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: 
         var participants: [String]
         var recording: String
         var template: String?
+        var calendarIDs: [UUID]?
     }
     try writeAtomic(out.appendingPathComponent("meeting.json"),
                     try encodeJSON(Meta(title: title, startedAt: analysis.startedAt, endedAt: analysis.endedAt,
-                                        participants: participants, recording: rec.id, template: template)) + "\n")
+                                        participants: participants, recording: rec.id, template: template, calendarIDs: rec.calendarIDs)) + "\n")
 
     // Naming voices later: the summary and to-dos say the new names where they said the old ones.
     if existing != nil, let before = Recordings.savedInfo(rec.dir)?.names {

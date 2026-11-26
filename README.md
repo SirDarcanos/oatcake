@@ -12,7 +12,7 @@ leaves it, unless you point Oatcake at a model server of your own on your networ
   beside them. It [notices calls](docs/how-it-works.md#calls-are-noticed) starting and ending.
 - **Works from your calendar**: the next calls on Home and in the sidebar and the
   [menu bar](docs/how-it-works.md#the-menu-bar), a reminder before each, **Join the call**, prep
-  notes, and a folder for each recurring meeting. [Calendar](docs/settings.md#calendar)
+  notes, and a folder for each recurring meeting. [Calendars](docs/settings.md#calendars)
 - **Transcribes and tells the voices apart on this Mac**, and recognises people it has heard
   before. [Process](docs/how-it-works.md#2-process)
 - **Who's who**: a [check of who said what](docs/how-it-works.md#3-review-whos-who) before a call
@@ -53,7 +53,7 @@ recording's permissions and the model downloads, and what to tell the people on 
   [process](docs/how-it-works.md#2-process), [review](docs/how-it-works.md#3-review-whos-who),
   [save](docs/how-it-works.md#4-save) and [ask](docs/how-it-works.md#5-ask).
 - [Settings](docs/settings.md), pane by pane: [General](docs/settings.md#general),
-  [Calendar](docs/settings.md#calendar), [People](docs/settings.md#people),
+  [Calendars](docs/settings.md#calendars), [People](docs/settings.md#people),
   [Models](docs/settings.md#models), [Summaries](docs/settings.md#summaries),
   [Storage](docs/settings.md#storage) and [Updates](docs/settings.md#updates).
 - [Importing from Granola and Quill](docs/importing.md).

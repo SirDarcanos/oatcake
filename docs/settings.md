@@ -2,11 +2,11 @@
 
 Open Settings with ⌘, or choose **Settings** from Oatcake's menu bar icon. It opens in its own
 window, with a pane for each part of Oatcake; changes apply as you make them. They're stored in
-`~/Library/Application Support/Oatcake/config.json`, apart from the calendar's address (see
-[Calendar](#calendar)). If `config.json` can't be read, Oatcake starts on its defaults, says so
-when it opens, and keeps the file beside it as `config.unreadable.json`. A switch that works by
-notification says so when notifications are turned off for Oatcake in System Settings, with **Open
-Notification Settings**.
+`~/Library/Application Support/Oatcake/config.json`, apart from connected calendars' names, colours
+and private addresses (see [Calendars](#calendars)). If `config.json` can't be read, Oatcake starts
+on its defaults, says so when it opens, and keeps the file beside it as `config.unreadable.json`. A
+switch that works by notification says so when notifications are turned off for Oatcake in System
+Settings, with **Open Notification Settings**.
 
 ## General
 
@@ -36,22 +36,30 @@ Notification Settings**.
   list action items (Summary instructions say so), so with this off they aren't kept anywhere
   unless you change those instructions.
 
-## Calendar
+## Calendars
 
-- **Private iCal address:** **Add…** opens a field to paste your calendar's private iCal address
-  into (Google Calendar › Settings › your calendar › Integrate calendar › "Secret address in iCal
-  format"); it's saved as you paste, and **Done** or Return closes the field. It's kept in
-  `private.json` in Oatcake's data folder, which only your user account can read, not in
-  `config.json`, and Settings shows only that one is saved and which server it's on, with how the
-  last fetch went. **Replace…** pastes another in its place; **Remove…** deletes it. (0.4.0 to 0.5.2 kept it in your login Keychain, which asked for your login password
-  after every update; the first launch of a later version moves it, asking that one last time.)
-  Without one, Home offers **Connect calendar** and the sidebar hides Upcoming.
+- **Add Calendar…** connects a calendar. Give it a name and paste its private iCal address (Google
+  Calendar › Settings › your calendar › Integrate calendar › “Secret address in iCal format”).
+  In the Add or Edit dialog, click the colour dot to open the same swatch picker as in People.
+  Repeat for each calendar. **Edit…** changes the name or colour, replaces the
+  address if you paste a new one, or removes the calendar. Oatcake keeps any previously connected
+  calendar. Private addresses are stored in `private.json`, readable only by your user account,
+  and aren't shown again in Settings.
 
-  Oatcake fetches it once an hour, or when you press ↻ next to Upcoming (⌘R), and keeps events
-  from yesterday to two weeks ahead in `calendar.json`. Home lists timed events still in progress
-  or starting today or tomorrow, leaving out events you declined. Upcoming in the sidebar
-  shows up to six of those events. If a refresh fails, Oatcake warns you and keeps the
-  last fetched events.
+  Oatcake refreshes each calendar once an hour, or when you press ↻ next to Upcoming (⌘R). If one
+  feed fails, it keeps that feed’s last fetched events and reports the problem beside that calendar
+  in Settings. The other feeds continue to update.
+
+  Home and the sidebar show one chronological list of timed events in progress or starting today
+  or tomorrow, leaving out events you declined. The sidebar shows up to six. The coloured dots
+  identify the source calendars; hover over the event to see their names. When the same invitation
+  and start time appear on more than one feed, it gets one row with all its dots and one reminder.
+  With no calendars connected, Home offers **Connect calendar** and the sidebar hides Upcoming.
+
+  **New recording** shows the matching calendars’ names and dots above Attendees. When you save
+  the meeting, the dots appear in the Meetings list and in Recent meetings on Home. The meeting file keeps only
+  local calendar IDs, not names or addresses. The dots reflect your current colours and disappear
+  if you remove a calendar. Older meetings without calendar information don’t get a dot.
 
   On Home, **Join the call** opens the call link without recording. **Start recording** (or clicking an event in
   the sidebar) opens New recording for it, named after it, in the folder with the same name
@@ -59,6 +67,8 @@ Notification Settings**.
   Weekly sync"), or offering a new folder for a recurring event with none. **Join the call** opens
   its Meet, Zoom or Teams link (only links on those services' own domains count, so a look-alike
   address is never opened).
+### Reminders
+
 - **Remind me before calls** (on to start with): 5 minutes before each timed event, a
   notification with **Open call and start note taking**. The button opens the call link when the
   event has one, starts recording it (in the folder named like the event; a new folder for a
@@ -71,6 +81,8 @@ Notification Settings**.
   [The menu bar](how-it-works.md#the-menu-bar)). Turning this off hides calendar details, not the
   icon while **Run in the background** is on. That setting controls whether reminders and call
   notices still work with the window closed.
+### Events that aren’t calls
+
 - **Events that aren't calls:** events whose titles start with one of these names, as whole words
   ("Focus time", "Out of office", "Working location" and "Task" to begin with; "Task" doesn't leave
   out "Taskforce sync"), or that have "Oatcake ignore" anywhere in the title, are left out of

@@ -332,13 +332,13 @@ final class AppModel {
 
     /// Upcoming's Ignore: this occurrence, or with `series` every occurrence of its recurring event, is
     /// left out of Upcoming, the menu bar, reminders and call notices. Only in Oatcake: the calendar
-    /// isn't changed. Settings › Calendar lists them, to bring one back. Ones that have ended are
+    /// isn't changed. Settings › Calendars lists them, to bring one back. Ones that have ended are
     /// forgotten as this is saved.
     func ignore(_ event: CalendarEvent, series: Bool) {
         guard let item = series ? IgnoredEvent.series(of: event) : .occurrence(event) else { return }
         saveConfig(with(config) { $0.ignoredCalendarEvents = withoutEnded($0.ignoredCalendarEvents, now: Date()).filter { !$0.covers(item) } + [item] })
-        toast(series ? "“\(event.title)” is ignored from now on. Settings › Calendar can bring it back."
-                     : "“\(event.title)”, \(shortWeekday(event.startDate)) \(hhmm(event.startDate)), is ignored. Settings › Calendar can bring it back.")
+        toast(series ? "“\(event.title)” is ignored from now on. Settings › Calendars can bring it back."
+                     : "“\(event.title)”, \(shortWeekday(event.startDate)) \(hhmm(event.startDate)), is ignored. Settings › Calendars can bring it back.")
     }
 
     func stopIgnoring(_ item: IgnoredEvent) {
@@ -387,21 +387,6 @@ final class AppModel {
     /// flag (in the UserDefaults it shares with your own copy) would stop your own copy's move.
     private var movesFromKeychain: Bool { ProcessInfo.processInfo.environment["OATCAKE_DATA_DIR"] == nil }
     private let keychainMoveDone = "secretsMovedFromKeychain"
-
-    /// Saves (or, with "", removes) a secret. Returns why it couldn't, for Settings to show beside the field.
-    @discardableResult
-    func setSecret(_ name: SecretName, _ value: String) -> String? {
-        let before = Secrets.get(name)
-        var problem: String?
-        do {
-            try Secrets.set(name, value)
-            // What you save or remove here settles the move from the Keychain: an address you removed
-            // mustn't come back from there at the next launch.
-            if movesFromKeychain { UserDefaults.standard.set(true, forKey: keychainMoveDone) }
-        } catch { problem = error.localizedDescription }
-        if name == .calendar, Secrets.get(.calendar) != before { calendar.addressChanged() }
-        return problem
-    }
 
     // MARK: - Around the window
 

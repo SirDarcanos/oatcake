@@ -8,6 +8,7 @@ struct SettingsView: View {
     @ViewState private var devices: [InputDevice]?
     @ViewState private var jargon = ""
     @ViewState private var ignoredEvents = ""
+    @ViewState private var calendarEditor: CalendarSettingsEdit?
     /// macOS says notifications are turned off for Oatcake: reminders and call notices can't show.
     @ViewState private var notificationsOff = false
     @AppStorage("settingsPane") private var pane = "general"
@@ -15,7 +16,7 @@ struct SettingsView: View {
     var body: some View {
         TabView(selection: $pane) {
             Form { general }.formStyle(.grouped).tabItem { Label("General", systemImage: "gearshape") }.tag("general")
-            Form { calendar }.formStyle(.grouped).tabItem { Label("Calendar", systemImage: "calendar") }.tag("calendar")
+            Form { calendar }.formStyle(.grouped).tabItem { Label("Calendars", systemImage: "calendar") }.tag("calendar")
             Form { PeopleSection() }.formStyle(.grouped).tabItem { Label("People", systemImage: "person.2") }.tag("people")
             Form { transcription; llmSection }.formStyle(.grouped).tabItem { Label("Models", systemImage: "cpu") }.tag("models")
             Form { jargonSection; outputSections }.formStyle(.grouped).tabItem { Label("Summaries", systemImage: "text.alignleft") }.tag("summaries")
@@ -23,6 +24,9 @@ struct SettingsView: View {
             Form { UpdatesSection() }.formStyle(.grouped).tabItem { Label("Updates", systemImage: "arrow.down.circle") }.tag("updates")
         }
         .frame(width: 620, height: 600)
+        .sheet(item: $calendarEditor) { editor in
+            CalendarEditor(calendar: model.calendar, existing: editor.existing)
+        }
         // Something that went wrong while this window is in front (a setting that couldn't be saved)
         // is said here too: the main window's own note is behind this one, or closed.
         .overlay(alignment: .bottom) {
@@ -180,9 +184,14 @@ struct SettingsView: View {
 
     @ViewBuilder private var calendar: some View {
         Section {
-            SecretField(name: .calendar, title: "Private iCal address", status: calendarStatus,
-                        statusColor: model.calendar.cache?.error != nil ? .red : .secondary,
-                        placeholder: "https://calendar.google.com/calendar/ical/…/basic.ics")
+            CalendarSettingsRows(calendar: model.calendar, editor: $calendarEditor)
+        } header: {
+            Text("Calendars")
+        } footer: {
+            Text("In Google Calendar, open Settings, pick a calendar under “Settings for my calendars”, then copy its “Secret address in iCal format” from Integrate calendar. Repeat for each calendar you want in Upcoming.")
+                .settingsHint()
+        }
+        Section("Reminders") {
             Toggle(isOn: bind(\.callReminders)) {
                 Text("Remind me before calls")
                 Text("5 minutes before each call, a notification with a button that opens the call and starts recording, ready for notes.")
@@ -192,11 +201,6 @@ struct SettingsView: View {
                 Text("Show my next call in the menu bar")
                 Text("The time until it starts, with what’s coming up in its menu. Oatcake then stays in the menu bar when its window is closed.")
             }
-        } header: {
-            Text("Calendar")
-        } footer: {
-            Text("In Google Calendar, open Settings, pick your calendar under “Settings for my calendars”, then copy “Secret address in iCal format” from the Integrate calendar section. Without one, Upcoming is hidden.")
-                .settingsHint()
         }
         // Typed as one comma-separated line, like Jargon; kept as a list.
         Section {
@@ -301,19 +305,6 @@ struct SettingsView: View {
     private func shortPath(_ full: String) -> String {
         let p = full.replacingOccurrences(of: #"^/Users/[^/]+"#, with: "~", options: .regularExpression)
         return p.count <= 46 ? p : "\(p.prefix(20))…\(p.suffix(24))"
-    }
-
-    private var calendarStatus: String {
-        guard let calendar = model.calendar.cache else { return "Not set up — Upcoming is hidden." }
-        if model.calendar.fetching { return "Fetching…" }
-        if let error = calendar.error, let failure = calendar.failure {
-            return calendar.updatedAt != nil ? "Last fetch failed: \(error)" : failure
-        }
-        if let updated = parseISO(calendar.updatedAt) {
-            let upcoming = model.calendar.events.filter { $0.endDate > Date() }.count
-            return "Updated \(hhmm(updated)) · \(upcoming) upcoming event\(upcoming == 1 ? "" : "s")"
-        }
-        return "Fetching…"
     }
 
     @ViewBuilder private var llmSection: some View {
@@ -641,7 +632,7 @@ func with<T>(_ value: T, _ change: (inout T) -> Void) -> T {
 }
 
 extension Text {
-    fileprivate func settingsHint(_ color: Color = .secondary) -> some View {
+    func settingsHint(_ color: Color = .secondary) -> some View {
         font(.caption).foregroundStyle(color).fixedSize(horizontal: false, vertical: true)
             .multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -785,121 +776,6 @@ private struct ImportRow: View {
     }
 }
 
-/**
- * The calendar's private address. It's kept in private.json and never shown again, so a saved one
- * shows as a hint ("Saved · calendar.google.com"). A new value saves on Return, on leaving the
- * field, or after a pause in typing.
- */
-private struct SecretField: View {
-    @Environment(AppModel.self) private var model
-    let name: SecretName
-    let title: String
-    /// What's known of it beyond being saved: the calendar's last fetch, say.
-    let status: String
-    var statusColor: Color = .secondary
-    let placeholder: String
-    @ViewState private var draft = ""
-    @ViewState private var shown = false
-    /// The field is open: a saved one is never shown again, so it's only there while one is typed.
-    /// Opened only when asked for, since macOS offers passwords for a secure field as soon as it has the keyboard.
-    @ViewState private var entering = false
-    @ViewState private var described = (saved: false, hint: "")
-    @ViewState private var pause: Task<Void, Never>?
-    /// Why the last save or removal didn't work (the file couldn't be written), shown under the field.
-    @ViewState private var problem: String?
-    @ViewState private var removing = false
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            LabeledContent {
-                HStack {
-                    if entering {
-                        // With nothing typed it just closes; with something, it's saved first and stays open if that fails.
-                        Button("Done") { if draft.trimmed.isEmpty { entering = false } else { save(done: true) } }
-                    } else if described.saved {
-                        Button("Replace…") { enter() }.help("Paste a new one in place of the saved one")
-                        // Asked first: a saved address can't be shown again, only copied afresh from the calendar.
-                        Button("Remove…") { removing = true }
-                            .help("Delete the saved one")
-                            .alert("Remove the calendar’s address?", isPresented: $removing) {
-                                Button("Remove", role: .destructive) {
-                                    problem = model.setSecret(name, "")
-                                    draft = ""
-                                    load()
-                                }
-                                Button("Cancel", role: .cancel) {}
-                            } message: {
-                                Text("Upcoming and call reminders stop. Oatcake can’t show the address again: to connect the calendar later, copy it from your calendar’s settings as you did before.")
-                            }
-                    } else {
-                        Button("Add…") { enter() }
-                    }
-                }
-            } label: {
-                Text(title)
-                Text(described.hint.isEmpty ? status : "\(described.hint) · \(status)").foregroundStyle(statusColor)
-            }
-            if entering {
-                HStack(spacing: 6) {
-                    Group {
-                        if shown {
-                            TextField("", text: $draft, prompt: Text(placeholder))
-                        } else {
-                            SecureField("", text: $draft, prompt: Text(placeholder))
-                        }
-                    }
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(.body, design: .monospaced))
-                    .frame(maxWidth: .infinity)
-                    .focused($focused)
-                    // The field has no label of its own beside it for VoiceOver to read.
-                    .accessibilityLabel(described.saved ? "New calendar private address, to replace the saved one" : "Calendar’s private address")
-                    .onSubmit { save(done: true) }
-                    .onChange(of: draft) {
-                        pause?.cancel()
-                        let value = draft
-                        pause = Task {
-                            try? await Task.sleep(for: .seconds(1.2))
-                            if !Task.isCancelled, value == draft { save(done: false) }
-                        }
-                    }
-                    .onChange(of: focused) { if !focused { save(done: true) } }
-                    // A saved one can't be shown, so the eye only appears while typing a new one.
-                    if !draft.isEmpty {
-                        Button { shown.toggle() } label: { Image(systemName: shown ? "eye.slash" : "eye") }
-                            .buttonStyle(.borderless).help("Show or hide what you're typing").accessibilityLabel(shown ? "Hide what you’re typing" : "Show what you’re typing")
-                    }
-                }
-            }
-            if let problem {
-                Text(problem).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .onAppear(perform: load)
-    }
-
-    private func enter() {
-        problem = nil
-        entering = true
-        DispatchQueue.main.async { focused = true }
-    }
-
-    private func load() { described = Secrets.describe(name) }
-
-    private func save(done: Bool) {
-        pause?.cancel()
-        guard !draft.trimmed.isEmpty else { return }
-        problem = model.setSecret(name, draft)
-        // What couldn't be saved stays in the field, to try again; what could closes it.
-        if done, problem == nil {
-            draft = ""
-            entering = false
-        }
-        load()
-    }
-}
-
 /// The palette, to choose someone's colour from: it's theirs on every screen from then on.
 private struct ColorChoice: View {
     let name: String
@@ -907,32 +783,14 @@ private struct ColorChoice: View {
 
     var body: some View {
         let chosen = chosenColor(name)
-        VStack(alignment: .leading, spacing: 12) {
-            Text("\(name)’s colour").font(.headline)
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(26), spacing: 8), count: 6), spacing: 8) {
-                ForEach(paletteColors.indices, id: \.self) { i in
-                    Button {
-                        chooseColor(i, for: name)
-                        done()
-                    } label: {
-                        Circle().fill(paletteColors[i]).frame(width: 22, height: 22)
-                            .overlay(Circle().strokeBorder(Color.primary, lineWidth: 2).padding(-3).opacity(chosen == i ? 1 : 0))
-                    }
-                    .buttonStyle(.plain)
-                    .help(hueNames[i])
-                    .accessibilityLabel(hueNames[i])
-                    .accessibilityAddTraits(chosen == i ? .isSelected : [])
-                }
-            }
-            if chosen != nil {
-                Button("Use the colour Oatcake gave them") {
-                    chooseColor(nil, for: name)
-                    done()
-                }
-                .buttonStyle(.link)
-            }
-        }
-        .padding(16)
+        let palette = SwatchColour.allCases
+        ColourSwatchPopover(title: "\(name)’s colour", selected: chosen.map { palette[$0] }, choose: { colour in
+            chooseColor(palette.firstIndex(of: colour), for: name)
+            done()
+        }, reset: chosen == nil ? nil : {
+            chooseColor(nil, for: name)
+            done()
+        })
     }
 }
 

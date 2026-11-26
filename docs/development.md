@@ -45,8 +45,9 @@ Environment variables that help when trying things out:
 - `OATCAKE_DATA_DIR` points a development copy at another data folder, with its own saved calendar
   address. A copy started with it leaves the login Keychain alone.
 - `OATCAKE_LLAMA_DIR` names the folder llama.cpp's server is in, for a copy that isn't a bundle.
-- `OATCAKE_CALENDAR_URL` gives it a calendar address without saving one (a local `.ics` served
-  over HTTP will do).
+- `OATCAKE_CALENDAR_URL` supplies a calendar address without saving the URL or an on-disk feed cache
+  (a local `.ics` served over HTTP will do). Oatcake keeps the calendar’s local badge ID separately
+  from private settings so saved meetings can still recognise it after a restart.
 - `OATCAKE_CALL_APPS` names a file listing the apps to treat as on a call, one per line, so the
   call notice and the automatic stop can be tried without making a call.
 - `OATCAKE_UPDATE_FEED` points the updater at another `latest.json` (see
