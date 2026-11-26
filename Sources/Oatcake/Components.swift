@@ -149,6 +149,11 @@ extension View {
     func toolbarStatusPadding() -> some View { padding(.horizontal, 12) }
 }
 
+/// A transcript beside a screen's own column (the call's notes, Who's who's voices): 340 points,
+/// narrowing to 220 before that column goes under 380. The meeting list takes its column beside the
+/// pane, so in a narrow window there isn't room for both at full width.
+func sidePanelWidth(in paneWidth: CGFloat) -> CGFloat { min(340, max(220, paneWidth - 380)) }
+
 extension ToolbarContent {
     /// A title or a status in the toolbar, without the glass capsule macOS 26 draws behind toolbar
     /// items: in one, words read as a button.

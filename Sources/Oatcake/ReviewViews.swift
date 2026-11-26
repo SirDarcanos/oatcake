@@ -76,7 +76,7 @@ struct ProcessingView: View {
         .frame(maxWidth: 440)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .toolbar {
-            ToolbarItem(placement: .principal) {
+            ToolbarItem(placement: .automatic) {
                 (Text(progress?.error != nil ? "Couldn’t finish" : "Processing").fontWeight(.semibold) + Text(" · \(rec.title)").foregroundStyle(.secondary)).lineLimit(1)
                     .toolbarStatusPadding()
             }
@@ -146,6 +146,7 @@ struct ReviewView: View {
     @ViewState private var error = ""
     @ViewState private var saved = false
     @ViewState private var player = ClipPlayer()
+    @ViewState private var paneWidth: CGFloat = 900
 
     /// What's been set so far lives with the app, so leaving this screen and coming back keeps it.
     private var draft: ReviewDraft {
@@ -167,9 +168,10 @@ struct ReviewView: View {
                     ScrollView { cards(analysis).padding(.horizontal, 36).padding(.vertical, 28).frame(maxWidth: 680, alignment: .leading).frame(maxWidth: .infinity) }
                     if showTranscript {
                         Divider()
-                        transcript(analysis).frame(width: 340)
+                        transcript(analysis).frame(width: sidePanelWidth(in: paneWidth))
                     }
                 }
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { paneWidth = $0 }
                 .toolbar { toolbar(analysis) }
             } else {
                 Text(error).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -226,7 +228,7 @@ struct ReviewView: View {
 
     @ToolbarContentBuilder private func toolbar(_ analysis: Analysis) -> some ToolbarContent {
         let unnamed = analysis.speakers.filter { voices[$0.id]?.into == nil && voices[$0.id]?.mixed == false && voices[$0.id]?.leftOut != true && (voices[$0.id]?.name.trimmed.isEmpty ?? true) }.count
-        ToolbarItem(placement: .principal) {
+        ToolbarItem(placement: .automatic) {
             (Text("Who’s who").fontWeight(.semibold) + Text(" · \(title)").foregroundStyle(.secondary)).lineLimit(1)
                 .toolbarStatusPadding()
         }

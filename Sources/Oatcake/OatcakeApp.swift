@@ -10,11 +10,19 @@ struct OatcakeApp: App {
         Window("Oatcake", id: "main") {
             ContentView()
                 .environment(delegate.model)
-                .frame(minWidth: 1100, minHeight: 560)
+                // Room for the sidebar and the meeting list at their usual widths, and beside them the
+                // widest toolbar a screen has (Who's who's, search folded to its button) without it
+                // running over the meeting list.
+                .frame(minWidth: 1180, minHeight: 560)
         }
         .defaultSize(width: 1440, height: 880)
-        .windowToolbarStyle(.unified(showsTitle: false))
-        .commands { AppCommands(model: delegate.model) }
+        // As in Mail: one toolbar across the three columns, the meeting list's folder named over the list.
+        .windowToolbarStyle(.unified)
+        .commands {
+            // View › Hide Sidebar (⌃⌘S), as in Mail.
+            SidebarCommands()
+            AppCommands(model: delegate.model)
+        }
 
         // Settings is its own window, like a Mac app's Settings. Changes apply as they're made.
         Settings {
@@ -207,25 +215,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
 struct ContentView: View {
     @Environment(AppModel.self) private var model
-    // A narrower window can constrain the pane without changing the chosen width.
-    @ViewState private var meetingListWidth: CGFloat = 300
+    @FocusState private var searching: Bool
 
     var body: some View {
         @Bindable var model = model
+        // Laid out as Mail is: folders, the meetings in the one chosen, and the meeting (or whichever
+        // other screen is open). The meeting list stays in its column whatever the right-hand pane shows.
         NavigationSplitView {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 520)
+        } content: {
+            MeetingListView(folder: model.library.tree?.find(model.folder) ?? model.library.tree, root: model.library.tree,
+                            query: model.searchText)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 300, max: 560)
         } detail: {
-            if showsList {
-                MeetingListSplit(preferredWidth: $meetingListWidth) {
-                    MeetingListView(folder: model.library.tree?.find(model.folder) ?? model.library.tree, root: model.library.tree)
-                } detail: {
-                    DetailView()
-                }
-            } else {
-                DetailView()
-            }
+            DetailView()
         }
+        // At the right-hand end of the toolbar, as in Mail. It searches every meeting, and the list shows what it finds.
+        .searchable(text: $model.searchText, placement: .toolbar, prompt: "Search meetings")
+        .searchFocused($searching)
+        .onChange(of: model.searchRequest) { searching = true }
         .overlay(alignment: .bottom) {
             // Only one that says something went wrong takes clicks (to dismiss it).
             if let text = model.toastText { ToastView(text: text, isError: model.toastIsError) { model.dismissToast() }.allowsHitTesting(model.toastIsError) }
@@ -239,62 +248,6 @@ struct ContentView: View {
             }
         } message: { confirmation in
             Text(confirmation.text)
-        }
-    }
-
-    private var showsList: Bool {
-        switch model.selection {
-        case nil, .meeting, .folder: true
-        default: false
-        }
-    }
-}
-
-/// Give the list an explicit width so a detail view's layout cannot reset the divider.
-private struct MeetingListSplit<ListContent: View, Detail: View>: View {
-    @Binding var preferredWidth: CGFloat
-    @ViewBuilder let list: () -> ListContent
-    @ViewBuilder let detail: () -> Detail
-    @GestureState private var dragOffset: CGFloat = 0
-
-    var body: some View {
-        GeometryReader { geometry in
-            let available = max(0, geometry.size.width - 1)
-            let minimum = min(220, available)
-            // The meeting keeps at least 560 points: below that, the list gives way first.
-            let maximum = max(minimum, min(560, available - 560))
-            let startingWidth = min(max(preferredWidth, minimum), maximum)
-            let width = min(max(startingWidth + dragOffset, minimum), maximum)
-            HStack(spacing: 0) {
-                list().frame(width: width)
-                Divider()
-                    .frame(width: 1)
-                    .overlay {
-                        Color.clear
-                            .frame(width: 10)
-                            .contentShape(Rectangle())
-                            .pointerStyle(.columnResize)
-                            .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .global)
-                                .updating($dragOffset) { drag, offset, _ in offset = drag.translation.width }
-                                .onEnded { drag in
-                                    let proposed = min(max(startingWidth + drag.translation.width, minimum), maximum)
-                                    if proposed != startingWidth { preferredWidth = proposed }
-                                })
-                    }
-                    .zIndex(1)
-                    .accessibilityRepresentation {
-                        Slider(value: Binding(get: { width }, set: { proposed in
-                            let adjusted = min(max(proposed, minimum), maximum)
-                            if adjusted != startingWidth { preferredWidth = adjusted }
-                        }),
-                               in: minimum...max(minimum + 1, maximum)) {
-                            Text("Meeting list width")
-                        }
-                        .accessibilityValue(Text("\(Int(width.rounded())) points"))
-                        .disabled(minimum == maximum)
-                    }
-                detail().frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
         }
     }
 }

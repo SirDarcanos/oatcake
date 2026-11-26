@@ -10,7 +10,7 @@ func droppedPaths(_ items: [String]) -> [String] {
 }
 
 enum SidebarItem: Hashable {
-    case live, todos, job(String), folder(String), meeting(String)
+    case home, live, todos, job(String), folder(String), meeting(String)
 }
 
 /// A section's header runs closer to the sidebar's edge than its rows do. This brings a button at the
@@ -28,6 +28,7 @@ struct SidebarView: View {
     var body: some View {
         List(selection: selectionBinding) {
             if let live = model.recording.live { liveRow(live).tag(SidebarItem.live) }
+            Label("Home", systemImage: "house").tag(SidebarItem.home)
             if model.config.todosEnabled { todosRow.tag(SidebarItem.todos) }
             if model.calendar.hasCalendars { upcoming }
             if !model.jobs.list.isEmpty {
@@ -79,31 +80,8 @@ struct SidebarView: View {
             .padding(.vertical, 8)
             .help("New recording (⌘N)")
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 0) {
-                UpdateNotice()
-                Divider()
-                HStack {
-                    SettingsLink {
-                        Label("Settings", systemImage: "slider.horizontal.3")
-                    }
-                    .help("Settings (⌘,)")
-                    Spacer()
-                    Button { model.selection = .home } label: {
-                        Label("Home", systemImage: model.selection == .home ? "house.fill" : "house")
-                            .labelStyle(.iconOnly)
-                            .frame(minWidth: 24)
-                            .contentShape(Rectangle())
-                    }
-                    .help("Home")
-                    .accessibilityAddTraits(model.selection == .home ? .isSelected : [])
-                }
-                .buttonStyle(.borderless)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-            }
-            .background(.bar)
-        }
+        // Settings is in the Oatcake menu (⌘,) and the menu bar item, as other Mac apps keep it.
+        .safeAreaInset(edge: .bottom, spacing: 0) { UpdateNotice() }
         .onChange(of: open) { UserDefaults.standard.set(Array(open), forKey: "openFolders") }
         .onChange(of: model.folder) { revealSelectedFolder() }
         // Also when the sidebar first appears: the window may have been closed when New Folder was chosen.
@@ -133,7 +111,7 @@ struct SidebarView: View {
     private var selectionBinding: Binding<SidebarItem?> {
         Binding {
             switch model.selection {
-            case .home: nil
+            case .home: .home
             case .live: .live
             case .todos: .todos
             case .job(let id): .job(id)
@@ -143,6 +121,7 @@ struct SidebarView: View {
             }
         } set: { item in
             switch item {
+            case .home: model.selection = .home
             case .live: model.selection = .live
             case .todos: model.selection = .todos
             case .job(let id): model.selection = .job(id)
@@ -440,6 +419,8 @@ private struct UpdateNotice: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
+            .overlay(alignment: .top) { Divider() }
+            .background(.bar)
         }
     }
 }

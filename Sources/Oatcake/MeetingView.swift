@@ -248,11 +248,12 @@ struct MeetingView: View {
 
     // MARK: Toolbar
 
-    /// The tabs sit above the meeting itself (tabBar). Up here, on the right: how saving is going,
-    /// while there's something to say, and one menu with everything that can be done to the meeting.
+    /// Over the meeting, as Mail puts a message's buttons over the message: the tabs; how saving is
+    /// going, while there's something to say; and one menu with everything that can be done to the
+    /// meeting. macOS gathers them at the right, before search. (.navigation would put the tabs over
+    /// the meeting list, and a flexible space doesn't move them left.)
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-        // What follows goes to the right. (With nothing in the middle of the toolbar, nothing else pushes it there.)
-        if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
+        ToolbarItem(placement: .automatic) { tabPicker }
         // How saving is going stays up here, in sight wherever the note is scrolled to. Words, not a
         // button: no capsule behind them.
         if markdown || status == .todo || status == .failed {
@@ -353,27 +354,18 @@ struct MeetingView: View {
             .help("Show this meeting’s folder in Finder")
     }
 
-    /// Summary, Transcript, My notes and Draft for Sharing, above the meeting they switch: pinned, so
-    /// they're in reach wherever the note is scrolled to, and lined up with its text. Each segment is
-    /// as wide as its label, so the draft's tab is added without the others moving.
-    private var tabBar: some View {
-        HStack {
-            Picker("Tab", selection: Binding(get: { tab }, set: { switchTab($0) })) {
-                Text("Summary").tag(MeetingTab.summary).help("⌘1")
-                Text("Transcript").tag(MeetingTab.transcript).help("⌘2")
-                Text("My notes").tag(MeetingTab.notes).help("⌘3")
-                if showsDraftTab { Text("Draft for Sharing").tag(MeetingTab.draft).help("⌘4") }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            Spacer()
+    /// Summary, Transcript, My notes and Draft (for sharing), in the toolbar over the meeting.
+    private var tabPicker: some View {
+        Picker("Tab", selection: Binding(get: { tab }, set: { switchTab($0) })) {
+            Text("Summary").tag(MeetingTab.summary).help("⌘1")
+            Text("Transcript").tag(MeetingTab.transcript).help("⌘2")
+            Text("My notes").tag(MeetingTab.notes).help("⌘3")
+            // Short: the toolbar gives each tab the width of the widest.
+            if showsDraftTab { Text("Draft").tag(MeetingTab.draft).help("Draft for sharing (⌘4)") }
         }
-        .padding(.horizontal, 40)
-        .padding(.top, 14)
-        .padding(.bottom, 6)
-        .frame(maxWidth: 760, alignment: .leading)
-        .frame(maxWidth: .infinity)
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
     }
 
     /// Rendered or Markdown: how the note below is shown. It sits at the top right of the note, beside its title.
@@ -443,7 +435,6 @@ struct MeetingView: View {
     private func content(_ files: [FileKey: String]) -> some View {
         let found = finding && tab == .transcript && !markdown ? matches(in: rows) : []
         return VStack(spacing: 0) {
-            tabBar
             if finding && tab == .transcript && !markdown {
                 findBar(found)
                 Divider()

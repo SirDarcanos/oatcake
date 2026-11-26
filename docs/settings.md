@@ -57,7 +57,7 @@ Settings, with **Open Notification Settings**.
   With no calendars connected, Home offers **Connect calendar** and the sidebar hides Upcoming.
 
   **New recording** shows the matching calendars’ names and dots above Attendees. When you save
-  the meeting, the dots appear in the Meetings list and in Recent meetings on Home. The meeting file keeps only
+  the meeting, the dots appear in the meeting list. The meeting file keeps only
   local calendar IDs, not names or addresses. The dots reflect your current colours and disappear
   if you remove a calendar. Older meetings without calendar information don’t get a dot.
 

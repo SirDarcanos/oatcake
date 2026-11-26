@@ -10,15 +10,15 @@ struct MeetingListView: View {
     let folder: TreeNode?
     /// The whole Meetings folder, which search looks through.
     let root: TreeNode?
+    /// What's typed in the toolbar's search field.
+    let query: String
     @ViewState private var renaming: TreeNode?
     /// The meetings selected with ⌘- or ⇧-click. One selected meeting is the open one, so this only
     /// matters when there are several.
     @ViewState private var picked: Set<String> = []
     @ViewState private var draft = ""
-    @ViewState private var query = ""
     /// What the last search of every meeting's text found, and the words it was for.
     @ViewState private var found: (query: String, hits: [SearchHit])?
-    @FocusState private var searching: Bool
 
     var body: some View {
         // The top level lists every meeting, each labelled with the folder it's in; so does a search.
@@ -26,37 +26,10 @@ struct MeetingListView: View {
         let everything = !search.isEmpty || (folder?.path.isEmpty ?? true)
         let hits = search.isEmpty || found?.query != search ? [:] : Dictionary(uniqueKeysWithValues: (found?.hits ?? []).map { ($0.path, $0) })
         let rows = search.isEmpty ? listedIn(folder) : results(search)
-        VStack(spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(!search.isEmpty ? "Search" : everything ? "All meetings" : baseName(folder!.path)).font(.headline).lineLimit(1)
-                Spacer()
-                Text("\(everything || parentOf(folder!.path).isEmpty ? "" : folderPath(parentOf(folder!.path)) + " · ")\(rows.count) meeting\(rows.count == 1 ? "" : "s")")
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.callout)
-                TextField("Search all meetings", text: $query)
-                    .textFieldStyle(.plain)
-                    .focused($searching)
-                    .onKeyPress(.escape) {
-                        query = ""
-                        searching = false
-                        return .handled
-                    }
-                if !query.isEmpty {
-                    Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
-                        .buttonStyle(.plain).help("Clear the search").accessibilityLabel("Clear the search")
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(RoundedRectangle(cornerRadius: 6).fill(Color.fill))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .help("Search every meeting’s title, folder, summary, to-dos, notes and transcript (⌥⌘F)")
-            Divider()
+        // What's listed, and how many, are named in the toolbar above the list, as Mail names a mailbox.
+        let title = !search.isEmpty ? "Search" : everything ? "All meetings" : baseName(folder!.path)
+        let subtitle = "\(everything || parentOf(folder!.path).isEmpty ? "" : folderPath(parentOf(folder!.path)) + " · ")\(rows.count) meeting\(rows.count == 1 ? "" : "s")"
+        Group {
             if rows.isEmpty {
                 VStack(spacing: 10) {
                     Text(!search.isEmpty ? "No meetings match “\(search)”." : everything ? "No meetings yet." : "No meetings in this folder yet.")
@@ -96,8 +69,10 @@ struct MeetingListView: View {
                 .focusedValue(\.trashMeetings, chosen.isEmpty ? nil : { model.library.trash(chosen) })
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .textBackgroundColor))
-        .onChange(of: model.searchRequest) { searching = true }
+        .navigationTitle(title)
+        .navigationSubtitle(subtitle)
         // A meeting opened from elsewhere (the sidebar, a search, a reminder) ends a selection of several.
         .onChange(of: selectedPath) { picked = [] }
         // Searched again when the words change, and when a meeting does.
