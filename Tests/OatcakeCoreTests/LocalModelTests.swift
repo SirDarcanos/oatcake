@@ -99,6 +99,28 @@ import Testing
         }
     }
 
+    /// A reply cut off part way is out of room too, not a finished one: a summary that stops
+    /// mid-sentence isn't saved as if it were whole. Reasoning left in the reply and never closed is
+    /// all there was, so there's no reply.
+    @Test func cutOffReplies() async throws {
+        let partWay = try await StandIn { _ in
+            StandIn.Response(body: Data(#"{"choices":[{"message":{"content":"Decisions:\n\n- Jane will send the"},"finish_reason":"length"}]}"#.utf8))
+        }
+        await #expect(throws: ModelOutOfRoom()) {
+            _ = try await LocalChat(baseUrl: partWay.address + "/v1", model: "m").complete([ChatMessage("user", "Hello")])
+        }
+        let unclosed = try await StandIn { _ in
+            StandIn.Response(body: Data(#"{"choices":[{"message":{"content":"<think>\nThe user wants a summary. First"},"finish_reason":"length"}]}"#.utf8))
+        }
+        await #expect(throws: ModelOutOfRoom()) {
+            _ = try await LocalChat(baseUrl: unclosed.address + "/v1", model: "m").complete([ChatMessage("user", "Hello")])
+        }
+
+        #expect(withoutReasoning("<think>\nThe user wants a summary.\nFirst, the") == "")
+        #expect(withoutReasoning("<think>\nLet me see.\n</think>\n\nOK") == "OK")
+        #expect(withoutReasoning("OK, and <think> isn’t reasoning here") == "OK, and <think> isn’t reasoning here")
+    }
+
     /// A server of your own is told whether to reason only in the way you've said it takes: Ollama's
     /// reasoning_effort, or llama.cpp's enable_thinking. Left to the server, neither is sent.
     @Test func ownServerReasoningControl() async throws {
