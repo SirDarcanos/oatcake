@@ -10,23 +10,8 @@ struct HomeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                HStack {
-                    Text("Home").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
-                    Spacer()
-                    if model.recording.live != nil {
-                        Button { model.selection = .live } label: {
-                            Label("Return to recording", systemImage: "waveform")
-                        }
-                        .buttonStyle(.borderedProminent)
-                    } else {
-                        Button { model.newRecording() } label: {
-                            Label("New recording", systemImage: "circle.fill")
-                                .labelStyle(NewRecordingLabelStyle())
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
-                    }
-                }
+                // No record button of its own: the sidebar's New recording (or Return to recording) is beside it.
+                Text("Home").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
                 upcoming
                 if model.config.todosEnabled { TodosView(homePreview: true) }
             }

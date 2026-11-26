@@ -63,13 +63,13 @@ buttons, hides the sidebar.
 The sidebar has a recording in progress, Home, To-dos, Upcoming, Needs review, folders, and any
 meetings at the top level. A one-off call with no folder of its own is saved at the top level;
 drag it onto a folder to file it. Clicking the Meetings heading lists every meeting, and an empty
-folder offers **Record here**. Drag the divider to resize the meeting list; it keeps that width
+folder offers **Record here** (except while New recording is open beside it). Drag the divider to resize the meeting list; it keeps that width
 when you switch screens. Settings (⌘, or the menu bar item) is its own window, in panes; changes
 apply as you make them (see [Settings](settings.md)).
 
 Oatcake opens on **Home**, or on a recording that was still going when it was last closed. Home
-shows upcoming calls (the one on now or next has **Join the call** and **Start recording**) and a
-button to start a new recording or return to the one in progress. When to-dos are enabled, Home
+shows upcoming calls (the one on now or next has **Join the call** and **Start recording**). The
+sidebar's **New recording** button is beside it, or **Return to recording** during a call. When to-dos are enabled, Home
 also shows up to five open items, earliest due first, with their assignees and due dates. Add or
 tick off to-dos on Home, or choose **View all to-dos** to manage the full list.
 

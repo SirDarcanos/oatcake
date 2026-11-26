@@ -25,7 +25,8 @@ struct MeetingListView: View {
                 VStack(spacing: 10) {
                     Text(everything ? "No meetings yet." : "No meetings in this folder yet.")
                         .foregroundStyle(.secondary)
-                    Button { model.newRecording() } label: { Label(everything ? "New recording" : "Record here", systemImage: "circle.fill") }
+                    // Not while New recording is open beside it, with its own Start recording.
+                    if case .new = model.selection {} else { Button { model.newRecording() } label: { Label(everything ? "New recording" : "Record here", systemImage: "circle.fill") } }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
