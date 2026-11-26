@@ -146,6 +146,8 @@ struct ReviewView: View {
     @ViewState private var showTranscript = false
     @ViewState private var error = ""
     @ViewState private var saved = false
+    /// Save or Update meeting has been pressed and the meeting is being written.
+    @ViewState private var saving = false
     @ViewState private var player = ClipPlayer()
     @ViewState private var paneWidth: CGFloat = 900
 
@@ -281,7 +283,7 @@ struct ReviewView: View {
         if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
         ToolbarItemGroup(placement: .automatic) {
             Toggle(isOn: $showTranscript) { Text("Transcript") }.toggleStyle(.button)
-            if !rechecking { Button("Discard…") { model.jobs.discard(rec) }.disabled(saved) }
+            if !rechecking { Button("Discard…") { model.jobs.discard(rec) }.disabled(saved || saving) }
         }
         if unnamed > 0 {
             ToolbarItem(placement: .automatic) {
@@ -295,7 +297,7 @@ struct ReviewView: View {
             Button(rechecking ? "Update meeting" : "Save") { save(analysis) }
                 .keyboardShortcut("s")
                 .buttonStyle(.borderedProminent)
-                .disabled(saved)
+                .disabled(saved || saving)
                 .help(rechecking ? "Rewrite the meeting’s transcript with these names, and use them in its summary and to-dos (⌘S)."
                       : "Save the meeting. Its summary is written straight after (⌘S).")
         }
@@ -532,22 +534,29 @@ struct ReviewView: View {
         }
         let folder = draft.folder
         let everyone = names(analysis)
-        do {
-            let path = rechecking ? try model.jobs.updateMeeting(rec, decisions: decisions)
-                : try model.jobs.saveRecording(rec, decisions: decisions, folder: folder, title: title)
-            saved = true
-            // Colours are claimed in the order this screen showed them, so nobody changes colour on saving.
-            for name in everyone { _ = person(name) }
-            player.stop()
-            model.refresh()
-            model.toast(rechecking ? "Meeting updated" : "Saved to \(folderPath(folder))")
-            // On to the meeting now, as saving by itself does: it shows as soon as the folder has been read
-            // again, however long that takes. On its summary, whichever tab you last read another meeting
-            // on: that's where the summary arrives.
-            model.folder = parentOf(path)
-            model.selection = .meeting(path, jump: Jump(tab: rechecking ? .transcript : .summary))
-        } catch {
-            self.error = error.localizedDescription
+        let title = title
+        saving = true
+        Task {
+            defer { saving = false }
+            do {
+                let path = rechecking ? try await model.jobs.updateMeeting(rec, decisions: decisions)
+                    : try await model.jobs.saveRecording(rec, decisions: decisions, folder: folder, title: title)
+                saved = true
+                // Colours are claimed in the order this screen showed them, so nobody changes colour on saving.
+                for name in everyone { _ = person(name) }
+                player.stop()
+                model.refresh()
+                model.toast(rechecking ? "Meeting updated" : "Saved to \(folderPath(folder))")
+                // Gone on to something else while it was written: that stays.
+                guard model.selection == .job(rec.id) else { return }
+                // On to the meeting now, as saving by itself does: it shows as soon as the folder has been read
+                // again, however long that takes. On its summary, whichever tab you last read another meeting
+                // on: that's where the summary arrives.
+                model.folder = parentOf(path)
+                model.selection = .meeting(path, jump: Jump(tab: rechecking ? .transcript : .summary))
+            } catch {
+                self.error = error.localizedDescription
+            }
         }
     }
 }

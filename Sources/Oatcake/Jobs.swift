@@ -251,13 +251,19 @@ final class Jobs {
 
     /// Names the voices of a meeting saved without checking: its transcript and meeting.json are
     /// written again in place, and the new names are put into its summary and to-dos. Returns its path.
-    func updateMeeting(_ rec: Recording, decisions: [String: Decision]) throws -> String {
-        guard let path = Recordings.meetingPath(rec, meetingsRoot: config.meetingsRoot) else {
+    func updateMeeting(_ rec: Recording, decisions: [String: Decision]) async throws -> String {
+        let config = config
+        // Off the main thread: a meeting that has been moved is looked for through the whole Meetings folder.
+        guard let path = await Task.detached(operation: { Recordings.meetingPath(rec, meetingsRoot: config.meetingsRoot) }).value else {
             throw OatcakeError("The meeting saved from this recording couldn’t be found. It may have been deleted.")
         }
-        // Asked before saving: after it, what the voices were saved as is no longer on record.
-        let leftOut = leavesOutSavedVoice(rec, decisions)
-        let saved = try saveMeeting(config, rec, decisions: decisions, folder: "", into: path)
+        // Also before the save: a summary finished while the meeting is written would keep the old names.
+        staleSummaries.formUnion(summaryJobs.filter { $0.value == path }.map(\.key))
+        let (saved, leftOut) = try await Task.detached {
+            // Asked before saving: after it, what the voices were saved as is no longer on record.
+            let leftOut = leavesOutSavedVoice(rec, decisions)
+            return (try saveMeeting(config, rec, decisions: decisions, folder: "", into: path), leftOut)
+        }.value
         // A summary of it that's still being written was asked for with the old names.
         let writing = summaryJobs.filter { $0.value == saved }.map(\.key)
         staleSummaries.formUnion(writing)
@@ -331,8 +337,12 @@ final class Jobs {
     }
 
     /// Saves a reviewed recording as a meeting and starts writing its summary. Returns the meeting's path.
-    func saveRecording(_ rec: Recording, decisions: [String: Decision], folder: String, title: String) throws -> String {
-        let path = try saveMeeting(config, rec, decisions: decisions, folder: folder, title: title)
+    func saveRecording(_ rec: Recording, decisions: [String: Decision], folder: String, title: String) async throws -> String {
+        let config = config
+        // Off the main thread, as when a call is saved by itself (autoSave).
+        let path = try await Task.detached {
+            try saveMeeting(config, rec, decisions: decisions, folder: folder, title: title)
+        }.value
         reviewDrafts[rec.id]?.edited = false
         Reminders.withdrawReadyToCheck(rec.id)
         writeSummary(path)
