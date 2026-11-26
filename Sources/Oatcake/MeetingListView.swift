@@ -19,9 +19,12 @@ struct MeetingListView: View {
         let rows = listedIn(folder)
         // What's listed, and how many, are named in the toolbar above the list, as Mail names a mailbox.
         let title = everything ? "All meetings" : baseName(folder!.path)
-        let subtitle = "\(everything || parentOf(folder!.path).isEmpty ? "" : folderPath(parentOf(folder!.path)) + " · ")\(rows.count) meeting\(rows.count == 1 ? "" : "s")"
+        let subtitle = folder == nil ? "" : "\(everything || parentOf(folder!.path).isEmpty ? "" : folderPath(parentOf(folder!.path)) + " · ")\(rows.count) meeting\(rows.count == 1 ? "" : "s")"
         Group {
-            if rows.isEmpty {
+            if folder == nil {
+                // The Meetings folder is still being read, just after launch: not "no meetings".
+                Color.clear
+            } else if rows.isEmpty {
                 VStack(spacing: 10) {
                     Text(everything ? "No meetings yet." : "No meetings in this folder yet.")
                         .foregroundStyle(.secondary)

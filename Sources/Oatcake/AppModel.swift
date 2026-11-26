@@ -127,7 +127,9 @@ final class AppModel {
         // A meeting saved without checking who's who keeps voice clips in Oatcake's own folder: they go with it.
         library.whenTrashed = { [unowned self] in self.jobs.tidySavedRecordings() }
         calendar.changed = { [unowned self] in self.recording.updateMenuBar() }
-        recording.folderForEvent = { [unowned self] title, recurring in try self.library.meetings.folderForEvent(title: title, recurring: recurring) }
+        recording.folderForEvent = { [unowned self] title, recurring in
+            try self.library.meetings.folderForEvent(title: title, recurring: recurring, in: self.library.tree)
+        }
         recording.ended = { [unowned self] rec in self.jobs.progress[rec.id] = JobProgress() }
     }
 
@@ -171,9 +173,7 @@ final class AppModel {
 
         recording.resumeRecordings()
         library.watchMeetings()
-        // Load the library before the window shows, so the meeting list and Home's to-dos are ready at launch.
-        library.tree = library.meetings.tree()
-        if let tree = library.tree { library.setTodos(library.meetings.allTodos(in: tree)) }
+        // The library is read by refresh() below, off the main thread, so a big one doesn't hold up the window.
         jobs.pending = Recordings.list().filter { $0.state == .recorded || $0.state == .processed }
         jobs.unchecked = Recordings.unchecked()
         // A recording picked up again above has opened its live view: Home only when nothing has.
@@ -213,11 +213,13 @@ final class AppModel {
         }
         refreshing = true
         let meetings = library.meetings
+        let shown = library.tree
+        let changedOnDisk = library.takeChangedOnDisk()
         Task {
             let (tree, pending, unchecked, todos) = await Task.detached {
                 // The folder is walked once: the to-dos are read from the tree just built.
                 let tree = meetings.tree()
-                return (tree, Recordings.list().filter { $0.state == .recorded || $0.state == .processed }, Recordings.unchecked(),
+                return (tree == shown ? nil : tree, Recordings.list().filter { $0.state == .recorded || $0.state == .processed }, Recordings.unchecked(),
                         meetings.allTodos(in: tree))
             }.value
             refreshing = false
@@ -234,11 +236,10 @@ final class AppModel {
             var quiet = Transaction()
             quiet.disablesAnimations = true
             withTransaction(quiet) {
-                self.library.tree = tree
+                self.library.landed(tree, changedOnDisk: changedOnDisk)
                 self.jobs.pending = pending
                 self.jobs.unchecked = unchecked
                 self.library.setTodos(todos)
-                self.library.diskVersion += 1
             }
             jobs.startWaiting()
             jobs.updateBadge()

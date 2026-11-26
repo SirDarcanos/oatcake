@@ -23,6 +23,8 @@ final class Library {
     var tree: TreeNode?
     /// Bumps on every change on disk, so open meetings re-read their files.
     var diskVersion = 0
+    /// macOS has said something in the Meetings folder changed since it was last read.
+    @ObservationIgnored private var changedOnDisk = false
     /// Every meeting's to-dos as last read, and what's worked out from them when they're read (not
     /// each time something that shows them is redrawn): each to-do as an item, and the sidebar's counts.
     private(set) var todoMeetings: [MeetingTodos] = []
@@ -48,7 +50,24 @@ final class Library {
     // Keep the sidebar in step with Finder.
     func watchMeetings() {
         try? FileManager.default.createDirectory(at: meetings.root, withIntermediateDirectories: true)
-        watcher = FolderWatcher(meetings.root) { [weak self] in self?.refresh() }
+        watcher = FolderWatcher(meetings.root) { [weak self] in
+            self?.changedOnDisk = true
+            self?.refresh()
+        }
+    }
+
+    /// Whether macOS has said something changed since the last read, for the read starting now.
+    func takeChangedOnDisk() -> Bool {
+        defer { changedOnDisk = false }
+        return changedOnDisk
+    }
+
+    /// What a read of the Meetings folder found: the tree, when it isn't the one already shown, and
+    /// whether files changed since the read before. A read that found nothing new redraws nothing,
+    /// and open meetings aren't read again for it.
+    func landed(_ tree: TreeNode?, changedOnDisk: Bool) {
+        if let tree { self.tree = tree }
+        if tree != nil || changedOnDisk { diskVersion += 1 }
     }
 
     func rename(_ path: String, to name: String) {

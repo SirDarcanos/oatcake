@@ -210,4 +210,27 @@ import Testing
         #expect(meetings.search("zebra", in: all).first?.line == "The zebra budget was agreed.")
         #expect(meetings.search("checklist", in: all).isEmpty)
     }
+
+    /// The tree is read again from meeting.json when it changes, though what it says is kept between reads.
+    @Test func treeFollowsMeetingJSON() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-tree-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let rel = "Team/2026-11-09 1000 Weekly sync"
+        let file = root.appendingPathComponent(rel).appendingPathComponent("meeting.json")
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try #"{"title":"Weekly sync","startedAt":"2026-11-09T10:00:00.000Z"}"#.write(to: file, atomically: true, encoding: .utf8)
+        let meetings = Meetings(root: root)
+        #expect(meetings.tree().find(rel)?.title == "Weekly sync")
+        #expect(meetings.tree() == meetings.tree())
+
+        try #"{"title":"Weekly sync with Jane","startedAt":"2026-11-10T10:00:00.000Z","source":"granola"}"#.write(to: file, atomically: true, encoding: .utf8)
+        let node = try #require(meetings.tree().find(rel))
+        #expect(node.title == "Weekly sync with Jane" && node.granola && node.startedAt == parseISO("2026-11-10T10:00:00.000Z"))
+        // Edited by hand into something unreadable, it's still a meeting.
+        try "{".write(to: file, atomically: true, encoding: .utf8)
+        #expect(meetings.tree().find(rel)?.kind == .meeting && meetings.tree().find(rel)?.title == nil)
+        // Without meeting.json, it's a folder.
+        try FileManager.default.removeItem(at: file)
+        #expect(meetings.tree().find(rel)?.kind == .folder)
+    }
 }
