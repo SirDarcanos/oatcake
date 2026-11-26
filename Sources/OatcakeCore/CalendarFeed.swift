@@ -1,6 +1,8 @@
-// Each calendar's private iCal address: fetched at most once an hour, its events from a day ago to
-// two weeks ahead kept in its own cache file (CalendarSource.cacheFile). The feed's text is read in
-// ICalReader.swift, and its recurring events are expanded in Recurrence.swift.
+// A connected calendar's events as Oatcake keeps them: fetched from its private iCal address at most
+// once an hour (sooner again after a failure), the events from a day ago to two weeks ahead kept in
+// that calendar's own cache file (CalendarSource.cacheFile, merged with the others' in
+// MergedCalendar), and which of them are calls. The feed's text is read in ICalReader.swift, and
+// its recurring events are expanded in Recurrence.swift.
 
 import Foundation
 
@@ -91,9 +93,9 @@ public struct CalendarCache: Codable, Equatable, Sendable {
     public var failure: String? { error.map { Self.failurePrefix + $0 } }
     static let failurePrefix = "Couldn't update the calendar: "
 
-    public static func load(_ file: URL = Paths.calendar) -> CalendarCache { tryJSON(CalendarCache.self, file) ?? CalendarCache() }
+    public static func load(_ file: URL) -> CalendarCache { tryJSON(CalendarCache.self, file) ?? CalendarCache() }
 
-    public func save(to file: URL = Paths.calendar) throws {
+    public func save(to file: URL) throws {
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try writeAtomic(file, try encodeJSON(self), permissions: 0o600)
     }

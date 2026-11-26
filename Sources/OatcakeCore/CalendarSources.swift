@@ -16,6 +16,10 @@ public struct CalendarSource: Codable, Equatable, Identifiable, Sendable {
         case id, cacheID, name, colour, savedAddress = "address", usesShellAddress
     }
 
+    /// Where a calendar address can come from instead of Settings, for trying a build (docs/development.md).
+    /// Oatcake's helpers aren't given it (ShellEnvironment).
+    public static let environmentVariable = "OATCAKE_CALENDAR_URL"
+
     // The legacy cache keeps its filename, but its ID must never identify a saved meeting’s source.
     private static let legacyCacheID = UUID(uuidString: "A3528273-EE38-4738-8553-8967CBDB50B9")!
 
@@ -59,7 +63,7 @@ public struct CalendarSource: Codable, Equatable, Identifiable, Sendable {
         } catch CocoaError.fileReadNoSuchFile {
             stored = PrivateSettings()
         }
-        let inherited = (inheritedAddress ?? ProcessInfo.processInfo.environment["OATCAKE_CALENDAR_URL"] ?? "").trimmed
+        let inherited = (inheritedAddress ?? ProcessInfo.processInfo.environment[environmentVariable] ?? "").trimmed
         if var calendars = stored.calendars {
             // Early test builds saved the legacy cache ID as the calendar’s own ID.
             if let index = calendars.firstIndex(where: { $0.id == legacyCacheID }) {
