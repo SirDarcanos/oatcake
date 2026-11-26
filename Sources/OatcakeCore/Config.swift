@@ -268,7 +268,10 @@ public struct Config: Codable, Equatable, Sendable {
         sharingInstructions = (try? c.decodeIfPresent(String.self, forKey: .sharingInstructions)) ?? base.sharingInstructions
         ignoredEvents = (try? c.decodeIfPresent([String].self, forKey: .ignoredEvents)) ?? base.ignoredEvents
         ignoredCalendarEvents = (try? c.decodeIfPresent([IgnoredEvent].self, forKey: .ignoredCalendarEvents)) ?? base.ignoredCalendarEvents
-        reminderMinutes = (try? c.decodeIfPresent([Int].self, forKey: .reminderMinutes)) ?? base.reminderMinutes
+        // As Settings offers them: an hour before at most, a minute at least, each once, and one at least.
+        var seen = Set<Int>()
+        let minutes = ((try? c.decodeIfPresent([Int].self, forKey: .reminderMinutes)) ?? []).map { min(60, max(1, $0)) }.filter { seen.insert($0).inserted }
+        reminderMinutes = minutes.isEmpty ? base.reminderMinutes : minutes
         afterCall = (try? c.decodeIfPresent(AfterCall.self, forKey: .afterCall)) ?? base.afterCall
         todosEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .todosEnabled)) ?? base.todosEnabled
         mcpEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .mcpEnabled)) ?? false

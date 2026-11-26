@@ -164,6 +164,10 @@ import Testing
             #expect("\(setting.value)" != value, "\(setting.label ?? "A setting") isn't changed from its default here: add it to this test")
         }
         #expect(try JSONDecoder().decode(Config.self, from: Data(encodeJSON(changed).utf8)) == changed)
+        // Reminder times as Settings offers them: one at least, each from a minute to an hour before, each once.
+        let reminders = { (json: String) in try JSONDecoder().decode(Config.self, from: Data(json.utf8)).reminderMinutes }
+        #expect(try reminders(#"{"reminderMinutes":[]}"#) == [5] && reminders(#"{"reminderMinutes":"soon"}"#) == [5])
+        #expect(try reminders(#"{"reminderMinutes":[0,90,5,-3,5,60]}"#) == [1, 60, 5])
     }
 
     /// Settings that can't be read aren't quietly replaced by the first change made after them.
