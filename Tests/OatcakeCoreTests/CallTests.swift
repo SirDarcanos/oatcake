@@ -73,6 +73,51 @@ import Testing
         #expect(callPlaceholder(for: "a", lineAt: 12.4) == names[1])
     }
 
+    /// On a long call, each of your lines is held up only against the call lines around it: what's left
+    /// out is what holding it up against the whole call leaves out.
+    @Test func liveEchoesOnALongCall() {
+        var seed: UInt64 = 42
+        func random(_ n: Int) -> Int {
+            seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            return Int(seed >> 33) % n
+        }
+        let words = ["budget", "launch", "review", "design", "plan", "team", "sprint", "release", "client", "deck"]
+        func sentence() -> String { (0..<(4 + random(10))).map { _ in words[random(words.count)] }.joined(separator: " ") }
+        var lines: [LiveTranscriptLine] = []
+        for i in 0..<600 {
+            let start = Double(i) * 6 + Double(random(30)) / 10
+            lines.append(LiveTranscriptLine(track: .system, start: start, end: start + 0.5 + Double(random(250)) / 10, text: sentence()))
+        }
+        let call = lines
+        for i in 0..<400 {
+            // Some of yours repeat a call line, up to 9 s away from it; the rest are your own.
+            if i % 3 == 0 {
+                let said = call[random(call.count)]
+                let start = said.start + Double(random(180) - 90) / 10
+                lines.append(LiveTranscriptLine(track: .mic, start: start, end: start + said.end - said.start, text: said.text))
+            } else {
+                let start = Double(random(36_000)) / 10
+                lines.append(LiveTranscriptLine(track: .mic, start: start, end: start + 2, text: sentence()))
+            }
+        }
+        let whole = call.map { Line(speaker: "A", start: $0.start, end: $0.end, text: $0.text) }
+        let expected = lines.filter { $0.track == .system || !isEcho(Line(speaker: me, start: $0.start, end: $0.end, text: $0.text), whole) }
+        let shown = liveTranscript(lines)
+        #expect(shown.count < lines.count && shown.count > call.count)
+        #expect(Set(shown.map(\.id)) == Set(expected.map(\.id)))
+        #expect(zip(shown, shown.dropFirst()).allSatisfy { $0.start <= $1.start })
+    }
+
+    /// A line of the live transcript goes between the helper and the app without its id, which follows
+    /// from its track and start.
+    @Test func liveLineCoding() throws {
+        let line = LiveTranscriptLine(track: .system, start: 12.4, end: 15, text: "Morning.", speaker: "Jane Doe")
+        let json = try encodeJSON(LiveEvent(line: line))
+        #expect(!json.contains("\"id\""))
+        let back = try JSONDecoder().decode(LiveEvent.self, from: Data(json.utf8)).line
+        #expect(back == line && back?.id == "system 12.4")
+    }
+
     /// The live transcript shows speech once it's finished. A sentence still going at the end of the
     /// audio so far waits for the next look, except on the last one, when the recording is over.
     @Test func speechThatHasFinished() {

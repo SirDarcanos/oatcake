@@ -69,7 +69,7 @@ final class CalendarController {
         refresh()
         checkReminders()
         // Each minute, so a fetch that failed is tried again on time: refresh() fetches only what's stale.
-        timers.append(Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in Task { @MainActor in self.refresh() } })
+        timers.append(Timer.common(every: 60) { _ in Task { @MainActor in self.refresh() } })
     }
 
     func refresh(force: Bool = false) {

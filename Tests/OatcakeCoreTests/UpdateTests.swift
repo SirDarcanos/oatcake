@@ -61,4 +61,54 @@ import Testing
         #expect(throws: incomplete) { try Update.readManifest(envelope { $0.zip.sha256 = String(repeating: "AB", count: 32) }, keys: keys) }
         #expect(throws: incomplete) { try Update.readManifest(envelope { $0.zip.size = 0 }, keys: keys) }
     }
+
+    /// The release's zip is read as it arrives, in pieces, and kept only when it's the size and
+    /// checksum the release gave.
+    @Test func downloadsTheZip() async throws {
+        let zip = Data((0..<3_000_000).map { UInt8(truncatingIfNeeded: $0 &* 7 &+ $0 / 11) })
+        let server = try await StandIn { request in request.path == "/gone.zip" ? StandIn.Response(status: 404) : StandIn.Response(body: zip) }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-update-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        func manifest(name: String = "Oatcake-v0.5.0-arm64.zip", at address: String? = nil, size: Int = zip.count,
+                      sha256: String = SHA256.hash(data: zip).map { String(format: "%02x", $0) }.joined()) -> Update.Manifest {
+            Update.Manifest(bundleID: "local.oatcake", version: "0.5.0", minimumSystemVersion: "15.0", published: "2026-11-14T10:00:00Z", notes: "- A change",
+                            zip: .init(name: name, url: (address ?? server.address) + "/" + name, sha256: sha256, size: size))
+        }
+        let told = Locked([Double]())
+        let file = try await Update.downloadZip(manifest(), into: dir) { told.value.append($0) }
+        #expect(try Data(contentsOf: file) == zip)
+        #expect(told.value.count >= 2 && told.value.count <= 4 && told.value.last == 1)
+
+        await #expect(throws: OatcakeError("The download is bigger than the release said it would be.")) {
+            _ = try await Update.downloadZip(manifest(size: zip.count - 1), into: dir) { _ in }
+        }
+        await #expect(throws: OatcakeError("The download stopped early (\(zip.count) of \(zip.count + 1) bytes).")) {
+            _ = try await Update.downloadZip(manifest(size: zip.count + 1), into: dir) { _ in }
+        }
+        await #expect(throws: OatcakeError("The download doesn't match the release's checksum.")) {
+            _ = try await Update.downloadZip(manifest(sha256: String(repeating: "ab", count: 32)), into: dir) { _ in }
+        }
+        await #expect(throws: OatcakeError("The download failed (HTTP 404).")) {
+            _ = try await Update.downloadZip(manifest(name: "gone.zip"), into: dir) { _ in }
+        }
+        await #expect(throws: OatcakeError("Couldn't download the update. Check your connection and try again.")) {
+            _ = try await Update.downloadZip(manifest(at: "http://127.0.0.1:9"), into: dir) { _ in }
+        }
+    }
+
+    /// A swap that can't be started leaves no staged copy beside the app.
+    @Test func aSwapThatCantStartLeavesNothingBehind() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-swap-\(UUID().uuidString)")
+        let staged = dir.appendingPathComponent(".Oatcake-update.app")
+        try FileManager.default.createDirectory(at: staged, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        // A file stands where the log's folder would be, so the swap fails before anything is started.
+        let blocker = dir.appendingPathComponent("not-a-folder")
+        try Data().write(to: blocker)
+        #expect(throws: (any Error).self) {
+            try Update.swapAfterExit(installed: dir.appendingPathComponent("Oatcake.app"), staged: staged, log: blocker.appendingPathComponent("update.log"))
+        }
+        #expect(!FileManager.default.fileExists(atPath: staged.path))
+    }
 }

@@ -39,7 +39,8 @@ public enum MenuBarLink {
     }
 }
 
-/// Lines out of the bytes a pipe delivers, which arrive in pieces of any size.
+/// Lines out of the bytes a pipe delivers, which arrive in pieces of any size. The menu bar's link
+/// and ChildProcess both read their helpers' output with it.
 public struct LineBuffer: Sendable {
     private var pending = Data()
     public init() {}
@@ -53,5 +54,11 @@ public struct LineBuffer: Sendable {
             pending.removeSubrange(pending.startIndex...newline)
         }
         return lines
+    }
+
+    /// The pipe has closed: a last line without its newline, if there is one.
+    public mutating func finish() -> String? {
+        defer { pending = Data() }
+        return pending.isEmpty ? nil : String(decoding: pending, as: UTF8.self)
     }
 }

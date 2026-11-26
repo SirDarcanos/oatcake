@@ -32,6 +32,18 @@ public func isLocalEndpoint(_ address: String) -> Bool {
     return host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local") || !host.contains(".")
 }
 
+/// Requests to a model's server don't follow redirects: one would send the transcript (and the key
+/// to Oatcake's own server) to wherever it named, an address that was never checked to be local. A
+/// redirect comes back as the server's answer, and so as an error.
+let modelSession = URLSession(configuration: .ephemeral, delegate: NoRedirects(), delegateQueue: nil)
+
+final class NoRedirects: NSObject, URLSessionTaskDelegate, Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
+}
+
 /// One turn of a conversation with the model.
 public struct ChatMessage: Sendable, Equatable {
     public var role: String
@@ -94,7 +106,7 @@ public struct LocalChat: Sendable {
         guard let url = URL(string: root + "/health") else { return false }
         var request = URLRequest(url: url, timeoutInterval: 2)
         request.httpMethod = "GET"
-        guard let (_, response) = try? await URLSession.shared.data(for: request) else { return false }
+        guard let (_, response) = try? await modelSession.data(for: request) else { return false }
         return (response as? HTTPURLResponse)?.statusCode == 200
     }
 
@@ -145,7 +157,12 @@ public struct LocalChat: Sendable {
             sent = Data(String(decoding: sent, as: UTF8.self).replacingOccurrences(of: "\"\(placeholder)\"", with: schemaAsWritten).utf8)
         }
         request.httpBody = sent
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let data: Data, response: URLResponse
+        do {
+            (data, response) = try await modelSession.data(for: request)
+        } catch let error as URLError where unreachableCodes.contains(error.code) {
+            throw OatcakeError("The model at \(baseUrl) couldn’t be reached: \(error.localizedDescription)")
+        }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             let said = String(decoding: data, as: UTF8.self)
@@ -160,12 +177,11 @@ public struct LocalChat: Sendable {
         }
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let choice = (json?["choices"] as? [[String: Any]])?.first
+        // Out of room, whatever it had written by then: its reasoning used it all, or the reply was cut
+        // off part way (a summary that stops mid-sentence, to-dos with half their JSON).
         let reply = withoutReasoning(((choice?["message"] as? [String: Any])?["content"] as? String) ?? "")
-        guard !reply.isEmpty else {
-            // Its reasoning used up the room before it got to the reply.
-            if choice?["finish_reason"] as? String == "length" { throw ModelOutOfRoom() }
-            throw OatcakeError("The model gave an empty reply.")
-        }
+        if choice?["finish_reason"] as? String == "length" { throw ModelOutOfRoom(reply: reply) }
+        guard !reply.isEmpty else { throw OatcakeError("The model gave an empty reply.") }
         return reply
     }
 }
@@ -175,14 +191,18 @@ let wordsForNothing: Set<String> = ["null", "none", "n/a", "unknown", "not state
 
 let outOfRoomMessage = "The model ran out of room before it finished its reply. Trying again usually works."
 
-/// A reply that was all reasoning, cut off before the answer: the room it was given ran out.
+/// A reply cut off before it was finished, or before it began after the model's reasoning: the room it
+/// was given ran out.
 public struct ModelOutOfRoom: LocalizedError, Equatable {
+    /// What it had written of its reply by then, without its reasoning.
+    public var reply = ""
     public var errorDescription: String? { outOfRoomMessage }
 }
 
 /// A reply without the model's reasoning, for servers that leave it in the text between <think> tags.
+/// Reasoning that's never closed is all there is: there's no reply after it.
 func withoutReasoning(_ reply: String) -> String {
-    reply.replacingOccurrences(of: #"(?s)^\s*<think>.*?</think>"#, with: "", options: .regularExpression).trimmed
+    reply.replacingOccurrences(of: #"(?s)^\s*<think>(.*?</think>|.*$)"#, with: "", options: .regularExpression).trimmed
 }
 
 /// What Check it works in Settings › Models found.
@@ -205,8 +225,9 @@ public func checkModel(_ llm: LlmConfig, server: ModelServer = .shared) async th
             try await chat.complete([ChatMessage("system", "Reply with the single word OK and nothing else."), ChatMessage("user", "Say OK.")],
                                     think: false, maxTokens: 20)
         })
-    } catch is ModelOutOfRoom {
-        return .stillReasoning
+    } catch let cut as ModelOutOfRoom {
+        // A reply that ran past the check's few tokens is a reply all the same.
+        return cut.reply.isEmpty ? .stillReasoning : .replied(cut.reply)
     }
 }
 
@@ -240,22 +261,33 @@ public func largestContext(_ config: LlmConfig) -> Int {
     LocalModels.find(config.model).map { LocalModels.maxContext($0) } ?? config.own.contextBudget
 }
 
+/// The system's errors for a server that didn't answer at all. Told apart by these codes where the
+/// request fails, not by the system's words, which are in the Mac's own language.
+let unreachableCodes: Set<URLError.Code> = [.cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .notConnectedToInternet, .networkConnectionLost, .timedOut]
+
 /**
  * A model failure in plain words, with what to do about it. The raw message is shown behind
- * "Details" by the windows; an error that's already plain comes back unchanged.
+ * "Details" by the windows; an error that's already plain comes back unchanged. A request to the
+ * model that failed is said in Oatcake's own words with the server's HTTP status (`complete`), and
+ * is sorted by that status and the error code in the server's reply. Only a server that gives no
+ * code for a call that's too long is read for its words.
  */
 public func explainModelError(_ raw: String) -> String {
     if raw == notLocalMessage || raw == modelNotDownloadedMessage || raw == outOfRoomMessage { return raw }
-    let e = raw.lowercased()
-    if e.contains("context") && (e.contains("exceed") || e.contains("too long") || e.contains("too large")) {
-        return "This call is too long for the model to take in at once on this Mac."
-    }
-    if e.contains("model") && (e.contains("not found") || e.contains("does not exist") || e.contains("not exist")) {
-        let model = firstMatch(try! NSRegularExpression(pattern: #""model"\s*:\s*"([^"]+)""#), raw)?[1]
-        return "The model\(model.map { " “\($0)”" } ?? "") isn’t on that server. Check its name in Settings › Models."
-    }
-    if e.contains("could not connect") || e.contains("couldn’t connect") || e.contains("offline") || e.contains("timed out") || e.contains("hostname") || e.contains("connection") {
+    if raw.range(of: #"^The model at .+? couldn’t be reached: "#, options: .regularExpression) != nil {
         return "The model couldn’t be reached. If it’s a server of your own, check that it’s running."
+    }
+    guard let found = firstMatch(try! NSRegularExpression(pattern: #"^The model at .+? returned (\d{3}): (.*)"#, options: .dotMatchesLineSeparators), raw),
+          let status = found[1].flatMap({ Int($0) }) else { return raw }
+    let said = found[2] ?? "", words = said.lowercased()
+    // llama.cpp's error type, or the code OpenAI's API (and the servers that copy it) gives; failing
+    // those, the server's words.
+    let tooLong = status == 413 || said.contains("exceed_context_size_error") || said.contains("context_length_exceeded")
+        || words.contains("context") && ["exceed", "too long", "too large"].contains(where: words.contains)
+    if tooLong { return "This call is too long for the model to take in at once on this Mac." }
+    if status == 404 {
+        let model = firstMatch(try! NSRegularExpression(pattern: #""model"\s*:\s*"([^"]+)""#), said)?[1]
+        return "The model\(model.map { " “\($0)”" } ?? "") isn’t on that server. Check its name in Settings › Models."
     }
     return raw
 }

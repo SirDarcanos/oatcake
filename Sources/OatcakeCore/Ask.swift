@@ -51,12 +51,13 @@ private let otherMeetingsCount = 5
 
 /**
  * Answers from the open meeting and, when needed, other meetings. Without an open meeting, searches
- * the library. `history` is what has been asked and answered so far. The Markdown answer links to
- * the meetings it cites (see citationLinks).
+ * the library. `history` is what has been asked and answered so far. `meetings` is the app's own,
+ * so what it keeps for search is there for each question. The Markdown answer links to the meetings
+ * it cites (see citationLinks).
  */
-public func ask(_ config: Config, meeting rel: String?, question: String, history: [AskExchange] = [],
+public func ask(_ config: Config, meeting rel: String?, question: String, history: [AskExchange] = [], meetings: Meetings? = nil,
                 onStep: @escaping @Sendable (String) -> Void = { _ in }) async throws -> String {
-    let meetings = Meetings(root: config.meetingsRoot)
+    let meetings = meetings ?? Meetings(root: config.meetingsRoot)
     let files = try rel.map { try meetings.read($0) }
     let others = meetings.tree().allMeetings.filter { $0.path != rel }
     if rel == nil, others.isEmpty { return "There are no saved meetings to search yet." }
@@ -86,8 +87,9 @@ public func ask(_ config: Config, meeting rel: String?, question: String, histor
                     found = otherMeetings(meetings, others: others, besides: rel, phrases: route.search, tokens: extra, todos: config.todosEnabled)
                 }
             } catch {
-                // With no open meeting there's nothing to fall back on if the search request fails.
-                if rel == nil || isCancellation(error) { throw error }
+                // With no open meeting there's nothing to fall back on if the search request fails. A
+                // reply cut off for room is like one that can't be read: the question's own words are searched.
+                if (rel == nil && !(error is ModelOutOfRoom)) || isCancellation(error) { throw error }
             }
             if rel == nil, found.isEmpty {
                 found = otherMeetings(meetings, others: others, besides: nil, phrases: questionWords(question), tokens: extra, todos: config.todosEnabled)

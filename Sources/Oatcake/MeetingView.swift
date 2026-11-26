@@ -26,7 +26,7 @@ private enum SaveStatus {
     }
 }
 
-private enum FileKey: Hashable {
+private enum FileKey: Hashable, CaseIterable {
     case summary, transcript, notes, todos, draft
     var file: MeetingFile {
         switch self {
@@ -65,8 +65,13 @@ struct MeetingView: View {
     @ViewState private var transcriptEdited = false
     @ViewState private var flash = -1
     @ViewState private var newTodo = ""
-    @ViewState private var pending: [FileKey: String] = [:]
     @ViewState private var saveTask: Task<Void, Never>?
+    /// Counts reads of the files, and writes to them from here: a read that lands after a later one,
+    /// or after a write, is older than what's shown, and is dropped.
+    @ViewState private var loads = 0
+    /// The summary has just been written and is being read here: its editors stay closed till it is,
+    /// so nothing is typed over the text from before.
+    @ViewState private var readingSummary = false
     @ViewState private var arrived = false
     /// Whether the tab has been checked against this meeting yet (the view is made afresh for each meeting).
     @ViewState private var tabChecked = false
@@ -118,6 +123,11 @@ struct MeetingView: View {
             load()
         }
         .onChange(of: model.library.diskVersion) { load() }
+        .onChange(of: model.jobs.summarising.contains(path)) { was, now in
+            guard was, !now else { return }
+            readingSummary = true
+            load()
+        }
         // ⌘F: Find, on the transcript.
         .onChange(of: model.findRequest) {
             flush()
@@ -142,42 +152,68 @@ struct MeetingView: View {
 
     // MARK: Loading and saving
 
-    /// A change on disk (Finder, another editor, our own save) only replaces the text when nothing
-    /// typed here is still waiting to be saved.
+    /// Reads the meeting's files and parses its transcript, off the main actor. A change on disk
+    /// (Finder, another editor, our own save) replaces what's shown, except what's typed here and still
+    /// waiting to be saved: that stays as it's typed.
     private func load() {
-        recordingAudio = model.library.meetings.recordingAudio(path)
-        guard pending.isEmpty else { return }
-        do {
-            let m = try model.library.readMeeting(path)
-            files = [.summary: m.summary, .transcript: m.transcript, .notes: m.notes, .todos: m.todo, .draft: m.draft]
-            // Arriving on Draft for Sharing from a meeting that had one, at one that doesn't. Only on
-            // arrival: a draft emptied here, to be written again by hand, keeps its tab meanwhile.
-            if !tabChecked {
-                tabChecked = true
-                if tab == .draft && !hasDraft { tab = .summary }
+        loads += 1
+        let asked = loads
+        let meetings = model.library.meetings, path = path, myName = model.config.myName
+        Task {
+            let read = await Task.detached { () -> Result<(MeetingFiles, URL?, ParsedTranscript), Error> in
+                Result {
+                    let m = try meetings.read(path)
+                    return (m, meetings.recordingAudio(path), Self.parsed(m.transcript, myName: myName))
+                }
+            }.value
+            guard asked == loads else { return }
+            // The newest read: if the summary has just been written, it began after that.
+            readingSummary = false
+            switch read {
+            case .success(let (m, audio, transcript)):
+                recordingAudio = audio
+                let typed = model.edits.texts(in: path)
+                let onDisk: [FileKey: String] = [.summary: m.summary, .transcript: m.transcript, .notes: m.notes, .todos: m.todo, .draft: m.draft]
+                files = Dictionary(uniqueKeysWithValues: FileKey.allCases.map { ($0, typed[$0.file] ?? onDisk[$0] ?? "") })
+                // Arriving on Draft for Sharing from a meeting that had one, at one that doesn't. Only on
+                // arrival: a draft emptied here, to be written again by hand, keeps its tab meanwhile.
+                if !tabChecked {
+                    tabChecked = true
+                    if tab == .draft && !hasDraft { tab = .summary }
+                }
+                if let edited = typed[.transcript] {
+                    readTranscript(edited)
+                } else {
+                    (transcriptLines, speakers, rows) = transcript
+                }
+                meta = m.meta
+                loadError = ""
+                if let stamp = jump?.stamp, !arrived {
+                    arrived = true
+                    // Arriving from the To-dos page with a time: jump there once the transcript has loaded.
+                    DispatchQueue.main.async { self.jumpTo(stamp) }
+                }
+                // Typed here earlier and not written yet (its save failed, say): it's tried again.
+                if !typed.isEmpty, status == .quiet { saveSoon() }
+            case .failure(let error):
+                loadError = error.localizedDescription
             }
-            readTranscript(m.transcript)
-            meta = m.meta
-            loadError = ""
-            if let stamp = jump?.stamp, !arrived {
-                arrived = true
-                // Arriving from the To-dos page with a time: jump there once the transcript has loaded.
-                DispatchQueue.main.async { self.jumpTo(stamp) }
-            }
-        } catch {
-            loadError = error.localizedDescription
         }
     }
 
     /// Edits save 600 ms after the last keystroke, and straight away when leaving the meeting.
-    private func write(_ key: FileKey, _ content: String, now: Bool = false) {
+    private func write(_ key: FileKey, _ content: String) {
+        model.edits.typed(content, in: path, key.file, before: files?[key] ?? "")
         files?[key] = content
-        pending[key] = content
         if key == .transcript { transcriptEdited = true }
-        status = now ? .todo : .saving
+        saveSoon()
+    }
+
+    private func saveSoon() {
+        status = .saving
         saveTask?.cancel()
         saveTask = Task {
-            if !now { try? await Task.sleep(for: .milliseconds(600)) }
+            try? await Task.sleep(for: .milliseconds(600))
             if !Task.isCancelled { flush() }
         }
     }
@@ -189,22 +225,23 @@ struct MeetingView: View {
             transcriptEdited = false
             readTranscript(files?[.transcript] ?? "")
         }
-        for (key, content) in pending {
-            do {
-                try model.library.writeMeetingFile(path, key.file, content)
-                // Typing that arrived during the save stays waiting.
-                if pending[key] == content { pending.removeValue(forKey: key) }
-            } catch {
-                status = .failed
-                return
-            }
+        let waiting = model.edits.texts(in: path).count
+        let outcomes = model.saveEdits(in: path)
+        // Written (here or beside): a read still on its way has the files as they were before.
+        if model.edits.texts(in: path).count < waiting {
+            loads += 1
+            // The read the summary's editors wait for is one of those dropped: another takes its place.
+            if readingSummary { load() }
         }
-        if pending.isEmpty && status != .todo && status != .quiet { status = .saved }
-        if status == .todo {
-            Task {
-                try? await Task.sleep(for: .seconds(2))
-                if status == .todo { status = .quiet }
-            }
+        if model.edits.isWaiting(in: path) {
+            status = .failed
+        } else if !outcomes.isEmpty {
+            // A file had changed meanwhile, so what was typed went beside it (saveEdits says so): the
+            // file as it is now is shown.
+            status = .quiet
+            load()
+        } else if status != .todo && status != .quiet {
+            status = .saved
         }
     }
 
@@ -237,6 +274,8 @@ struct MeetingView: View {
     }
 
     private func todosSaved() {
+        // A read still on its way has the to-dos as they were before.
+        loads += 1
         status = .todo
         Task {
             try? await Task.sleep(for: .seconds(2))
@@ -321,7 +360,7 @@ struct MeetingView: View {
             Button {
                 // Edits to the summary, to-dos or draft are saved first: the draft is written from them.
                 flush()
-                guard pending.isEmpty else { return }
+                guard !model.edits.isWaiting(in: path) else { return }
                 askingForDraft = true
             } label: { Label("Draft for Sharing…", systemImage: "square.and.pencil") }
                 .disabled(model.jobs.summarising.contains(path) || model.jobs.drafting.contains(path))
@@ -357,7 +396,7 @@ struct MeetingView: View {
             Button {
                 // A failed save keeps its text pending; renaming then would have it written back over the new names.
                 flush()
-                guard pending.isEmpty else { return }
+                guard !model.edits.isWaiting(in: path) else { return }
                 renamingSpeakers = true
             } label: { Label("Rename Speakers…", systemImage: "person.2") }
                 .disabled(model.jobs.summarising.contains(path))
@@ -449,19 +488,24 @@ struct MeetingView: View {
 
     private var granola: Bool { meta.source == "granola" || node.granola }
 
+    private func readTranscript(_ text: String) {
+        (transcriptLines, speakers, rows) = Self.parsed(text, myName: model.config.myName)
+    }
+
+    private typealias ParsedTranscript = (lines: [TranscriptLine], speakers: [MeetingSpeaker], rows: [Row])
+
     /// Parses the transcript for showing. Granola labels your track "Microphone"; the call side carries
     /// Granola's own guesses at names. Its CSV export has transcripts without times or names: those
     /// are plain paragraphs, with no speaker.
-    private func readTranscript(_ text: String) {
+    nonisolated private static func parsed(_ text: String, myName: String) -> ParsedTranscript {
         let lines = parseTranscript(text).map { l in
             var l = l
-            if l.speaker == "Microphone" { l.speaker = model.config.myName } else if l.speaker == "System audio" { l.speaker = "Call audio" }
+            if l.speaker == "Microphone" { l.speaker = myName } else if l.speaker == "System audio" { l.speaker = "Call audio" }
             return l
         }
-        transcriptLines = lines
-        speakers = meetingSpeakers(text)
-        rows = lines.isEmpty ? text.components(separatedBy: "\n").map(\.trimmed).filter { !$0.isEmpty }.map { Row(text: $0) }
+        let rows = lines.isEmpty ? text.components(separatedBy: "\n").map(\.trimmed).filter { !$0.isEmpty }.map { Row(text: $0) }
             : lines.map { Row(speaker: $0.speaker, stamp: $0.stamp, at: $0.at, text: $0.text) }
+        return (lines, meetingSpeakers(text), rows)
     }
 
     private func content(_ files: [FileKey: String]) -> some View {
@@ -617,7 +661,7 @@ struct MeetingView: View {
                             .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
                             .padding(8)
                             .background(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.line))
-                    } else if model.jobs.summarising.contains(path), key == .summary || key == .todos {
+                    } else if model.jobs.summarising.contains(path) || readingSummary, key == .summary || key == .todos {
                         Text("The summary is being written. This can be edited once it’s here.")
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, minHeight: key == .todos ? 70 : 120, alignment: .topLeading)
@@ -669,7 +713,7 @@ struct MeetingView: View {
                 HStack(spacing: 10) {
                     Button("Try again") {
                         flush()
-                        guard pending.isEmpty else { return }
+                        guard !model.edits.isWaiting(in: path) else { return }
                         model.jobs.draftForSharing(path, request: model.jobs.draftRequests[path] ?? "")
                     }
                     .disabled((files?[.summary] ?? "").trimmed.isEmpty || model.jobs.summarising.contains(path))
@@ -761,7 +805,7 @@ struct MeetingView: View {
     private func regenerate(_ part: SummaryPart, template: SummaryTemplateChoice = .meetings) {
         // Save edits before asking for a replacement; a failed save must not discard pending text.
         flush()
-        guard pending.isEmpty else { return }
+        guard !model.edits.isWaiting(in: path) else { return }
         model.jobs.regenerate(part, path, template: template)
     }
 

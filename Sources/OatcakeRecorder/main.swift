@@ -11,8 +11,8 @@
 // It records only for Oatcake: before anything is captured it asks, on the socket it
 // was given, whether Oatcake wants this recording, having checked by code signature
 // that it is Oatcake at the other end (RecorderGate). It stops by itself when its
-// folder is deleted, when the disk can't take any more, and when Oatcake has been
-// gone for ten minutes.
+// folder is deleted, when the disk is almost full or can't take any more, and when
+// Oatcake has been gone for ten minutes (RecorderWatch decides).
 //
 // The system-audio tap is adapted from OpenWhispr's macos-audio-tap.swift
 // (MIT, Copyright (c) 2024 OpenWhispr Team). See THIRD_PARTY_NOTICES.md.
@@ -27,24 +27,27 @@ let sampleRate = Double(recorderSampleRate)
 let targetFormat = AVAudioFormat(
     commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: true)!
 
-/// Converts incoming buffers to 16 kHz mono PCM16 and appends them to a file.
-final class Track {
-    let name: String
+/// A track's file.
+final class TrackFile: TrackOutput {
     private let handle: FileHandle
-    private var converter: AVAudioConverter?
-    private let lock = NSLock()
-    private var samplesWritten = 0
-    private var _firstBufferAt: Date?
-    private var _lastBufferAt: Date?
-    private var gapPending = false
-    private var peak: Float = 0
-    private var closed = false
-    private var _failure: String?
 
-    init(name: String, path: String) throws {
-        self.name = name
+    init(path: String) throws {
         FileManager.default.createFile(atPath: path, contents: nil)
         handle = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+    }
+
+    func write(_ data: Data) throws { try handle.write(contentsOf: data) }
+    func close() { try? handle.close() }
+}
+
+/// Converts incoming buffers to 16 kHz mono PCM16 for its writer, which keeps the track lined up
+/// (RecorderContract's TrackWriter).
+final class Track {
+    let writer: TrackWriter
+    private var converter: AVAudioConverter?
+
+    init(path: String) throws {
+        writer = TrackWriter(output: try TrackFile(path: path))
     }
 
     func append(_ source: AVAudioPCMBuffer) {
@@ -71,101 +74,47 @@ final class Track {
         }
         guard error == nil, status == .haveData || status == .inputRanDry,
               let samples = output.int16ChannelData?[0] else { return }
-
-        let count = Int(output.frameLength)
-        var bufferPeak: Int16 = 0
-        for i in 0..<count {
-            let v = samples[i] == Int16.min ? Int16.max : abs(samples[i])
-            if v > bufferPeak { bufferPeak = v }
-        }
-
-        lock.lock()
-        defer { lock.unlock() }
-        // A buffer that was already on its way when the recording finished, or after the disk filled.
-        guard !closed, _failure == nil else { return }
-        let now = Date()
-        do {
-            if let first = _firstBufferAt {
-                // After the source changed, fill the time it took with silence so this track
-                // stays lined up with the other one.
-                let expected = Int(now.timeIntervalSince(first) * sampleRate) - count
-                if gapPending, expected > samplesWritten {
-                    try handle.write(contentsOf: Data(count: (expected - samplesWritten) * 2))
-                    samplesWritten = expected
-                }
-            } else {
-                _firstBufferAt = now
-            }
-            gapPending = false
-            _lastBufferAt = now
-            try handle.write(contentsOf: Data(bytes: samples, count: count * 2))
-            samplesWritten += count
-            peak = max(peak, Float(bufferPeak) / Float(Int16.max))
-        } catch {
-            // Most likely a full disk. The main loop sees this and finishes the recording with what's there.
-            _failure = error.localizedDescription
-        }
-    }
-
-    /// Why this track could no longer be written, once it couldn't.
-    var failure: String? {
-        lock.lock()
-        defer { lock.unlock() }
-        return _failure
-    }
-
-    var firstBufferAt: Date? {
-        lock.lock()
-        defer { lock.unlock() }
-        return _firstBufferAt
-    }
-
-    var lastBufferAt: Date? {
-        lock.lock()
-        defer { lock.unlock() }
-        return _lastBufferAt
-    }
-
-    /// Seconds of audio written so far.
-    var elapsed: Double {
-        lock.lock()
-        defer { lock.unlock() }
-        return Double(samplesWritten) / sampleRate
-    }
-
-    /// The source is changing: pad with silence before the next buffer.
-    func markGap() {
-        lock.lock()
-        gapPending = true
-        lock.unlock()
-    }
-
-    /// Peak level (0–1) since the last call.
-    func takePeak() -> Float {
-        lock.lock()
-        defer { lock.unlock() }
-        let value = peak
-        peak = 0
-        return value
-    }
-
-    func close() {
-        lock.lock()
-        closed = true
-        try? handle.close()
-        lock.unlock()
+        writer.append(UnsafeBufferPointer(start: samples, count: Int(output.frameLength)))
     }
 }
 
 /// Everything the Mac plays, via a global process tap on an aggregate device.
+/// Checked once a second, as the microphone is: it's started again when its audio stops arriving
+/// (the Mac slept with its lid closed, say) or its format changes (headphones connected), with the
+/// time that took filled with silence, so the call stays lined up with your track.
 final class SystemAudioCapture {
     private let track: Track
     private var tapID = AudioObjectID(0)
     private var deviceID = AudioObjectID(0)
     private var procID: AudioDeviceIOProcID?
+    private var format: AVAudioFormat?
+    private var startedAt = Date.distantPast
     private let queue = DispatchQueue(label: "oatcake-recorder.system")
 
     init(track: Track) { self.track = track }
+
+    func check() {
+        let changed = procID != nil && tapFormat() != format
+        guard CaptureCheck.needsRestart(running: procID != nil, changed: changed, startedAt: startedAt,
+                                        lastBuffer: track.writer.lastBufferAt, now: Date()) else { return }
+        stop()
+        track.writer.markGap()
+        do {
+            try start()
+        } catch {
+            stop()  // the next check tries again
+        }
+    }
+
+    /// The format the tap delivers in now; nil if it can't be read.
+    private func tapFormat() -> AVAudioFormat? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioTapPropertyFormat, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var asbd = AudioStreamBasicDescription()
+        var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        guard tapID != 0, AudioObjectGetPropertyData(tapID, &address, 0, nil, &size, &asbd) == noErr else { return nil }
+        return AVAudioFormat(streamDescription: &asbd)
+    }
 
     func start() throws {
         let description = CATapDescription()
@@ -178,14 +127,14 @@ final class SystemAudioCapture {
         description.isPrivate = true
         description.muteBehavior = .unmuted
 
-        try check(AudioHardwareCreateProcessTap(description, &tapID), "create process tap")
+        try OatcakeRecorder.check(AudioHardwareCreateProcessTap(description, &tapID), "create process tap")
 
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioTapPropertyUID, mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain)
         var uid: Unmanaged<CFString>?
         var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
-        try check(withUnsafeMutablePointer(to: &uid) {
+        try OatcakeRecorder.check(withUnsafeMutablePointer(to: &uid) {
             AudioObjectGetPropertyData(tapID, &address, 0, nil, &size, $0)
         }, "read tap UID")
         guard let tapUID = uid?.takeRetainedValue() as String? else { throw RecorderError("tap has no UID") }
@@ -199,23 +148,21 @@ final class SystemAudioCapture {
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceIsStackedKey: false,
         ]
-        try check(AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &deviceID), "create aggregate device")
+        try OatcakeRecorder.check(AudioHardwareCreateAggregateDevice(aggregate as CFDictionary, &deviceID), "create aggregate device")
 
-        var asbd = AudioStreamBasicDescription()
-        size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
-        address.mSelector = kAudioTapPropertyFormat
-        try check(AudioObjectGetPropertyData(tapID, &address, 0, nil, &size, &asbd), "read tap format")
-        guard let format = AVAudioFormat(streamDescription: &asbd) else { throw RecorderError("unusable tap format") }
+        guard let format = tapFormat() else { throw RecorderError("couldn’t read the tap’s format") }
 
         let track = self.track
-        try check(AudioDeviceCreateIOProcIDWithBlock(&procID, deviceID, queue) { _, input, _, _, _ in
+        try OatcakeRecorder.check(AudioDeviceCreateIOProcIDWithBlock(&procID, deviceID, queue) { _, input, _, _, _ in
             guard let buffer = AVAudioPCMBuffer(
                 pcmFormat: format, bufferListNoCopy: UnsafeMutablePointer(mutating: input), deallocator: nil)
             else { return }
             track.append(buffer)
         }, "create IO proc")
 
-        try check(AudioDeviceStart(deviceID, procID), "start aggregate device")
+        try OatcakeRecorder.check(AudioDeviceStart(deviceID, procID), "start aggregate device")
+        self.format = format
+        startedAt = Date()
     }
 
     func stop() {
@@ -226,6 +173,7 @@ final class SystemAudioCapture {
         procID = nil
         deviceID = 0
         tapID = 0
+        format = nil
     }
 }
 
@@ -322,11 +270,11 @@ final class MicCapture {
         let devices = inputDevices()
         let fallback = defaultInputDevice()
         let target = devices.first { $0.uid == wanted } ?? devices.first { $0.id == fallback }
-        // Some devices (Bluetooth especially) take a moment to deliver their first audio.
-        let lastSign = max(startedAt.addingTimeInterval(3), track.lastBufferAt ?? .distantPast)
-        let stalled = procID != nil && Date().timeIntervalSince(lastSign) > 2
-        let reformatted = procID != nil && inputFormat(deviceID) != format
-        if procID == nil || stalled || reformatted || target?.uid != device?.uid { restart(on: target) }
+        let changed = procID != nil && (inputFormat(deviceID) != format || target?.uid != device?.uid)
+        if CaptureCheck.needsRestart(running: procID != nil, changed: changed, startedAt: startedAt,
+                                     lastBuffer: track.writer.lastBufferAt, now: Date()) {
+            restart(on: target)
+        }
     }
 
     private func restart(on target: InputDevice?) {
@@ -343,7 +291,7 @@ final class MicCapture {
             track.append(buffer)
         }
         guard created == noErr, let proc else { return }
-        track.markGap()
+        track.writer.markGap()
         guard AudioDeviceStart(target.id, proc) == noErr else {
             AudioDeviceDestroyIOProcID(target.id, proc)
             return
@@ -497,7 +445,8 @@ guard folderExists() else { exit(2) }
 func anotherRecorderIsHere() -> Bool {
     guard let text = try? String(contentsOfFile: "\(outDir)/\(RecorderFile.pid)", encoding: .utf8),
           let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)), pid > 1, pid != getpid() else { return false }
-    return kill(pid, 0) == 0 || errno == EPERM
+    // By its program, as Oatcake checks: a process ID left in the file can belong to something else by now.
+    return isRunning(pid, program: ProgramName.recorder)
 }
 guard !anotherRecorderIsHere() else { exit(1) }
 // A recording that's already over (stopped before this recorder got going) isn't started again.
@@ -527,8 +476,8 @@ let startedAt = Date()
 let micTrack: Track
 let systemTrack: Track
 do {
-    micTrack = try Track(name: "mic", path: "\(outDir)/\(RecorderFile.micTrack)")
-    systemTrack = try Track(name: "system", path: "\(outDir)/\(RecorderFile.systemTrack)")
+    micTrack = try Track(path: "\(outDir)/\(RecorderFile.micTrack)")
+    systemTrack = try Track(path: "\(outDir)/\(RecorderFile.systemTrack)")
 } catch {
     fail("cannot create audio files in \(outDir): \(error)")
 }
@@ -547,7 +496,15 @@ func wantedMic() -> String? {
 func ownerIsRunning() -> Bool {
     guard let text = try? String(contentsOfFile: "\(outDir)/\(RecorderFile.owner)", encoding: .utf8),
           let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)), pid > 1 else { return true }
-    return kill(pid, 0) == 0 || errno == EPERM
+    // A process ID given out again to another program isn't Oatcake still running.
+    return isRunning(pid, program: ProgramName.app)
+}
+
+/// Bytes free on the recording's disk.
+/// Counts the purgeable space (snapshots, caches, iCloud files kept online) that macOS frees for a
+/// write you asked for, so a disk that only looks full doesn't stop the call.
+func freeSpace() -> Int64? {
+    (try? URL(fileURLWithPath: outDir).resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?.volumeAvailableCapacityForImportantUsage
 }
 
 let system = SystemAudioCapture(track: systemTrack)
@@ -560,54 +517,59 @@ do {
 mic.wanted = wantedMic()
 mic.check()
 
-@MainActor func offset(_ track: Track) -> Double {
-    track.firstBufferAt.map { $0.timeIntervalSince(startedAt) } ?? 0
+/// Seconds from the start to a track's first sample, once it has one.
+@MainActor func offset(_ track: Track) -> Double? {
+    track.writer.firstBufferAt.map { $0.timeIntervalSince(startedAt) }
 }
 
 let iso = ISO8601DateFormatter()
-var ownerGoneSince: Date?
+var watch = RecorderWatch()
 let statusTimer = DispatchSource.makeTimerSource(queue: .main)
 statusTimer.schedule(deadline: .now() + 1, repeating: 1)
 // The timer and the signals below are all handled on the main queue, which is where this program's state lives.
 statusTimer.setEventHandler { MainActor.assumeIsolated {
-    // The recording was cancelled or discarded: there's nothing left to record into.
-    guard folderExists() else {
+    // Oatcake quitting stops the recorder itself; the ten minutes are for an Oatcake that crashed and wasn't opened again.
+    let seen = RecorderSurroundings(folderExists: folderExists(), writeFailure: micTrack.writer.failure ?? systemTrack.writer.failure,
+                                    ownerIsRunning: ownerIsRunning(), freeSpace: freeSpace())
+    switch watch.look(at: seen) {
+    case .carryOn:
+        break
+    case .abandon:
+        // The recording was cancelled or discarded: there's nothing left to record into.
         mic.stop()
         system.stop()
         exit(0)
-    }
-    if let failure = micTrack.failure ?? systemTrack.failure {
+    case .finish(.cantWrite(let failure)):
         finish(because: "The recording stopped because it couldn’t be written to disk any more (\(failure)). What was recorded up to then is kept.")
-    }
-    // Oatcake quitting stops the recorder itself; this is for an Oatcake that crashed and wasn't opened again.
-    if ownerIsRunning() {
-        ownerGoneSince = nil
-    } else if let since = ownerGoneSince {
-        if Date().timeIntervalSince(since) >= recorderOwnerGrace {
-            finish(because: "Oatcake wasn’t running, so the recording stopped by itself after ten minutes.")
-        }
-    } else {
-        ownerGoneSince = Date()
+    case .finish(.diskAlmostFull):
+        finish(because: "The recording stopped because the disk is almost full. What was recorded up to then is kept.")
+    case .finish(.oatcakeGone):
+        finish(because: "Oatcake wasn’t running, so the recording stopped by itself after ten minutes.")
     }
     mic.wanted = wantedMic()
     mic.check()
+    system.check()
+    // The offsets go in every status too, so a recorder that's killed or crashes still leaves them.
     writeJSON(RecorderStatus(state: .recording, elapsed: Date().timeIntervalSince(startedAt),
-                             micLevel: Double(micTrack.takePeak()), systemLevel: Double(systemTrack.takePeak()),
-                             micDevice: mic.device.map { MicChoice(uid: $0.uid, name: $0.name) }), to: statusPath)
+                             micLevel: Double(micTrack.writer.takePeak()), systemLevel: Double(systemTrack.writer.takePeak()),
+                             micDevice: mic.device.map { MicChoice(uid: $0.uid, name: $0.name) },
+                             micOffset: offset(micTrack), systemOffset: offset(systemTrack)), to: statusPath)
 } }
 statusTimer.resume()
 
 /// Finishes the recording: meta.json, then a last status. `because` is why it stopped when it
-/// wasn't asked to; Oatcake shows it.
+/// wasn't asked to; Oatcake shows it. meta.json is written before the devices are stopped, which
+/// can hang: Oatcake stops a recorder that's still there five seconds after it was asked to finish,
+/// and the offsets would go with it.
 @MainActor func finish(because reason: String? = nil) -> Never {
     statusTimer.cancel()
+    micTrack.writer.close()
+    systemTrack.writer.close()
+    writeJSON(RecorderMeta(startedAt: iso.string(from: startedAt), endedAt: iso.string(from: Date()),
+                           micOffset: offset(micTrack) ?? 0, systemOffset: offset(systemTrack) ?? 0),
+              to: "\(outDir)/\(RecorderFile.meta)")
     mic.stop()
     system.stop()
-    micTrack.close()
-    systemTrack.close()
-    writeJSON(RecorderMeta(startedAt: iso.string(from: startedAt), endedAt: iso.string(from: Date()),
-                           micOffset: offset(micTrack), systemOffset: offset(systemTrack)),
-              to: "\(outDir)/\(RecorderFile.meta)")
     writeJSON(reason.map { RecorderStatus(state: .error, error: $0) } ?? RecorderStatus(state: .stopped), to: statusPath)
     try? FileManager.default.removeItem(atPath: "\(outDir)/\(RecorderFile.pid)")
     exit(reason == nil ? 0 : 1)

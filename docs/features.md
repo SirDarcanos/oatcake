@@ -23,7 +23,10 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 - Microphone choice, following the Mac's or a chosen mic, changeable mid-call without a gap in the
   recording. [Record](how-it-works.md#1-record)
 - Warnings for a silent microphone, no call audio, or a recorder that stopped or never started, on
-  screen and as notifications; what was recorded is kept. [Record](how-it-works.md#1-record)
+  screen and as notifications; what was recorded is kept, and a recording stops by itself before
+  the disk is full. [Record](how-it-works.md#1-record)
+- Your microphone and the call audio stay lined up through a change of microphone, the Mac
+  sleeping, or headphones connecting. [Record](how-it-works.md#1-record)
 - An offer to record when a calling app starts using the microphone, and an automatic stop when
   the call ends, with **Keep recording**. [Calls are noticed](how-it-works.md#calls-are-noticed)
 - An option to keep call notices working after you close the window. Reopen or quit Oatcake from
