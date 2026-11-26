@@ -26,7 +26,7 @@ struct AskBar: View {
 
     /// From Home, Ask finds calls by the words in the question, so these name the latest calls.
     private var homeSuggestions: [String] {
-        let latest = listedIn(model.library.tree).prefix(2).map(meetingTitle)
+        let latest = newestIn(model.library.tree, 2).map(meetingTitle)
         guard let newest = latest.first else { return [] }
         var questions = ["What did we decide in “\(newest)”?", "Who said they’d follow up after “\(newest)”, and on what?"]
         if latest.count > 1 { questions.append("What’s still open from “\(latest[1])”?") }
@@ -65,6 +65,8 @@ struct AskBar: View {
             .overlay(alignment: .top) { Divider() }
         }
         .onChange(of: focused) { if focused, !chat.turns.isEmpty { chat.open = true } }
+        // Edit › Ask About Your Meetings (⌘L).
+        .onChange(of: model.askRequest) { focused = true }
         // VoiceOver hears nothing of an answer arriving unless it's told.
         .onChange(of: chat.turns.last.map { !$0.running } ?? false) { _, finished in
             guard finished, let last = chat.turns.last, !last.stopped else { return }
@@ -82,7 +84,7 @@ struct AskBar: View {
         let question = (text ?? draft).trimmed
         guard !question.isEmpty, model.ask.running == nil else { return }
         draft = ""
-        model.ask.send(question, meeting: path, config: model.config, downloads: model.downloads)
+        model.ask.send(question, meeting: path, config: model.config, downloads: model.downloads, meetings: model.library.meetings)
     }
 
     private func panel(_ chat: AskChat) -> some View {
@@ -91,7 +93,14 @@ struct AskBar: View {
                 Text("Ask about your meetings").font(.headline).accessibilityAddTraits(.isHeader)
                 Spacer()
                 Button("New chat") { chat.newChat(); focused = true }.disabled(chat.running != nil)
-                Button("Hide") { chat.open = false }.help("Hide (Esc)")
+                // Escape hides it wherever the keyboard is, not only from its field. Not while search is
+                // over the window: Escape is search's then.
+                Button("Hide") {
+                    chat.open = false
+                    focused = false
+                }
+                .help("Hide (Esc)")
+                .keyboardShortcut(model.searching ? nil : .cancelAction)
             }
             .buttonStyle(.borderless)
             .padding(.horizontal, 16)

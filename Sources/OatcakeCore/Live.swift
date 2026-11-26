@@ -10,14 +10,18 @@ import Foundation
 /// One line of the live transcript: what was heard on your microphone, or on the call audio.
 public struct LiveTranscriptLine: Codable, Equatable, Identifiable, Sendable {
     public enum Track: String, Codable, Sendable { case mic, system }
-    public var track: Track
+    public let track: Track
     /// Seconds into the track, which is the time into the call to within a moment.
-    public var start: Double
+    public let start: Double
     public var end: Double
     public var text: String
     /// Who said a line from the call side, when it's known: nil until then.
     public var speaker: String?
-    public var id: String { "\(track.rawValue) \(start)" }
+    /// "mic 12.4". Kept rather than worked out when asked: the live screen asks for every line's
+    /// each time it's drawn. Not written out: it follows from the track and start.
+    public let id: String
+
+    private enum CodingKeys: String, CodingKey { case track, start, end, text, speaker }
 
     public init(track: Track, start: Double, end: Double, text: String, speaker: String? = nil) {
         self.track = track
@@ -25,6 +29,14 @@ public struct LiveTranscriptLine: Codable, Equatable, Identifiable, Sendable {
         self.end = end
         self.text = text
         self.speaker = speaker
+        id = "\(track.rawValue) \(start)"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(track: try c.decode(Track.self, forKey: .track), start: try c.decode(Double.self, forKey: .start),
+                  end: try c.decode(Double.self, forKey: .end), text: try c.decode(String.self, forKey: .text),
+                  speaker: try c.decodeIfPresent(String.self, forKey: .speaker))
     }
 }
 
@@ -164,9 +176,25 @@ func nameLiveVoices(_ voices: [LiveVoice], named: [String: String]) -> [String: 
 /// The lines in the order they were said, without microphone lines that only repeat the call audio
 /// (the other side coming out of your speakers).
 public func liveTranscript(_ lines: [LiveTranscriptLine]) -> [LiveTranscriptLine] {
-    let call = lines.filter { $0.track == .system }.map { Line(speaker: "A", start: $0.start, end: $0.end, text: $0.text) }
+    // In order, so each of your lines is held up only against the call lines around it: worked out
+    // again for every line that arrives, and a long call has thousands.
+    let call = lines.filter { $0.track == .system }.sorted { $0.start < $1.start }.map { Line(speaker: "A", start: $0.start, end: $0.end, text: $0.text) }
+    let longest = call.map { $0.end - $0.start }.max() ?? 0
+    /// The first call line that starts after `time` (or at it, with `including`).
+    func firstStarting(after time: Double, including: Bool = false) -> Int {
+        var low = 0, high = call.count
+        while low < high {
+            let mid = (low + high) / 2
+            if call[mid].start < time || (!including && call[mid].start == time) { low = mid + 1 } else { high = mid }
+        }
+        return low
+    }
     return lines
-        .filter { $0.track == .system || !isEcho(Line(speaker: me, start: $0.start, end: $0.end, text: $0.text), call) }
+        .filter { line in
+            guard line.track == .mic else { return true }
+            let near = call[firstStarting(after: line.start - echoWindow - max(0, longest), including: true)..<firstStarting(after: line.end + echoWindow)]
+            return !isEcho(Line(speaker: me, start: line.start, end: line.end, text: line.text), Array(near))
+        }
         .sorted { $0.start < $1.start }
 }
 
@@ -204,10 +232,15 @@ nonisolated(unsafe) private var chosenFor = ""
 nonisolated(unsafe) private var chosenPlaceholders: [Int: String] = [:]
 nonisolated(unsafe) private var lastPlaceholder: String?
 
+/// The most of a track transcribed in one go: a helper started again partway through a call (Name
+/// voices turned on, or Oatcake reopened) catches up two minutes at a time, showing each stretch's
+/// lines as it goes, rather than showing nothing until it has been through the whole call.
+let liveStretch = 2 * 60 * sampleRate
+
 /**
  * Transcribes a recording while it's being made, reporting each line as it's finished. Returns once
- * the recorder has finished (meta.json is there), the recording has been thrown away, or Oatcake
- * itself has gone.
+ * the recorder has finished (meta.json is there) and everything it wrote has been transcribed, the
+ * recording has been thrown away, or Oatcake itself has gone.
  */
 public func transcribeLive(_ dir: URL, config: Config = Config.load(), voiceprints: URL = Paths.voiceprints,
                            report: @escaping (LiveEvent) -> Void) async throws {
@@ -231,11 +264,15 @@ public func transcribeLive(_ dir: URL, config: Config = Config.load(), voiceprin
         guard FileManager.default.exists(dir), getppid() == oatcake else { return }
         let finished = FileManager.default.exists(dir.appendingPathComponent("meta.json"))
         var lines: [LiveTranscriptLine] = []
+        // A whole stretch read: there's more of the track after it, so it's gone on to straight away.
+        var behind = false
         for i in done.indices {
-            let fresh = readPcm(dir.appendingPathComponent(done[i].file), fromSample: done[i].samples)
+            let fresh = readPcm(dir.appendingPathComponent(done[i].file), fromSample: done[i].samples, count: liveStretch)
             guard fresh.count >= sampleRate / 2 else { continue }
+            let more = fresh.count == liveStretch
+            behind = behind || more
             // Once the recorder has finished, what's left is all there will be: its last words included.
-            let (utterances, consumed) = try await transcriber.transcribeFinished(fresh, last: finished)
+            let (utterances, consumed) = try await transcriber.transcribeFinished(fresh, last: finished && !more)
             let offset = Double(done[i].samples) / Double(sampleRate)
             let new = utterances.map { LiveTranscriptLine(track: done[i].track, start: $0.start + offset, end: $0.end + offset, text: $0.text) }
             if let fingerprints, done[i].track == .system, !utterances.isEmpty,
@@ -265,8 +302,8 @@ public func transcribeLive(_ dir: URL, config: Config = Config.load(), voiceprin
             }
         }
         for line in lines { report(LiveEvent(line: line)) }
-        if finished { return }
-        try await Task.sleep(for: .seconds(1.5))
+        if finished && !behind { return }
+        if !behind { try await Task.sleep(for: .seconds(1.5)) }
     }
 }
 

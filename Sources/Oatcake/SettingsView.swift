@@ -11,17 +11,17 @@ struct SettingsView: View {
     @ViewState private var calendarEditor: CalendarSettingsEdit?
     /// macOS says notifications are turned off for Oatcake: reminders and call notices can't show.
     @ViewState private var notificationsOff = false
-    @AppStorage("settingsPane") private var pane = "general"
+    @AppStorage(SettingsPane.key) private var pane = SettingsPane.general
 
     var body: some View {
         TabView(selection: $pane) {
-            Form { general }.formStyle(.grouped).tabItem { Label("General", systemImage: "gearshape") }.tag("general")
-            Form { calendar }.formStyle(.grouped).tabItem { Label("Calendars", systemImage: "calendar") }.tag("calendar")
-            Form { PeopleSection() }.formStyle(.grouped).tabItem { Label("People", systemImage: "person.2") }.tag("people")
-            Form { transcription; llmSection }.formStyle(.grouped).tabItem { Label("Models", systemImage: "cpu") }.tag("models")
-            Form { jargonSection; outputSections }.formStyle(.grouped).tabItem { Label("Summaries", systemImage: "text.alignleft") }.tag("summaries")
-            Form { storage; mcp }.formStyle(.grouped).tabItem { Label("Storage", systemImage: "folder") }.tag("storage")
-            Form { UpdatesSection() }.formStyle(.grouped).tabItem { Label("Updates", systemImage: "arrow.down.circle") }.tag("updates")
+            Form { general }.formStyle(.grouped).tabItem { Label("General", systemImage: "gearshape") }.tag(SettingsPane.general)
+            Form { calendar }.formStyle(.grouped).tabItem { Label("Calendars", systemImage: "calendar") }.tag(SettingsPane.calendar)
+            Form { PeopleSection() }.formStyle(.grouped).tabItem { Label("People", systemImage: "person.2") }.tag(SettingsPane.people)
+            Form { transcription; llmSection }.formStyle(.grouped).tabItem { Label("Models", systemImage: "cpu") }.tag(SettingsPane.models)
+            Form { jargonSection; outputSections }.formStyle(.grouped).tabItem { Label("Summaries", systemImage: "text.alignleft") }.tag(SettingsPane.summaries)
+            Form { storage; mcp }.formStyle(.grouped).tabItem { Label("Storage", systemImage: "folder") }.tag(SettingsPane.storage)
+            Form { UpdatesSection() }.formStyle(.grouped).tabItem { Label("Updates", systemImage: "arrow.down.circle") }.tag(SettingsPane.updates)
         }
         .frame(width: 620, height: 600)
         .sheet(item: $calendarEditor) { editor in
@@ -37,7 +37,7 @@ struct SettingsView: View {
         .task(id: pane) { notificationsOff = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .denied }
         .onAppear {
             // Speech to text was once a pane of its own, now part of Models.
-            if pane == "transcription" { pane = "models" }
+            if UserDefaults.standard.string(forKey: SettingsPane.key) == "transcription" { pane = .models }
             jargon = model.config.jargon.joined(separator: ", ")
             ignoredEvents = model.config.ignoredEvents.joined(separator: ", ")
             // The Electron version's names for the two transcription choices read as the new ones.
@@ -196,9 +196,12 @@ struct SettingsView: View {
         Section("Reminders") {
             Toggle(isOn: bind(\.callReminders)) {
                 Text("Remind me before calls")
-                Text("5 minutes before each call, a notification with a button that opens the call and starts recording, ready for notes.")
+                Text("Before each call, a notification with a button that opens the call and starts recording, ready for notes.")
             }
-            if model.config.callReminders { notificationsHint }
+            if model.config.callReminders {
+                ReminderTimesRows(minutes: bind(\.reminderMinutes))
+                notificationsHint
+            }
             Toggle(isOn: bind(\.menuBarNextCall)) {
                 Text("Show my next call in the menu bar")
                 Text("The time until it starts, with what’s coming up in its menu.")
@@ -210,7 +213,7 @@ struct SettingsView: View {
             TextField("Leave out", text: $ignoredEvents, prompt: Text("Focus time, Out of office"), axis: .vertical)
                 .lineLimit(1...4)
                 .onChange(of: ignoredEvents) {
-                    let titles = ignoredEvents.split(whereSeparator: { $0 == "," || $0.isNewline }).map { String($0).trimmed }.filter { !$0.isEmpty }
+                    let titles = commaList(ignoredEvents)
                     if titles != model.config.ignoredEvents { model.saveConfig(with(model.config) { $0.ignoredEvents = titles }) }
                 }
         } header: {
@@ -283,7 +286,7 @@ struct SettingsView: View {
                 .lineLimit(2...5)
                 .labelsHidden()
                 .onChange(of: jargon) {
-                    let terms = jargon.split(whereSeparator: { $0 == "," || $0.isNewline }).map { String($0).trimmed }.filter { !$0.isEmpty }
+                    let terms = commaList(jargon)
                     if terms != model.config.jargon { model.saveConfig(with(model.config) { $0.jargon = terms }) }
                 }
         } header: {

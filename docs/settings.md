@@ -50,7 +50,9 @@ Settings, with **Open Notification Settings**.
 
   Oatcake refreshes each calendar once an hour, or when you press ↻ next to Upcoming (⌘R). If one
   feed fails, it keeps that feed’s last fetched events and reports the problem beside that calendar
-  in Settings. The other feeds continue to update.
+  in Settings (not connected to the internet, server not found, no secure connection, too slow to
+  answer), and tries again a minute later, then after waits that double, up to the hour. The other
+  feeds continue to update.
 
   Home and the sidebar show one chronological list of timed events in progress or starting today
   or tomorrow, leaving out events you declined. The sidebar shows up to six. The coloured dots
@@ -71,13 +73,19 @@ Settings, with **Open Notification Settings**.
   address is never opened).
 ### Reminders
 
-- **Remind me before calls** (on to start with): 5 minutes before each timed event, a
-  notification with **Open call and start note taking**. The button opens the call link when the
-  event has one, starts recording it (in the folder named like the event; a new folder for a
-  recurring event without one, ":" and "/" becoming "-"), and brings Oatcake forward on the live
-  notes. Clicking the notification itself opens New recording for the event. macOS asks once
-  whether Oatcake may send notifications; the packaged app asks for Alerts, so reminders stay up
-  until dealt with.
+- **Remind me before calls** (on to start with): before each timed event, a notification with
+  **Open call and start note taking**. The button opens the call link when the event has one,
+  starts recording it (in the folder named like the event; a new folder for a recurring event
+  without one, ":" and "/" becoming "-"), and brings Oatcake forward on the live notes. If the
+  event has gone from your calendars since, the button says so and starts nothing. Clicking the
+  notification itself opens New recording for the event. macOS asks once whether Oatcake may send
+  notifications; the packaged app asks for Alerts, so reminders stay up until dealt with.
+- **Reminder** (while reminders are on): how long before each call it comes, 5 minutes to start
+  with. **Add reminder** adds another (5 minutes and 1 minute before, say), and − removes one.
+  Each call is reminded once for each; if Oatcake opens when more than one of them has come, one
+  reminder covers them. Which reminders have gone out is kept in `reminders.json` in Oatcake's
+  data folder, so opening Oatcake again (an update does) doesn't remind again. A call you're
+  already recording isn't reminded of: its sound would go into the recording.
 - **Show my next call in the menu bar** (on to start with, with a calendar connected): Oatcake's
   oatcake with the time until it starts, and what's coming up in its menu (see
   [The menu bar](how-it-works.md#the-menu-bar)). Turning this off hides calendar details, not the
@@ -187,6 +195,8 @@ keeps its lowest level; one on Ollama that can't reason at all is asked again wi
   doesn't move anything: meetings already in the old one stay where they are.
 - **Keep call audio after saving** (off to start with): audio is deleted once a meeting is saved.
   When on, the call's audio (both sides, mixed) is saved in the meeting's folder as `audio.m4a`.
+  If it can't be written there, Oatcake says why and tries again after the next save or launch. A
+  meeting deleted before its audio was written sends that audio to the Trash.
 - **Import from Granola** and **Import from Quill:** **Import…** picks an export (see
   [Importing](importing.md)).
 

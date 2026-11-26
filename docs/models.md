@@ -27,12 +27,16 @@ Summaries, to-dos, name suggestions and Ask's answers come from one model, run o
 | Qwen3 8B (Q4_K_M) | Macs with 16 GB of memory or more; the default there | 5.0 GB | Apache-2.0 |
 | Qwen3 4B (Q4_K_M) | Macs with 8 GB; fine on short calls, loses detail on long ones | 2.5 GB | Apache-2.0 |
 
-- **Where it comes from.** Qwen's own GGUF files on Hugging Face, at a fixed revision, checked
-  against their SHA-256 before use (`LocalModels` in `Sources/OatcakeCore/LocalModel.swift`). A
-  download that's interrupted carries on from where it stopped. Settings › Models shows how far
-  it has got, downloads it on request and removes it.
+- **Where it comes from.** Qwen's own GGUF files on Hugging Face, at a fixed revision
+  (`LocalModels` in `Sources/OatcakeCore/LocalModel.swift`). The file is checked against its
+  SHA-256 when it has downloaded, and again before the model is started whenever its size or
+  modification date has changed since it last passed; one that doesn't match is thrown away and
+  downloaded again the next time it's needed. A download that's interrupted carries on from where
+  it stopped. Settings › Models shows how far it has got, downloads it on request and removes it.
 - **What runs it.** llama.cpp's server, inside Oatcake.app (MIT; the build is named in
-  `Scripts/bundle.sh`). Oatcake starts it when there's something to write, on 127.0.0.1 at a port
+  `Scripts/bundle.sh`, which checks it against its SHA-256; before each start Oatcake checks that
+  its signature over the app still covers the server and its libraries: see
+  [Security](security.md)). Oatcake starts it when there's something to write, on 127.0.0.1 at a port
   picked for the occasion, with a key made up each time so that a web page or another account on
   the Mac can't use it, and stops it after ten minutes with nothing to do, which gives its memory
   back.
@@ -57,6 +61,7 @@ Summaries, to-dos, name suggestions and Ask's answers come from one model, run o
   server) is summarised in parts, which are then joined.
 - **A model of your own.** Any server with the same chat API on this Mac or your network (Ollama,
   LM Studio, your own llama.cpp). Oatcake only talks to a local address, and sends no key. It
+  doesn't follow a redirect from that address to another (the redirect is reported as an error). It
   sends none of Qwen's sampling settings either: the server's own apply, as they suit its model.
   Each request still says how long the reply may be and, where one is needed, the JSON shape.
 

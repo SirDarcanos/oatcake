@@ -31,8 +31,9 @@ struct OatcakeApp: App {
     }
 }
 
-/// What File › Move to Trash does. The meeting list sets it while it has the keyboard; anywhere else
-/// there's nothing to do, the command is off, and ⌘⌫ keeps its usual meaning (in a text field, say).
+/// What File › Move to Trash does: the meetings selected in the list, or the folder or meeting
+/// selected in the sidebar, while that has the keyboard. Anywhere else the command is off, and ⌘⌫
+/// keeps its usual meaning (in a text field, say).
 struct TrashMeetingsKey: FocusedValueKey {
     typealias Value = () -> Void
 }
@@ -44,7 +45,8 @@ extension FocusedValues {
     }
 }
 
-/// File › New Recording and Move to Trash, and Edit › Find in Transcript and Search Meetings.
+/// The menus: File, Edit's Find and Search, View's tabs and text sizes, Go, Meeting, Recording and Help.
+/// What's in them is drawn by views, which see the model change and keep each item's greyed state up to date.
 struct AppCommands: Commands {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
@@ -58,16 +60,13 @@ struct AppCommands: Commands {
         let _ = model.openMainWindow = { openWindow(id: "main") }
         let _ = model.openSettingsWindow = { openSettings() }
         CommandGroup(replacing: .newItem) {
-            Button("New Recording") { model.newRecording() }.keyboardShortcut("n")
-            // The sidebar's own buttons for these sit in section headers, out of reach of the keyboard and VoiceOver.
-            Button("New Folder") { model.wantsNewFolder = true; model.showWindow() }.keyboardShortcut("n", modifiers: [.command, .shift])
-            Button("Refresh Calendars") { model.calendar.refresh(force: true) }.keyboardShortcut("r").disabled(!model.calendar.hasCalendars)
-            Divider()
-            // As in Finder. A menu command, because a key handler on the list didn't answer to ⌘⌫.
-            Button("Move to Trash") { trashMeetings?() }.keyboardShortcut(.delete, modifiers: .command).disabled(trashMeetings == nil)
+            FileItems(model: model, trash: trashMeetings)
         }
-        // View › the size of reading text: summaries, answers, transcripts, notes and the Markdown editors.
+        // View › the open meeting's tabs, and the size of reading text: summaries, answers,
+        // transcripts, notes and the Markdown editors.
         CommandGroup(before: .toolbar) {
+            TabItems(model: model)
+            Divider()
             Button("Bigger Text") { textScale = TextScale.bigger(textScale) }.keyboardShortcut("+").disabled(textScale >= TextScale.steps.last!)
             Button("Smaller Text") { textScale = TextScale.smaller(textScale) }.keyboardShortcut("-").disabled(textScale <= TextScale.steps.first!)
             Button("Actual Size") { textScale = 1 }.keyboardShortcut("0").disabled(textScale == 1)
@@ -75,9 +74,104 @@ struct AppCommands: Commands {
         }
         CommandGroup(after: .pasteboard) {
             Divider()
-            Button("Find in Transcript") { model.findRequest += 1 }.keyboardShortcut("f")
-            Button("Search Meetings") { model.searchMeetings() }.keyboardShortcut("f", modifiers: [.command, .option])
+            FindItems(model: model)
         }
+        CommandMenu("Go") { GoItems(model: model) }
+        CommandMenu("Meeting") { MeetingMenu(model: model) }
+        CommandMenu("Recording") { RecordingItems(model: model) }
+        CommandGroup(replacing: .help) {
+            Button("Oatcake Help") { NSWorkspace.shared.open(URL(string: "https://github.com/a8cteam51/oatcake/tree/trunk/docs")!) }
+        }
+    }
+}
+
+private struct FileItems: View {
+    let model: AppModel
+    let trash: (() -> Void)?
+
+    var body: some View {
+        // The sidebar's own buttons for these sit in section headers, out of reach of the keyboard and VoiceOver.
+        Button("New Folder") { model.wantsNewFolder = true; model.showWindow() }.keyboardShortcut("n", modifiers: [.command, .shift])
+        Button("Refresh Calendars") { model.calendar.refresh(force: true) }.keyboardShortcut("r").disabled(!model.calendar.hasCalendars)
+        Divider()
+        // As in Finder. A menu command, because a key handler on the list didn't answer to ⌘⌫.
+        Button("Move to Trash") { trash?() }.keyboardShortcut(.delete, modifiers: .command).disabled(trash == nil)
+    }
+}
+
+/// View › Summary (⌘1), Transcript, My Notes and Draft, for the open meeting.
+private struct TabItems: View {
+    let model: AppModel
+
+    var body: some View {
+        let open = model.meetingInView
+        ForEach(Array(MeetingTab.allCases.enumerated()), id: \.offset) { i, tab in
+            Button(tab == .notes ? "My Notes" : tab.menuName) { model.request(.tab(tab)) }
+                .keyboardShortcut(KeyEquivalent(Character("\(i + 1)")), modifiers: .command)
+                .disabled(!(open?.tabs.contains(tab) ?? false))
+        }
+    }
+}
+
+/// Edit › Find in the open meeting's tab, stepping through it, Search Meetings and Ask.
+private struct FindItems: View {
+    let model: AppModel
+
+    var body: some View {
+        let open = model.meetingInView
+        Button("Find…") { model.request(.find) }.keyboardShortcut("f").disabled(open == nil)
+        Button("Find Next") { model.request(.findNext) }.keyboardShortcut("g").disabled(!(open?.canFindNext ?? false))
+        Button("Find Previous") { model.request(.findPrevious) }.keyboardShortcut("g", modifiers: [.command, .shift])
+            .disabled(!(open?.canFindNext ?? false))
+        Button("Search Meetings") { model.searchMeetings() }.keyboardShortcut("f", modifiers: [.command, .option])
+        // Ask's field is on Home and under a meeting, once there's a meeting to ask about.
+        let asking = model.selection == .home || open != nil
+        Button("Ask About Your Meetings") { model.showWindow(); model.askRequest += 1 }.keyboardShortcut("l")
+            .disabled(!asking || (model.library.tree?.allMeetings.isEmpty ?? true))
+    }
+}
+
+private struct GoItems: View {
+    let model: AppModel
+
+    var body: some View {
+        // After following a link: a to-do's, a citation in Ask, a search result.
+        Button("Back") { model.goBack() }.keyboardShortcut("[").disabled(!model.canGoBack)
+        Button("Forward") { model.goForward() }.keyboardShortcut("]").disabled(!model.canGoForward)
+        Divider()
+        Button("Home") { model.showWindow(); model.selection = .home }
+        Button("To-dos") { model.showWindow(); model.selection = .todos }.disabled(!model.config.todosEnabled)
+        Button("All Meetings") { model.showWindow(); model.openFolder("") }
+    }
+}
+
+/// The open meeting's commands, as in its ⋯ menu; greyed out while no meeting is open.
+private struct MeetingMenu: View {
+    let model: AppModel
+
+    var body: some View {
+        let node = model.meetingInView.flatMap { model.library.tree?.find($0.path) }
+        MeetingMenuItems(model: model, node: node)
+    }
+}
+
+private struct RecordingItems: View {
+    let model: AppModel
+
+    var body: some View {
+        let recording = model.recording
+        // As the live screen's Stop: not before audio has arrived (that's Cancel), nor once the recorder has failed.
+        let canStop = recording.live != nil && recording.recorderFailure == nil && recording.status.state != .starting
+        let call: URL? = {
+            if let link = recording.liveCallLink { return link }
+            if case .new(let event?) = model.selection { return event.callLink.flatMap(URL.init(string:)) }
+            return nil
+        }()
+        Button("New Recording") { model.newRecording() }.keyboardShortcut("n")
+        Button("Stop Recording…") { model.stopFromMenuBar() }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(!canStop)
+        Divider()
+        Button("Join Call") { if let call { NSWorkspace.shared.open(call) } }.disabled(call == nil)
+        Button("Show Live Notes") { model.showWindow(); model.selection = .live }.disabled(recording.live == nil)
     }
 }
 
@@ -139,6 +233,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Quitting asks first when it would end a recording or interrupt work that's under way.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         MainActor.assumeIsolated {
+            // Typing from the last moments is written first, so the question knows what couldn't be.
+            model.saveEdits()
             guard let question = model.quitQuestion else { return .terminateNow }
             let alert = NSAlert()
             alert.messageText = question.title
@@ -157,7 +253,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        MainActor.assumeIsolated { model.recording.stopAllRecorders() }
+        MainActor.assumeIsolated {
+            model.saveEdits()
+            model.recording.stopAllRecorders()
+        }
     }
 
     /// Reminders show even while Oatcake is in front.
@@ -194,6 +293,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
             return
         }
+        // "Ready to check who's who": clicking it opens that recording's Who's who, if it's still waiting.
+        if let recording = Reminders.recording(readyToCheck: id) {
+            guard action == UNNotificationDefaultActionIdentifier else { return }
+            model.showWindow()
+            if model.jobs.pending.contains(where: { $0.id == recording }) { model.selection = .job(recording) }
+            return
+        }
         guard category == Reminders.category else {
             // Anything else Oatcake says about a recording: clicking it opens Oatcake.
             if action == UNNotificationDefaultActionIdentifier { model.showWindow() }
@@ -202,6 +308,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard let event = currentEvent(forReminder: id, in: model.calendar.events) else {
             // The invite may have moved, been ignored or lost its last connected calendar.
             model.showWindow()
+            if action == Reminders.startAction {
+                model.toast("That call isn’t on your calendar any more, so nothing was opened or recorded.", isError: true)
+            }
             return
         }
         if action == Reminders.startAction {
@@ -214,6 +323,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
 struct ContentView: View {
     @Environment(AppModel.self) private var model
+    /// The new title being typed for a meeting being renamed.
+    @ViewState private var title = ""
 
     var body: some View {
         @Bindable var model = model
@@ -223,12 +334,14 @@ struct ContentView: View {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 520)
         } content: {
-            MeetingListView(folder: model.library.tree?.find(model.folder) ?? model.library.tree)
+            MeetingListView()
                 .navigationSplitViewColumnWidth(min: 220, ideal: 300, max: 560)
         } detail: {
             DetailView()
         }
-        .overlay { if model.searching { SearchOverlay(root: model.library.tree) } }
+        // Search is modal: while it's open, the window behind it can't be worked through accessibility either.
+        .accessibilityHidden(model.searching)
+        .overlay { if model.searching { SearchOverlay() } }
         .overlay(alignment: .bottom) {
             // Only one that says something went wrong takes clicks (to dismiss it).
             if let text = model.toastText { ToastView(text: text, isError: model.toastIsError) { model.dismissToast() }.allowsHitTesting(model.toastIsError) }
@@ -242,6 +355,15 @@ struct ContentView: View {
             }
         } message: { confirmation in
             Text(confirmation.text)
+        }
+        // Rename… from any of a meeting's menus.
+        .onChange(of: model.renaming) { title = model.renaming.map(meetingTitle) ?? "" }
+        .alert("Rename meeting", isPresented: Binding(get: { model.renaming != nil }, set: { if !$0 { model.renaming = nil } })) {
+            TextField("Title", text: $title)
+            Button("Rename") { if let node = model.renaming { model.library.retitle(node.path, to: title) } }.disabled(title.trimmed.isEmpty)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Changes the meeting’s title and its folder’s name.")
         }
     }
 }
@@ -271,8 +393,9 @@ struct DetailView: View {
                 }
             case .todos:
                 if model.config.todosEnabled { TodosView() } else { blank }
-            case .new(let event, let key):
-                NewRecordingView(event: event).id(key)
+            case .new(let event):
+                // Made again only for another event: choosing the same one again keeps what's been typed.
+                NewRecordingView(event: event).id(event?.id)
                     .toolbar { EmptyPaneToolbar() }
             case .live:
                 if let rec = model.recording.live { LiveView(rec: rec) } else { blank }
@@ -302,7 +425,7 @@ struct DetailView: View {
         let folder = model.library.tree.map { $0.find(model.folder) ?? $0 }
         let everything = folder?.path.isEmpty ?? true
         return ZStack {
-            if let folder, listedIn(folder).isEmpty {
+            if let folder, newestIn(folder, 1).isEmpty {
                 VStack(spacing: 14) {
                     PageTitle(text: everything ? "All meetings" : baseName(folder.path))
                     Button { model.newRecording() } label: { Label(everything ? "New recording" : "Record here", systemImage: "circle.fill") }

@@ -2,20 +2,19 @@ import OatcakeCore
 import SwiftUI
 
 /// The call in progress: one note per line, each stamped with the time you started typing it.
+///
+/// Its parts are views of their own, each reading only what it shows: the recorder's status changes
+/// twice a second, the notes with every key, and the transcript with every line.
 struct LiveView: View {
     @Environment(AppModel.self) private var model
     let rec: Recording
-    @FocusState private var focused: UUID?
-    @AppStorage(TextScale.key) private var textScale = 1.0
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ViewState private var devices: [InputDevice] = []
     @ViewState private var showTranscript = UserDefaults.standard.object(forKey: "liveTranscriptShown") as? Bool ?? true
     /// People Oatcake knows by voice, to say who said a line.
     @ViewState private var knownVoices: [String] = []
     @ViewState private var paneWidth: CGFloat = 900
 
     private var status: RecorderStatus { model.recording.status }
-    private var started: Bool { status.state == .recording && model.recording.recorderFailure == nil }
+    private var started: Bool { model.recording.started }
     private var elapsed: Double { status.elapsed ?? 0 }
     private var lines: [LiveLine] { model.recording.liveNotes[rec.id] ?? [] }
 
@@ -33,10 +32,7 @@ struct LiveView: View {
                             .padding(.top, 10)
                     }
                     notices
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(lines) { line in noteRow(line) }
-                    }
-                    .padding(.top, 24)
+                    LiveNotes(rec: rec).padding(.top, 24)
                     Text("One point per line. Each is stamped with the time you started typing it, and you can go back and edit any line.")
                         .font(.caption).foregroundStyle(.secondary).padding(.top, 14)
                 }
@@ -47,18 +43,17 @@ struct LiveView: View {
             }
             if showTranscript && model.config.liveTranscript {
                 Divider()
-                transcript.frame(width: sidePanelWidth(in: paneWidth))
+                LiveTranscriptPane(rec: rec, knownVoices: knownVoices).frame(width: sidePanelWidth(in: paneWidth))
             }
           }
           .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { paneWidth = $0 }
             Divider()
-            bar
+            LiveBar()
         }
         .toolbar { toolbar }
-        .onAppear(perform: loadNotes)
         .onDisappear { model.recording.saveLiveNotes(rec.id) }
-        .task { devices = (try? await Recordings.listInputs()) ?? [] }
-        .task { knownVoices = knownPeople() }
+        // The voiceprints file is read off the main thread.
+        .task { knownVoices = await Task.detached { knownPeople() }.value }
     }
 
     // MARK: Header
@@ -102,7 +97,7 @@ struct LiveView: View {
                 Button { model.recording.confirmStop() } label: { Label("Stop", systemImage: "stop.fill").labelStyle(.titleAndIcon) }
                     .tint(.red)
                     .buttonStyle(.borderedProminent)
-                    .help("Stop recording")
+                    .help("Stop recording (⇧⌘R)")
             }
         }
     }
@@ -140,8 +135,8 @@ struct LiveView: View {
         if let downloading = model.downloads.modelDownloadStatus {
             HStack(spacing: 6) {
                 Text("\(downloading). It writes the summary once the call is over.")
-                SettingsLink { Text("Settings") }.buttonStyle(.link)
-                    .simultaneousGesture(TapGesture().onEnded { UserDefaults.standard.set("models", forKey: "settingsPane") })
+                // On Models, however it's pressed: a click, the keyboard or VoiceOver.
+                SettingsPaneLink(pane: .models, title: "Settings").buttonStyle(.link)
             }
             .font(.callout).foregroundStyle(.secondary).padding(.top, 14)
         }
@@ -161,14 +156,23 @@ struct LiveView: View {
             .padding(.top, 16)
         }
     }
+}
 
-    // MARK: Live transcript
+// MARK: Live transcript
 
-    /// What's been said so far, a moment after each pause. Your microphone is you. A line from the call
-    /// side has the name of whoever it sounds like, when voices are named (Settings › General), and
-    /// otherwise an obviously made-up name of its own until the call is over and the voices are told apart.
-    private var transcript: some View {
-        let lines = liveTranscript(model.recording.liveLines)
+/// What's been said so far, a moment after each pause. Your microphone is you. A line from the call
+/// side has the name of whoever it sounds like, when voices are named (Settings › General), and
+/// otherwise an obviously made-up name of its own until the call is over and the voices are told apart.
+private struct LiveTranscriptPane: View {
+    @Environment(AppModel.self) private var model
+    let rec: Recording
+    let knownVoices: [String]
+    /// New lines are followed while you're at the end; scrolled up to read back, or to say who a voice
+    /// is, the transcript stays where you are.
+    @ViewState private var following = true
+
+    var body: some View {
+        let lines = model.recording.liveShown
         let myName = model.config.myName.isEmpty ? "You" : model.config.myName
         // Names as text, in the shade that reads against the window (the avatar's own is too close to it).
         let colors = provisionalNameColors([myName] + Set(lines.compactMap(\.speaker)).sorted())
@@ -178,7 +182,7 @@ struct LiveView: View {
         let stopped: String? = if case .stopped(let why) = state { "The live transcript stopped: \(why)" } else { nil }
         return ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
+                LazyVStack(alignment: .leading, spacing: 10) {
                     HStack {
                         SectionLabel(text: "Live transcript")
                         Spacer()
@@ -213,7 +217,23 @@ struct LiveView: View {
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .onChange(of: model.recording.liveLines.count) { withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo("end", anchor: .bottom) } }
+            // Only scrolling decides: the transcript growing, or being taken to its end, leaves it as it was.
+            .onScrollPhaseChange { _, phase, context in
+                if phase != .animating { following = context.geometry.visibleRect.maxY >= context.geometry.contentSize.height - 30 }
+            }
+            .onChange(of: lines.count) { if following { withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo("end", anchor: .bottom) } } }
+            .overlay(alignment: .bottom) {
+                if !following {
+                    Button {
+                        following = true
+                        withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo("end", anchor: .bottom) }
+                    } label: {
+                        Label("Jump to latest", systemImage: "arrow.down")
+                    }
+                    .controlSize(.small)
+                    .padding(.bottom, 12)
+                }
+            }
         }
         .background(Color(nsColor: .windowBackgroundColor))
     }
@@ -265,8 +285,25 @@ struct LiveView: View {
         case .stopped: ""
         }
     }
+}
 
-    // MARK: Notes
+// MARK: Notes
+
+/// The notes typed during the call, one point per line.
+private struct LiveNotes: View {
+    @Environment(AppModel.self) private var model
+    let rec: Recording
+    @FocusState private var focused: UUID?
+    @AppStorage(TextScale.key) private var textScale = 1.0
+
+    private var lines: [LiveLine] { model.recording.liveNotes[rec.id] ?? [] }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(lines) { line in noteRow(line) }
+        }
+        .onAppear(perform: loadNotes)
+    }
 
     /// What's saved (prep notes, or notes from before the window reopened), then a blank line.
     private func loadNotes() {
@@ -286,14 +323,21 @@ struct LiveView: View {
     private func noteRow(_ line: LiveLine) -> some View {
         let index = lines.firstIndex { $0.id == line.id } ?? 0
         return HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Chip(text: line.prep ? "Prep" : clock(line.at ?? (started ? elapsed : 0)),
-                 style: line.prep ? .prep : line.at == nil ? .pending : .normal)
-                .frame(width: 58 * TextScale.clamped(textScale), alignment: .leading)
+            Group {
+                // A line not begun yet shows the call's clock, which ticks: only its chip is drawn again for it.
+                if line.at == nil && !line.prep {
+                    PendingChip()
+                } else {
+                    Chip(text: line.prep ? "Prep" : clock(line.at ?? 0), style: line.prep ? .prep : .normal)
+                }
+            }
+            .frame(width: 58 * TextScale.clamped(textScale), alignment: .leading)
             TextField(index == lines.count - 1 && line.text.isEmpty ? "Type a point, then Return" : "", text: Binding(
                 get: { line.text },
                 set: { text in
                     // Before audio arrives the clock hasn't started, so a line begun then is stamped 00:00:
                     // it's a note from the call, not prep. Only notes written on New recording are prep.
+                    let started = model.recording.started, elapsed = model.recording.status.elapsed ?? 0
                     update(lines.map { l in
                         guard l.id == line.id else { return l }
                         var l = l
@@ -340,8 +384,26 @@ struct LiveView: View {
         focused = lines[i + offset].id
         return .handled
     }
+}
 
-    // MARK: Bottom bar
+/// The time a line not begun yet will be stamped with: the call's clock, which ticks with the recorder's status.
+private struct PendingChip: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Chip(text: clock(model.recording.started ? model.recording.status.elapsed ?? 0 : 0), style: .pending)
+    }
+}
+
+// MARK: Bottom bar
+
+/// The levels and the microphone: drawn again with each status from the recorder.
+private struct LiveBar: View {
+    @Environment(AppModel.self) private var model
+    @ViewState private var devices: [InputDevice] = []
+
+    private var status: RecorderStatus { model.recording.status }
+    private var started: Bool { model.recording.started }
 
     private var micStatus: (text: String, color: Color, warn: Bool) {
         guard started else { return (model.recording.recorderFailure != nil ? "Not recording." : status.state == .starting ? "Starting…" : "Recording stopped.", .secondary, false) }
@@ -352,7 +414,7 @@ struct LiveView: View {
         return ("Recording from \(device.name).", .secondary, false)
     }
 
-    private var bar: some View {
+    var body: some View {
         let mic = micStatus
         return HStack(spacing: 18) {
             VStack(alignment: .leading, spacing: 4) {
@@ -381,10 +443,18 @@ struct LiveView: View {
             }
             .fixedSize()
             .help(mic.text)
-            .onTapGesture { Task { devices = (try? await Recordings.listInputs()) ?? devices } }
+            // Looked for again as the pointer reaches the menu, so a microphone plugged in since is there:
+            // a menu keeps its clicks to itself, so a tap gesture on it can't be relied on to run.
+            .onHover { inside in if inside { Task { devices = (try? await Recordings.listInputs()) ?? devices } } }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 12)
         .background(.bar)
+        .task { devices = (try? await Recordings.listInputs()) ?? [] }
     }
+}
+
+extension RecordingController {
+    /// Audio is arriving: the call's clock is running.
+    var started: Bool { status.state == .recording && recorderFailure == nil }
 }

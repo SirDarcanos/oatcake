@@ -12,6 +12,7 @@ private func eventWhen(_ e: CalendarEvent) -> String {
 
 struct NewRecordingView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.undoManager) private var undoManager
     let event: CalendarEvent?
 
     @ViewState private var folder = topLevel
@@ -26,6 +27,8 @@ struct NewRecordingView: View {
     @ViewState private var previous: (path: String, date: Date?, todo: String)?
     @ViewState private var ticked = Set<Int>()
     @ViewState private var ready = false
+    private enum Field { case title, prep }
+    @FocusState private var focus: Field?
 
     var body: some View {
         ScrollView {
@@ -56,12 +59,17 @@ struct NewRecordingView: View {
                         .tint(.red)
                         .controlSize(.large)
                         .disabled(starting)
+                        // Return starts the recording, except in the prep notes, where it adds the point typed,
+                        // and while search is open over the window: Return is search's then.
+                        .keyboardShortcut(focus == .prep || model.searching ? nil : .defaultAction)
                         if let link = event?.callLink, let url = URL(string: link) {
                             Button { NSWorkspace.shared.open(url) } label: { Label("Join the call", systemImage: "video") }
                                 .controlSize(.large)
                                 .help("Opens \(callApp(link) ?? "the call")")
                         }
-                        Button("Cancel") { model.openFolder(model.folder) }.controlSize(.large).buttonStyle(.borderless)
+                        // Escape too (but not while search is open: Escape closes that). Back to where you were before.
+                        Button("Cancel") { model.cancelNewRecording() }.controlSize(.large).buttonStyle(.borderless)
+                            .keyboardShortcut(model.searching ? nil : .cancelAction)
                     }
                     Text("Let the people on the call know you’re recording.")
                         .font(.caption)
@@ -74,7 +82,10 @@ struct NewRecordingView: View {
             .frame(maxWidth: .infinity)
         }
         .task {
-            if !ready { setUp() }
+            if !ready {
+                setUp()
+                focus = .title
+            }
             await refreshDevices()
         }
         .task(id: candidateKey) { await loadPrevious() }
@@ -148,9 +159,9 @@ struct NewRecordingView: View {
                 TextField("Leave blank to use “\(folderName.isEmpty ? (folder == newFolder ? "the new folder’s name" : "Untitled meeting") : folderName)”", text: $title)
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 360)
-                    .onSubmit(start)
+                    .focused($focus, equals: .title)
             }
-            let templates = model.config.summaryTemplates.filter { model.config.summaryTemplate(named: $0.name) != nil }
+            let templates = model.config.summaryTemplateChoices
             if !templates.isEmpty {
                 GridRow {
                     Text("Summary template").foregroundStyle(.secondary)
@@ -224,15 +235,18 @@ struct NewRecordingView: View {
     /// refreshes the tree, and that mustn't reset the list (a mis-tick stays visible to undo).
     private var candidateKey: String { folder + "\n" + candidates.map(\.path).joined(separator: "\n") }
 
-    /// Open to-dos from the latest earlier meeting in this folder that had any.
+    /// Open to-dos from the latest earlier meeting in this folder that had any. Only their todo.md
+    /// files are read, off the main thread.
     private func loadPrevious() async {
         previous = nil
         ticked = []
-        for m in candidates {
-            guard let todo = try? model.library.readMeeting(m.path).todo, !parseTodos(todo).isEmpty else { continue }
-            previous = (m.path, meetingDate(m), todo)
-            return
-        }
+        let meetings = model.library.meetings, paths = candidates.map(\.path)
+        let found = await Task.detached {
+            paths.lazy.compactMap { path in (try? meetings.readTodo(path)).flatMap { parseTodos($0).isEmpty ? nil : (path, $0) } }.first
+        }.value
+        // Another folder was chosen meanwhile: its own read is on its way.
+        guard !Task.isCancelled, let found, let m = candidates.first(where: { $0.path == found.0 }) else { return }
+        previous = (found.0, meetingDate(m), found.1)
     }
 
     private var openTodos: [Todo] {
@@ -248,10 +262,9 @@ struct NewRecordingView: View {
                 Text("Ticking one ticks it in that meeting").font(.caption).foregroundStyle(.secondary)
             }
             ForEach(openTodos, id: \.line) { t in
-                HStack(spacing: 10) {
-                    TodoCheckbox(checked: t.done, what: t.text) { tick(t) }
-                    Text(t.text).strikethrough(t.done).foregroundStyle(t.done ? .secondary : .primary)
-                    Spacer()
+                TodoRow(todo: t, alignment: .center, tick: { tick(t) }) {
+                    EmptyView()
+                } trailing: {
                     Text(ownerLabel(t.owner, model.config.myName)).foregroundStyle(.secondary)
                 }
             }
@@ -261,17 +274,13 @@ struct NewRecordingView: View {
     private func tick(_ t: Todo) {
         guard let p = previous else { return }
         // The file is ticked as it is now, not written over with the copy this screen has been holding.
-        do {
-            guard try model.library.toggleTodo(p.path, line: t.line, text: t.text) else {
-                // It isn't in the file as it's shown here: nothing was ticked, and the list is read again.
-                model.toast(todoChangedMessage)
+        model.library.tick(p.path, t, undo: undoManager) { [previous = $previous, ticked = $ticked] text in
+            guard let text else {
                 Task { await loadPrevious() }
                 return
             }
-            previous = (p.path, p.date, toggleTodo(p.todo, line: t.line))
-            ticked.insert(t.line)
-        } catch {
-            model.toast(error.localizedDescription, isError: true)
+            previous.wrappedValue = (p.path, p.date, text)
+            ticked.wrappedValue.insert(t.line)
         }
     }
 
@@ -305,6 +314,7 @@ struct NewRecordingView: View {
                 TextField("An agenda point or question, then Return. Or paste a list.", text: $prepDraft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1...8)
+                    .focused($focus, equals: .prep)
                     .onSubmit { addPrep(prepDraft) }
                     .onChange(of: prepDraft) { if prepDraft.contains(where: \.isNewline) { addPrep(prepDraft) } }
             }
@@ -335,7 +345,7 @@ struct NewRecordingView: View {
                 if let existing = model.library.tree?.subfolders.first(where: { loose($0.name) == loose(newName) }) {
                     target = existing.path
                 } else {
-                    target = try Meetings(root: model.config.meetingsRoot).createFolder(in: "", named: newName)
+                    target = try model.library.meetings.createFolder(in: "", named: newName)
                 }
             }
             let notes = prep + prepLines(prepDraft)

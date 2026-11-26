@@ -1,9 +1,13 @@
 import OatcakeCore
 import SwiftUI
 
-/// Remembered across meetings, so you can step through meetings on the same tab and view.
+/// Remembered across meetings, so you can step through meetings on the same tab and view. The tab
+/// is kept from one launch to the next too.
 @MainActor private enum Remembered {
-    static var tab = MeetingTab.summary
+    static var tab: MeetingTab {
+        get { MeetingTab.last }
+        set { MeetingTab.last = newValue }
+    }
     static var markdown = false
 }
 
@@ -26,7 +30,7 @@ private enum SaveStatus {
     }
 }
 
-private enum FileKey: Hashable {
+private enum FileKey: Hashable, CaseIterable {
     case summary, transcript, notes, todos, draft
     var file: MeetingFile {
         switch self {
@@ -41,6 +45,7 @@ private enum FileKey: Hashable {
 
 struct MeetingView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.undoManager) private var undoManager
     let node: TreeNode
     let jump: Jump?
 
@@ -64,8 +69,13 @@ struct MeetingView: View {
     @ViewState private var transcriptEdited = false
     @ViewState private var flash = -1
     @ViewState private var newTodo = ""
-    @ViewState private var pending: [FileKey: String] = [:]
     @ViewState private var saveTask: Task<Void, Never>?
+    /// Counts reads of the files, and writes to them from here: a read that lands after a later one,
+    /// or after a write, is older than what's shown, and is dropped.
+    @ViewState private var loads = 0
+    /// The summary has just been written and is being read here: its editors stay closed till it is,
+    /// so nothing is typed over the text from before.
+    @ViewState private var readingSummary = false
     @ViewState private var arrived = false
     /// Whether the tab has been checked against this meeting yet (the view is made afresh for each meeting).
     @ViewState private var tabChecked = false
@@ -73,6 +83,8 @@ struct MeetingView: View {
     @ViewState private var query = ""
     @ViewState private var match = 0
     @FocusState private var findFocused: Bool
+    /// This view, as the menus outside it know it.
+    @ViewState private var viewID = UUID()
     @AppStorage(TextScale.key) private var textScale = 1.0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -118,66 +130,86 @@ struct MeetingView: View {
             load()
         }
         .onChange(of: model.library.diskVersion) { load() }
-        // ⌘F: Find, on the transcript.
-        .onChange(of: model.findRequest) {
-            flush()
-            markdown = false
-            Remembered.markdown = false
-            switchTab(.transcript)
-            finding = true
-            findFocused = true
+        .onChange(of: model.jobs.summarising.contains(path)) { was, now in
+            guard was, !now else { return }
+            readingSummary = true
+            load()
         }
+        // The menu bar's Meeting menu, Find and View's tabs, and the other menus with this meeting's commands.
+        .onChange(of: model.meetingRequest) { if let request = model.meetingRequest { perform(request.command) } }
+        .onChange(of: menuState, initial: true) { model.meetingShowing = menuState }
         .onDisappear {
+            if model.meetingShowing?.view == viewID { model.meetingShowing = nil }
             flush()
             // Said while you're here; it isn't kept.
             model.jobs.todoProblems.removeValue(forKey: path)
-        }
-        .background {
-            // ⌘1–⌘3 switch tabs, and ⌘4 to the draft for sharing in a meeting that has one.
-            ForEach(Array(tabs.enumerated()), id: \.offset) { i, t in
-                Button("") { switchTab(t) }.keyboardShortcut(KeyEquivalent(Character("\(i + 1)")), modifiers: .command).hidden()
-            }
         }
     }
 
     // MARK: Loading and saving
 
-    /// A change on disk (Finder, another editor, our own save) only replaces the text when nothing
-    /// typed here is still waiting to be saved.
+    /// Reads the meeting's files and parses its transcript, off the main actor. A change on disk
+    /// (Finder, another editor, our own save) replaces what's shown, except what's typed here and still
+    /// waiting to be saved: that stays as it's typed.
     private func load() {
-        recordingAudio = model.library.meetings.recordingAudio(path)
-        guard pending.isEmpty else { return }
-        do {
-            let m = try model.library.readMeeting(path)
-            files = [.summary: m.summary, .transcript: m.transcript, .notes: m.notes, .todos: m.todo, .draft: m.draft]
-            // Arriving on Draft for Sharing from a meeting that had one, at one that doesn't. Only on
-            // arrival: a draft emptied here, to be written again by hand, keeps its tab meanwhile.
-            if !tabChecked {
-                tabChecked = true
-                if tab == .draft && !hasDraft { tab = .summary }
+        loads += 1
+        let asked = loads
+        let meetings = model.library.meetings, path = path, myName = model.config.myName
+        Task {
+            let read = await Task.detached { () -> Result<(MeetingFiles, URL?, ParsedTranscript), Error> in
+                Result {
+                    let m = try meetings.read(path)
+                    return (m, meetings.recordingAudio(path), Self.parsed(m.transcript, myName: myName))
+                }
+            }.value
+            guard asked == loads else { return }
+            // The newest read: if the summary has just been written, it began after that.
+            readingSummary = false
+            switch read {
+            case .success(let (m, audio, transcript)):
+                recordingAudio = audio
+                let typed = model.edits.texts(in: path)
+                let onDisk: [FileKey: String] = [.summary: m.summary, .transcript: m.transcript, .notes: m.notes, .todos: m.todo, .draft: m.draft]
+                files = Dictionary(uniqueKeysWithValues: FileKey.allCases.map { ($0, typed[$0.file] ?? onDisk[$0] ?? "") })
+                // Arriving on Draft for Sharing from a meeting that had one, at one that doesn't. Only on
+                // arrival: a draft emptied here, to be written again by hand, keeps its tab meanwhile.
+                if !tabChecked {
+                    tabChecked = true
+                    if tab == .draft && !hasDraft { tab = .summary }
+                }
+                if let edited = typed[.transcript] {
+                    readTranscript(edited)
+                } else {
+                    (transcriptLines, speakers, rows) = transcript
+                }
+                meta = m.meta
+                loadError = ""
+                if let stamp = jump?.stamp, !arrived {
+                    arrived = true
+                    // Arriving from the To-dos page with a time: jump there once the transcript has loaded.
+                    DispatchQueue.main.async { self.jumpTo(stamp) }
+                }
+                // Typed here earlier and not written yet (its save failed, say): it's tried again.
+                if !typed.isEmpty, status == .quiet { saveSoon() }
+            case .failure(let error):
+                loadError = error.localizedDescription
             }
-            readTranscript(m.transcript)
-            meta = m.meta
-            loadError = ""
-            if let stamp = jump?.stamp, !arrived {
-                arrived = true
-                // Arriving from the To-dos page with a time: jump there once the transcript has loaded.
-                DispatchQueue.main.async { self.jumpTo(stamp) }
-            }
-        } catch {
-            loadError = error.localizedDescription
         }
     }
 
     /// Edits save 600 ms after the last keystroke, and straight away when leaving the meeting.
-    private func write(_ key: FileKey, _ content: String, now: Bool = false) {
+    private func write(_ key: FileKey, _ content: String) {
+        model.edits.typed(content, in: path, key.file, before: files?[key] ?? "")
         files?[key] = content
-        pending[key] = content
         if key == .transcript { transcriptEdited = true }
-        status = now ? .todo : .saving
+        saveSoon()
+    }
+
+    private func saveSoon() {
+        status = .saving
         saveTask?.cancel()
         saveTask = Task {
-            if !now { try? await Task.sleep(for: .milliseconds(600)) }
+            try? await Task.sleep(for: .milliseconds(600))
             if !Task.isCancelled { flush() }
         }
     }
@@ -189,28 +221,29 @@ struct MeetingView: View {
             transcriptEdited = false
             readTranscript(files?[.transcript] ?? "")
         }
-        for (key, content) in pending {
-            do {
-                try model.library.writeMeetingFile(path, key.file, content)
-                // Typing that arrived during the save stays waiting.
-                if pending[key] == content { pending.removeValue(forKey: key) }
-            } catch {
-                status = .failed
-                return
-            }
+        let waiting = model.edits.texts(in: path).count
+        let outcomes = model.saveEdits(in: path)
+        // Written (here or beside): a read still on its way has the files as they were before.
+        if model.edits.texts(in: path).count < waiting {
+            loads += 1
+            // The read the summary's editors wait for is one of those dropped: another takes its place.
+            if readingSummary { load() }
         }
-        if pending.isEmpty && status != .todo && status != .quiet { status = .saved }
-        if status == .todo {
-            Task {
-                try? await Task.sleep(for: .seconds(2))
-                if status == .todo { status = .quiet }
-            }
+        if model.edits.isWaiting(in: path) {
+            status = .failed
+        } else if !outcomes.isEmpty {
+            // A file had changed meanwhile, so what was typed went beside it (saveEdits says so): the
+            // file as it is now is shown.
+            status = .quiet
+            load()
+        } else if status != .todo && status != .quiet {
+            status = .saved
         }
     }
 
-    /// A tick, or a to-do added, on the Summary tab. What's shown changes at once; the file is changed
-    /// as it is now rather than written over with what's shown, so to-dos that have arrived since
-    /// this was read (the summary's own, say) are kept.
+    /// A to-do added on the Summary tab. What's shown changes at once; the file is changed as it is
+    /// now rather than written over with what's shown, so to-dos that have arrived since this was
+    /// read (the summary's own, say) are kept.
     private func changeTodos(shown: String, _ change: () throws -> Bool) {
         files?[.todos] = shown
         do {
@@ -219,14 +252,30 @@ struct MeetingView: View {
                 model.toast(todoChangedMessage)
                 return load()
             }
-            status = .todo
-            Task {
-                try? await Task.sleep(for: .seconds(2))
-                if status == .todo { status = .quiet }
-            }
+            todosSaved()
         } catch {
             model.toast(error.localizedDescription, isError: true)
             load()
+        }
+    }
+
+    /// A tick here, as everywhere (Library.tick): what's shown is the file as it is afterwards, or,
+    /// when nothing was ticked, the meeting read again.
+    private func tick(_ todo: Todo) {
+        model.library.tick(path, todo, undo: undoManager) { [files = $files] text in
+            guard let text else { return load() }
+            files.wrappedValue?[.todos] = text
+            todosSaved()
+        }
+    }
+
+    private func todosSaved() {
+        // A read still on its way has the to-dos as they were before.
+        loads += 1
+        status = .todo
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            if status == .todo { status = .quiet }
         }
     }
 
@@ -296,80 +345,53 @@ struct MeetingView: View {
             }
             .menuIndicator(.hidden)
             .accessibilityLabel("More")
-            .help("Regenerate, draft for sharing, rename speakers, copy, share or show in Finder")
+            .help("Draft for sharing, regenerate, rename speakers, copy, share, rename, move, show in Finder or move to the Trash")
         }
     }
 
-    /// The meeting's menu: writing it again first, then taking it elsewhere.
-    @ViewBuilder private var actions: some View {
-        let hasSummary = !(files?[.summary] ?? "").trimmed.isEmpty
-        if tab == .summary || tab == .draft, hasSummary {
-            Button {
-                // Edits to the summary, to-dos or draft are saved first: the draft is written from them.
+    /// The meeting's menu: the same commands as the Meeting menu and its right-click menus.
+    private var actions: some View {
+        MeetingMenuItems(model: model, node: node, local: (menuState, perform))
+    }
+
+    /// What this meeting can do just now, for the menus outside it.
+    private var menuState: OpenMeeting {
+        OpenMeeting(view: viewID, path: path, tab: tab, tabs: tabs, hasSummary: !(files?[.summary] ?? "").trimmed.isEmpty,
+                    hasTranscript: !(files?[.transcript] ?? "").trimmed.isEmpty, canRenameSpeakers: canRenameSpeakers,
+                    template: meta.template, canFindNext: finding && tab == .transcript && !markdown, shareText: shareText)
+    }
+
+    /// A command from this meeting's menu, or one outside it.
+    private func perform(_ command: MeetingCommand) {
+        switch command {
+        case .tab(let t):
+            if tabs.contains(t) { switchTab(t) }
+        case .find:
+            // On the tab showing, as it's laid out: the Markdown editors mark nothing.
+            if markdown {
                 flush()
-                guard pending.isEmpty else { return }
-                askingForDraft = true
-            } label: { Label("Draft for Sharing…", systemImage: "square.and.pencil") }
-                .disabled(model.jobs.summarising.contains(path) || model.jobs.drafting.contains(path))
-                .help(model.config.todosEnabled ? "Write this meeting’s summary and to-dos again for other people to read"
-                      : "Write this meeting’s summary again for other people to read")
-        }
-        if tab == .summary, hasSummary {
-            let busy = model.jobs.summarising.contains(path) || (files?[.transcript] ?? "").trimmed.isEmpty
-            if templates.isEmpty {
-                Button { regenerate(.summary) } label: { Label("Regenerate Summary", systemImage: "arrow.clockwise") }
-                    .disabled(busy)
-                    .help("Write the summary again with the current instructions in Settings")
-            } else {
-                // Ticked: what this meeting's summary is written with now.
-                let current = model.config.summaryTemplate(named: meta.template)?.name
-                Menu {
-                    Toggle("Default", isOn: Binding(get: { current == nil }, set: { _ in regenerate(.summary, template: .picked(nil)) }))
-                    Divider()
-                    ForEach(templates, id: \.name) { t in
-                        Toggle(t.name, isOn: Binding(get: { current == t.name }, set: { _ in regenerate(.summary, template: .picked(t.name)) }))
-                    }
-                } label: { Label("Regenerate Summary", systemImage: "arrow.clockwise") }
-                    .disabled(busy)
-                    .help("Write the summary again, with a template if you pick one")
+                markdown = false
+                Remembered.markdown = false
             }
-            if model.config.todosEnabled {
-                Button { regenerate(.todos) } label: { Label("Regenerate To-dos", systemImage: "checklist") }
-                    .disabled(busy)
-                    .help("Write the to-dos again with the current instructions in Settings")
-            }
+            finding = true
+            findFocused = true
+        case .findNext, .findPrevious:
+            step(command == .findNext ? 1 : -1, matches(in: rows))
+        case .draftForSharing:
+            // Edits to the summary, to-dos or draft are saved first: the draft is written from them.
+            flush()
+            guard !model.edits.isWaiting(in: path) else { return }
+            askingForDraft = true
+        case .regenerate(let part, let template):
+            regenerate(part, template: template)
+        case .renameSpeakers:
+            // A failed save keeps its text pending; renaming then would have it written back over the new names.
+            flush()
+            guard !model.edits.isWaiting(in: path) else { return }
+            renamingSpeakers = true
+        case .copy:
+            copy(tab.contents(todos: model.config.todosEnabled))
         }
-        if canRenameSpeakers {
-            Button {
-                // A failed save keeps its text pending; renaming then would have it written back over the new names.
-                flush()
-                guard pending.isEmpty else { return }
-                renamingSpeakers = true
-            } label: { Label("Rename Speakers…", systemImage: "person.2") }
-                .disabled(model.jobs.summarising.contains(path))
-                .help(model.config.todosEnabled ? "Change who’s who in this meeting: the names in its transcript, summary and to-dos"
-                      : "Change who’s who in this meeting: the names in its transcript and summary")
-        }
-        Divider()
-        let what = switch tab {
-        case .summary: model.config.todosEnabled ? "summary and to-dos" : "summary"
-        case .transcript: "transcript"
-        case .notes: "notes"
-        case .draft: "draft for sharing"
-        }
-        let tabName = switch tab {
-        case .summary: "Summary"
-        case .transcript: "Transcript"
-        case .notes: "Notes"
-        case .draft: "Draft"
-        }
-        Button { copy(what) } label: { Label("Copy \(tabName)", systemImage: "doc.on.doc") }
-            .help("Copy the \(what), formatted (as Markdown where only plain text can go)")
-        ShareLink(item: shareText, subject: Text(meetingTitle(node))) { Label("Share", systemImage: "square.and.arrow.up") }
-            .help("Send the \(what) with Mail, Messages or another app")
-        Divider()
-        Button { model.library.reveal(path) } label: { Label("Show in Finder", systemImage: "arrow.up.forward.square") }
-            .help("Show this meeting’s folder in Finder")
     }
 
     /// Summary, Transcript, My notes and Draft (for sharing), in the toolbar over the meeting.
@@ -435,19 +457,24 @@ struct MeetingView: View {
 
     private var granola: Bool { meta.source == "granola" || node.granola }
 
+    private func readTranscript(_ text: String) {
+        (transcriptLines, speakers, rows) = Self.parsed(text, myName: model.config.myName)
+    }
+
+    private typealias ParsedTranscript = (lines: [TranscriptLine], speakers: [MeetingSpeaker], rows: [Row])
+
     /// Parses the transcript for showing. Granola labels your track "Microphone"; the call side carries
     /// Granola's own guesses at names. Its CSV export has transcripts without times or names: those
     /// are plain paragraphs, with no speaker.
-    private func readTranscript(_ text: String) {
+    nonisolated private static func parsed(_ text: String, myName: String) -> ParsedTranscript {
         let lines = parseTranscript(text).map { l in
             var l = l
-            if l.speaker == "Microphone" { l.speaker = model.config.myName } else if l.speaker == "System audio" { l.speaker = "Call audio" }
+            if l.speaker == "Microphone" { l.speaker = myName } else if l.speaker == "System audio" { l.speaker = "Call audio" }
             return l
         }
-        transcriptLines = lines
-        speakers = meetingSpeakers(text)
-        rows = lines.isEmpty ? text.components(separatedBy: "\n").map(\.trimmed).filter { !$0.isEmpty }.map { Row(text: $0) }
+        let rows = lines.isEmpty ? text.components(separatedBy: "\n").map(\.trimmed).filter { !$0.isEmpty }.map { Row(text: $0) }
             : lines.map { Row(speaker: $0.speaker, stamp: $0.stamp, at: $0.at, text: $0.text) }
+        return (lines, meetingSpeakers(text), rows)
     }
 
     private func content(_ files: [FileKey: String]) -> some View {
@@ -496,7 +523,7 @@ struct MeetingView: View {
                                 HStack(spacing: 10) {
                                     Button("Try again") { regenerate(part, template: model.jobs.regeneratingWith[path] ?? .meetings) }
                                         .disabled((files[.transcript] ?? "").trimmed.isEmpty)
-                                    SettingsPaneLink(pane: "models", title: "Open Settings").buttonStyle(.link)
+                                    SettingsPaneLink(pane: .models, title: "Open Settings").buttonStyle(.link)
                                 }
                                 .padding(.top, 6)
                             }.padding(.bottom, 16)
@@ -603,7 +630,7 @@ struct MeetingView: View {
                             .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
                             .padding(8)
                             .background(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.line))
-                    } else if model.jobs.summarising.contains(path), key == .summary || key == .todos {
+                    } else if model.jobs.summarising.contains(path) || readingSummary, key == .summary || key == .todos {
                         Text("The summary is being written. This can be edited once it’s here.")
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, minHeight: key == .todos ? 70 : 120, alignment: .topLeading)
@@ -655,11 +682,11 @@ struct MeetingView: View {
                 HStack(spacing: 10) {
                     Button("Try again") {
                         flush()
-                        guard pending.isEmpty else { return }
+                        guard !model.edits.isWaiting(in: path) else { return }
                         model.jobs.draftForSharing(path, request: model.jobs.draftRequests[path] ?? "")
                     }
                     .disabled((files?[.summary] ?? "").trimmed.isEmpty || model.jobs.summarising.contains(path))
-                    SettingsPaneLink(pane: "models", title: "Open Settings").buttonStyle(.link)
+                    SettingsPaneLink(pane: .models, title: "Open Settings").buttonStyle(.link)
                     // Put aside: without a draft there's nothing else on this tab, so it goes too.
                     Button("Dismiss") {
                         model.jobs.draftErrors.removeValue(forKey: path)
@@ -713,17 +740,15 @@ struct MeetingView: View {
                 // No to-dos yet: just the field to add one.
                 if !todos.isEmpty { SectionLabel(text: "To-dos\(open > 0 ? " · \(open) open" : "")") }
                 ForEach(todos, id: \.line) { t in
-                    HStack(alignment: .top, spacing: 10) {
-                        TodoCheckbox(checked: t.done, what: t.text) {
-                            changeTodos(shown: toggleTodo(todoText, line: t.line)) { try model.library.toggleTodo(path, line: t.line, text: t.text) }
+                    let detail = [t.owner.isEmpty ? nil : ownerLabel(t.owner, model.config.myName), t.due.isEmpty ? nil : "due \(t.due)"].compactMap { $0 }
+                    // The time in the call goes on the line under the to-do, after its owner and due date, as on the To-dos page.
+                    TodoRow(todo: t, task: marked(t.text), tick: { tick(t) }) {
+                        if !detail.isEmpty || !t.stamp.isEmpty {
+                            HStack(spacing: 8) {
+                                if !detail.isEmpty { Text(detail.joined(separator: " · ")).foregroundStyle(.secondary) }
+                                if !t.stamp.isEmpty { Chip(text: t.stamp) { jumpTo(t.stamp) } }
+                            }
                         }
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(marked(t.text)).strikethrough(t.done).foregroundStyle(t.done ? .secondary : .primary).textSelection(.enabled)
-                            let detail = [t.owner.isEmpty ? nil : ownerLabel(t.owner, model.config.myName), t.due.isEmpty ? nil : "due \(t.due)"].compactMap { $0 }
-                            if !detail.isEmpty { Text(detail.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary) }
-                        }
-                        Spacer(minLength: 0)
-                        if !t.stamp.isEmpty { Chip(text: t.stamp) { jumpTo(t.stamp) } }
                     }
                 }
                 HStack(spacing: 10) {
@@ -746,15 +771,10 @@ struct MeetingView: View {
         }
     }
 
-    /// The summary templates a meeting can be regenerated with: named, and with instructions.
-    private var templates: [SummaryTemplate] {
-        model.config.summaryTemplates.filter { model.config.summaryTemplate(named: $0.name) != nil }
-    }
-
     private func regenerate(_ part: SummaryPart, template: SummaryTemplateChoice = .meetings) {
         // Save edits before asking for a replacement; a failed save must not discard pending text.
         flush()
-        guard pending.isEmpty else { return }
+        guard !model.edits.isWaiting(in: path) else { return }
         model.jobs.regenerate(part, path, template: template)
     }
 
@@ -779,7 +799,7 @@ struct MeetingView: View {
                 HStack(spacing: 10) {
                     Button("Write summary") { model.jobs.writeSummary(path) }
                     // What stopped it is usually put right in Settings: the model, or its download.
-                    if error != nil { SettingsPaneLink(pane: "models", title: "Open Settings").buttonStyle(.link) }
+                    if error != nil { SettingsPaneLink(pane: .models, title: "Open Settings").buttonStyle(.link) }
                 }
                 .padding(.top, 6)
             }
@@ -818,19 +838,18 @@ struct MeetingView: View {
             if stepping {
                 Text(query.trimmed.isEmpty ? "" : found.isEmpty ? "Not found" : "\(min(match, found.count - 1) + 1) of \(found.count)")
                     .font(.callout).foregroundStyle(.secondary).monospacedDigit()
-                Button { step(-1, found) } label: { Image(systemName: "chevron.up") }.disabled(found.isEmpty).help("Previous").accessibilityLabel("Previous match")
-                Button { step(1, found) } label: { Image(systemName: "chevron.down") }.disabled(found.isEmpty).help("Next (Return)").accessibilityLabel("Next match")
+                Button { step(-1, found) } label: { Image(systemName: "chevron.up") }.disabled(found.isEmpty).help("Previous (⇧⌘G)").accessibilityLabel("Previous match")
+                Button { step(1, found) } label: { Image(systemName: "chevron.down") }.disabled(found.isEmpty).help("Next (Return or ⌘G)").accessibilityLabel("Next match")
             }
+            // Escape closes it wherever the keyboard is, not only from its field. Not while Ask is open
+            // over it (Escape closes that first) or search is: Escape is theirs then.
             Button("Done") { endFind() }.help("Close (Esc)")
+                .keyboardShortcut(model.ask.open || model.searching ? nil : .cancelAction)
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(.bar)
-        .onKeyPress(.escape) {
-            endFind()
-            return .handled
-        }
     }
 
     private func step(_ by: Int, _ found: [Int]) {

@@ -91,21 +91,28 @@ public struct Todo: Equatable, Hashable, Sendable {
 private let todoFormat = try! NSRegularExpression(pattern: #"^\s*[-*]\s+\[( |x|X)\]\s+(.*)$"#)
 private let lonelyStamp = try! NSRegularExpression(pattern: #"^\[\#(stampPattern)\]$"#)
 
-/// "- [ ] Task — Owner — due Fri, Oct 30 — [12:34]" (owner, due date and time optional).
+/**
+ * "- [ ] Task — Owner — due Fri, Oct 30 — [12:34]" (owner, due date and time optional). Only the
+ * last piece that isn't the due date or the time is the owner: a task can have a spaced dash of its
+ * own ("Compare A — B pricing — John"), and that part stays in the task.
+ */
 public func parseTodos(_ markdown: String) -> [Todo] {
     markdown.components(separatedBy: "\n").enumerated().compactMap { index, line in
         guard let g = firstMatch(todoFormat, line), let box = g[1], let body = g[2] else { return nil }
         let pieces = body.replacingOccurrences(of: #"\s+—\s+"#, with: "\u{0}", options: .regularExpression).components(separatedBy: "\u{0}")
         var todo = Todo(line: index, done: box != " ", text: pieces[0], owner: "", due: "", stamp: "")
+        var words: [String] = []
         for p in pieces.dropFirst() {
             if let stamp = firstMatch(lonelyStamp, p)?[1] ?? nil {
                 todo.stamp = padStamp(stamp)
             } else if p.range(of: #"^due\s+"#, options: [.regularExpression, .caseInsensitive]) != nil {
                 todo.due = p.replacingOccurrences(of: #"^due\s+"#, with: "", options: [.regularExpression, .caseInsensitive])
             } else {
-                todo.owner = p
+                words.append(p)
             }
         }
+        todo.owner = words.popLast() ?? ""
+        todo.text = ([pieces[0]] + words).joined(separator: " — ")
         return todo
     }
 }
@@ -124,25 +131,53 @@ public func toggleTodo(_ markdown: String, line: Int) -> String {
  * when it's no longer there.
  */
 public func toggleTodo(_ markdown: String, line: Int, text: String) -> String? {
+    findTodo(markdown, line: line, text: text).map { toggleTodo(markdown, line: $0.line) }
+}
+
+private func findTodo(_ markdown: String, line: Int, text: String) -> Todo? {
     let todos = parseTodos(markdown)
-    guard let found = todos.first(where: { $0.line == line && $0.text == text }) ?? todos.first(where: { $0.text == text }) else { return nil }
-    return toggleTodo(markdown, line: found.line)
+    return todos.first(where: { $0.line == line && $0.text == text }) ?? todos.first(where: { $0.text == text })
+}
+
+/// todo.md with the to-do `text` (found as toggleTodo finds it) written as `body` instead, its tick
+/// kept, or taken out when `body` is nil. nil when it's no longer there.
+public func editTodo(_ markdown: String, line: Int, text: String, to body: String?) -> String? {
+    guard let found = findTodo(markdown, line: line, text: text) else { return nil }
+    var lines = markdown.components(separatedBy: "\n")
+    if let body {
+        guard let box = lines[found.line].range(of: #"^\s*[-*]\s+\[( |x|X)\]\s+"#, options: .regularExpression) else { return nil }
+        lines[found.line] = lines[found.line][..<box.upperBound] + body.trimmed
+    } else {
+        lines.remove(at: found.line)
+    }
+    return lines.joined(separator: "\n")
+}
+
+/// A to-do as it would be typed to make it again: "Send the deck - Jane - due Fri, Nov 6", for editing it.
+public func typedForm(_ todo: Todo) -> String {
+    [todo.text, todo.owner, todo.due.isEmpty ? "" : "due \(todo.due)", todo.stamp.isEmpty ? "" : "[\(todo.stamp)]"]
+        .filter { !$0.isEmpty }.joined(separator: " - ")
 }
 
 /**
  * A typed to-do in todo.md's form. " - " and " -- " count as the separator (an em dash is awkward
  * to type), and `owner` fills in when none is given: "Send the deck - due Fri, Nov 6" with owner
- * "John" becomes "Send the deck — John — due Fri, Nov 6".
+ * "John" becomes "Send the deck — John — due Fri, Nov 6". As in parseTodos, only the last piece that
+ * isn't a field is the owner: "Send the deck - draft two - Jane" keeps "Send the deck - draft two".
  */
 public func typedTodo(_ text: String, owner: String? = nil) -> String {
-    var parts = text.trimmed.replacingOccurrences(of: #"\s+(?:—|--|-)\s+"#, with: "\u{0}", options: .regularExpression).components(separatedBy: "\u{0}")
+    // The pieces, with the separators typed between them (pieces at even places, separators at odd).
+    let parts = text.trimmed.replacingOccurrences(of: #"\s+(?:—|--|-)\s+"#, with: "\u{0}$0\u{0}", options: .regularExpression).components(separatedBy: "\u{0}")
+    let pieces = stride(from: 0, to: parts.count, by: 2).map { parts[$0] }
     let isField = { (p: String) in
         p.range(of: #"^due\s"#, options: [.regularExpression, .caseInsensitive]) != nil
             || p.range(of: "^\\[\(stampForm)\\]$", options: .regularExpression) != nil
     }
-    let named = parts.dropFirst().contains { !isField($0) }
-    if let owner, !owner.isEmpty, !named { parts.insert(owner, at: 1) }
-    return parts.joined(separator: " — ")
+    let named = pieces.indices.dropFirst().last { !isField(pieces[$0]) }
+    var task = pieces[0]
+    for i in pieces.indices.dropFirst() where !isField(pieces[i]) && i != named { task += parts[2 * i - 1] + pieces[i] }
+    let who = named.map { pieces[$0] } ?? owner.flatMap { $0.isEmpty ? nil : $0 }
+    return ([task] + (who.map { [$0] } ?? []) + pieces.filter(isField)).joined(separator: " — ")
 }
 
 /// todo.md with a new open to-do at the end.
@@ -185,11 +220,84 @@ public struct TodoItem: Identifiable, Equatable, Sendable {
     public func isOverdue(today: Date = Calendar.current.startOfDay(for: Date())) -> Bool {
         !todo.done && dueDate.map { $0 < today } == true
     }
+
+    /**
+     * Its group on the To-dos page grouped by due date. Weeks are calendar weeks: "This week" runs
+     * to Sunday, "Next week" the seven days after. They're counted in days on the calendar, not in
+     * steps of 24 hours, which in a week the clocks change in end the week an hour out, putting next
+     * week's Sunday under Later.
+     */
+    public func dueGroup(today: Date, calendar: Calendar = gregorian) -> DueGroup {
+        guard let due = dueDate else { return .noDate }
+        let today = calendar.startOfDay(for: today)
+        if due < today { return todo.done ? .dueEarlier : .overdue }
+        if calendar.isDate(due, inSameDayAs: today) { return .today }
+        let weekday = calendar.component(.weekday, from: today)
+        guard let sunday = calendar.date(byAdding: .day, value: (8 - weekday) % 7, to: today),
+              let nextSunday = calendar.date(byAdding: .day, value: 7, to: sunday) else { return .later }
+        return due <= sunday ? .thisWeek : due <= nextSunday ? .nextWeek : .later
+    }
 }
 
-public func allTodoItems(_ meetings: [MeetingTodos]) -> [TodoItem] {
-    meetings.flatMap { m in parseTodos(m.todo).map { TodoItem(todo: $0, meeting: m, dueDate: dueDate($0.due, meetingDate: m.startedAt)) } }
+/// The To-dos page's groups by due date, in the order they're listed.
+public enum DueGroup: Int, CaseIterable, Comparable, Sendable {
+    case overdue, dueEarlier, today, thisWeek, nextWeek, later, noDate
+
+    public var title: String {
+        switch self {
+        case .overdue: "Overdue"
+        case .dueEarlier: "Was due earlier"
+        case .today: "Today"
+        case .thisWeek: "This week"
+        case .nextWeek: "Next week"
+        case .later: "Later"
+        case .noDate: "No due date"
+        }
+    }
+
+    public static func < (a: DueGroup, b: DueGroup) -> Bool { a.rawValue < b.rawValue }
 }
+
+/**
+ * Every to-do as an item, with its due date worked out. Those of a meeting whose todo.md (and title
+ * and date) are as they were in `previous` are taken from there: a tick changes one file, and the
+ * rest of the library needn't be worked out again. Your own list's are always worked out again: with
+ * no meeting to count from, "due tomorrow" counts from today, which changes at midnight.
+ */
+public func allTodoItems(_ meetings: [MeetingTodos], reusing previous: [TodoItem] = []) -> [TodoItem] {
+    let before = Dictionary(grouping: previous, by: \.meeting.path)
+    return meetings.flatMap { m in
+        if m.startedAt != nil, let items = before[m.path], items.first?.meeting == m { return items }
+        return parseTodos(m.todo).map { TodoItem(todo: $0, meeting: m, dueDate: dueDate($0.due, meetingDate: m.startedAt)) }
+    }
+}
+
+/// The formats a due date is read in, each made once: making a formatter is most of the cost of reading one.
+private final class DueFormatters: @unchecked Sendable {
+    private let lock = NSLock()
+    private let formatters: [DateFormatter] = ["MMM d yyyy", "MMMM d yyyy", "MMM d, yyyy", "MMMM d, yyyy", "d MMM yyyy", "d MMMM yyyy", "yyyy-MM-dd", "M/d/yyyy"].map {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.isLenient = true
+        // The day alone is wanted, so it's read as a day in UTC and made a day here below, whatever zone this Mac is in now.
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = $0
+        return f
+    }
+
+    /// The year, month and day of the first format that reads one of `texts`.
+    func day(_ texts: [String]) -> DateComponents? {
+        lock.withLock {
+            for formatter in formatters {
+                if let d = texts.lazy.compactMap({ formatter.date(from: $0) }).first {
+                    return formatter.calendar.dateComponents(in: formatter.timeZone, from: d)
+                }
+            }
+            return nil
+        }
+    }
+}
+private let dueFormatters = DueFormatters()
 
 /**
  * "Fri, Oct 30" → a date. To-dos give no year, so it's the meeting's year, or the next one when that
@@ -201,17 +309,10 @@ public func dueDate(_ due: String, meetingDate: Date? = nil) -> Date? {
     let calendar = gregorian
     if let day = relativeDue(due, from: met) { return day }
     let text = due.replacingOccurrences(of: #"^[A-Za-z]+,\s*"#, with: "", options: .regularExpression).trimmed
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.isLenient = true
     let hasYear = text.range(of: #"\d{4}"#, options: .regularExpression) != nil
-    var found: Date?
     let candidates = hasYear ? [text] : ["\(text) \(calendar.component(.year, from: met))"]
-    for format in ["MMM d yyyy", "MMMM d yyyy", "MMM d, yyyy", "MMMM d, yyyy", "d MMM yyyy", "d MMMM yyyy", "yyyy-MM-dd", "M/d/yyyy"] {
-        formatter.dateFormat = format
-        if let d = candidates.lazy.compactMap({ formatter.date(from: $0) }).first { found = d; break }
-    }
-    guard var date = found else { return nil }
+    guard let day = dueFormatters.day(candidates),
+          var date = calendar.date(from: DateComponents(year: day.year, month: day.month, day: day.day)) else { return nil }
     if !hasYear, date < met.addingTimeInterval(-60 * 86_400) { date = calendar.date(byAdding: .year, value: 1, to: date)! }
     return calendar.startOfDay(for: date)
 }

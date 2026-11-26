@@ -1,12 +1,32 @@
 import OatcakeCore
 import SwiftUI
+import UniformTypeIdentifiers
 
-/// What a drag from the meeting list or the folder tree carries: an item's path in the Meetings folder.
-let dragPrefix = "oatcake-item:"
+extension UTType {
+    /// A meeting or folder dragged within Oatcake, to move it. Declared in Oatcake's Info.plist.
+    static let oatcakeItem = UTType(exportedAs: "local.oatcake.item")
+}
 
-/// The paths in a drop. Dragging several meetings picked in the list brings one item for each.
-func droppedPaths(_ items: [String]) -> [String] {
-    items.filter { $0.hasPrefix(dragPrefix) }.map { String($0.dropFirst(dragPrefix.count)) }
+/// What a drag from the meeting list or the folder tree carries. Dropped inside Oatcake, the item's
+/// path, to move it; on another app, the folder itself (Finder, Mail), or, where only text goes, the
+/// meeting's summary. Dragging several meetings picked in the list brings one item for each.
+struct MeetingItem: Codable, Transferable {
+    /// Relative to the Meetings folder.
+    var path: String
+    var folder: URL
+
+    init(_ path: String, in root: URL) {
+        self.path = path
+        folder = root.appendingPathComponent(path, isDirectory: true)
+    }
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .oatcakeItem)
+        ProxyRepresentation { $0.folder }
+        DataRepresentation(exportedContentType: .utf8PlainText) { item in
+            Data(forReading(readText(item.folder.appendingPathComponent(MeetingFile.summary.rawValue))).trimmed.utf8)
+        }
+    }
 }
 
 enum SidebarItem: Hashable {
@@ -28,7 +48,7 @@ struct SidebarView: View {
 
     var body: some View {
         List(selection: selectionBinding) {
-            if let live = model.recording.live { liveRow(live).tag(SidebarItem.live) }
+            if let live = model.recording.live { LiveRow(rec: live).tag(SidebarItem.live) }
             Label("Home", systemImage: "house").tag(SidebarItem.home)
             if model.config.todosEnabled { todosRow.tag(SidebarItem.todos) }
             if model.calendar.hasCalendars { upcoming }
@@ -39,13 +59,24 @@ struct SidebarView: View {
             }
             Section {
                 if let tree = model.library.tree {
+                    // Every meeting, whatever folder it's in; highlighted while the list shows them.
+                    HStack {
+                        Label("All meetings", systemImage: "tray.full")
+                        Spacer()
+                        let count = tree.allMeetings.count
+                        if count > 0 { Text("\(count)").foregroundStyle(.secondary).monospacedDigit() }
+                    }
+                    .tag(SidebarItem.folder(""))
                     ForEach(visibleFolders(tree), id: \.node.path) { item in
                         FolderRow(node: item.node, depth: item.depth, open: $open, renaming: $renaming, draft: $draft,
                                   newFolderIn: $newFolderIn, dropTarget: $dropTarget)
                     }
                     // A one-off call with no folder of its own is saved at the top level. It's listed here
                     // under its call's title, after the folders, to open or to drag into one.
-                    ForEach(tree.meetings, id: \.path) { m in topLevelRow(m).tag(SidebarItem.meeting(m.path)) }
+                    ForEach(tree.meetings, id: \.path) { m in
+                        topLevelRow(m).tag(SidebarItem.meeting(m.path))
+                            .contextMenu { MeetingMenuItems(model: model, node: m) }
+                    }
                     if tree.children.isEmpty { Text("No folders yet.").foregroundStyle(.secondary).font(.callout) }
                 }
             } header: {
@@ -59,12 +90,17 @@ struct SidebarView: View {
                 }
                 .padding(.trailing, headerButtonInset)
                 .contentShape(Rectangle())
-                .onTapGesture { model.openFolder("") }
-                .help("All meetings")
-                .dropDestination(for: String.self) { items, _ in drop(items, on: "") } isTargeted: { dropTarget = $0 ? "" : nil }
+                // Dropped on the heading: to the top level of the Meetings folder.
+                .dropDestination(for: MeetingItem.self) { items, _ in drop(items, on: "") } isTargeted: { dropTarget = $0 ? "" : nil }
             }
         }
         .listStyle(.sidebar)
+        // The folder tree from the keyboard, as in Finder: → opens a folder, ← closes it (or goes up
+        // to the folder it's in), Return renames, and ⌘⌫ (File › Move to Trash) moves it to the Trash.
+        .onKeyPress(.rightArrow) { showFolders(true) }
+        .onKeyPress(.leftArrow) { showFolders(false) }
+        .onKeyPress(.return) { renameSelected() }
+        .focusedValue(\.trashMeetings, trashSelected)
         .safeAreaInset(edge: .top) {
             Button { model.newRecording() } label: {
                 // During a call it goes back to that call, so it says so.
@@ -95,7 +131,7 @@ struct SidebarView: View {
         }
         .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $draft)
-            Button("Rename") { if let node = renaming { model.library.rename(node.path, to: draft) } }
+            Button("Rename") { if let node = renaming { model.library.rename(node.path, to: draft) } }.disabled(draft.trimmed.isEmpty)
             Button("Cancel", role: .cancel) {}
         }
         .alert("New Folder", isPresented: Binding(get: { newFolderIn != nil }, set: { if !$0 { newFolderIn = nil } })) {
@@ -104,6 +140,7 @@ struct SidebarView: View {
                 guard let parent = newFolderIn, !draft.trimmed.isEmpty else { return }
                 if model.library.createFolder(in: parent, named: draft) != nil, !parent.isEmpty { open.insert(parent) }
             }
+            .disabled(draft.trimmed.isEmpty)
             Button("Cancel", role: .cancel) {}
         } message: {
             if let parent = newFolderIn, !parent.isEmpty { Text("Inside \(folderPath(parent))") }
@@ -155,36 +192,53 @@ struct SidebarView: View {
         for i in parts.indices.dropLast() { open.insert(parts[...i].joined(separator: "/")) }
     }
 
-    private func drop(_ items: [String], on target: String) -> Bool {
-        let paths = droppedPaths(items)
-        guard !paths.isEmpty else { return false }
-        model.library.move(paths, into: target)
+    private func drop(_ items: [MeetingItem], on target: String) -> Bool {
+        guard !items.isEmpty else { return false }
+        model.library.move(items.map(\.path), into: target)
         return true
     }
 
-    // MARK: Rows
+    // MARK: Keys
 
-    private func liveRow(_ rec: Recording) -> some View {
-        // What's true of it: on its way up, recording, or not recording at all.
-        let state = model.recording.status.state
-        let failed = model.recording.recorderFailure != nil
-        let recording = state == .recording && !failed
-        let label = failed ? "Couldn’t record" : state == .starting ? "Starting…" : recording ? "Recording · \(clock(model.recording.status.elapsed ?? 0))" : "Recording stopped"
-        return HStack(spacing: 9) {
-            if recording {
-                RecDot()
-            } else if failed {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).font(.caption)
-            } else {
-                Circle().fill(.secondary).frame(width: 7, height: 7)
-            }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(rec.title).lineLimit(1)
-                Text(label)
-                    .font(.caption).foregroundStyle(recording || failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary)).monospacedDigit()
-            }
+    /// The folder or top-level meeting highlighted in the sidebar.
+    private var selectedNode: TreeNode? {
+        switch selectionBinding.wrappedValue {
+        case .folder(let path) where !path.isEmpty, .meeting(let path): model.library.tree?.find(path)
+        default: nil
         }
     }
+
+    private func showFolders(_ show: Bool) -> KeyPress.Result {
+        guard let node = selectedNode, node.kind == .folder else { return .ignored }
+        if show {
+            guard !node.subfolders.isEmpty else { return .ignored }
+            open.insert(node.path)
+        } else if open.contains(node.path) {
+            open.remove(node.path)
+        } else {
+            model.openFolder(parentOf(node.path))
+        }
+        return .handled
+    }
+
+    private func renameSelected() -> KeyPress.Result {
+        guard let node = selectedNode else { return .ignored }
+        if node.kind == .meeting {
+            model.renaming = node
+        } else {
+            draft = node.name
+            renaming = node
+        }
+        return .handled
+    }
+
+    /// File › Move to Trash for what's highlighted: a folder asks first if it holds meetings.
+    private var trashSelected: (() -> Void)? {
+        guard let node = selectedNode else { return nil }
+        return node.kind == .folder ? { model.library.trashFolder(node) } : { model.trash([node]) }
+    }
+
+    // MARK: Rows
 
     private func topLevelRow(_ m: TreeNode) -> some View {
         HStack(spacing: 4) {
@@ -192,7 +246,7 @@ struct SidebarView: View {
             Spacer()
             if let date = meetingDate(m) { Text(compactDate(date)).foregroundStyle(.secondary).monospacedDigit() }
         }
-        .draggable(dragPrefix + m.path)
+        .draggable(MeetingItem(m.path, in: model.library.meetings.root))
     }
 
     private var todosRow: some View {
@@ -311,6 +365,7 @@ struct SidebarView: View {
                     .font(.caption).foregroundStyle(job.status == .failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
             }
         }
+        .contextMenu { Button("Discard…") { model.jobs.discard(job.rec) } }
     }
 
     private func jobStatus(_ job: Jobs.Job) -> String {
@@ -332,6 +387,35 @@ struct NewRecordingLabelStyle: LabelStyle {
         HStack(spacing: 7) {
             configuration.icon.foregroundStyle(.red).font(.system(size: 9))
             configuration.title.fontWeight(.medium)
+        }
+    }
+}
+
+/// The call being recorded. A view of its own, as it reads the recorder's status (twice a second):
+/// the rest of the sidebar isn't drawn again each time.
+private struct LiveRow: View {
+    @Environment(AppModel.self) private var model
+    let rec: Recording
+
+    var body: some View {
+        // What's true of it: on its way up, recording, or not recording at all.
+        let state = model.recording.status.state
+        let failed = model.recording.recorderFailure != nil
+        let recording = state == .recording && !failed
+        let label = failed ? "Couldn’t record" : state == .starting ? "Starting…" : recording ? "Recording · \(clock(model.recording.status.elapsed ?? 0))" : "Recording stopped"
+        return HStack(spacing: 9) {
+            if recording {
+                RecDot()
+            } else if failed {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).font(.caption)
+            } else {
+                Circle().fill(.secondary).frame(width: 7, height: 7)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(rec.title).lineLimit(1)
+                Text(label)
+                    .font(.caption).foregroundStyle(recording || failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary)).monospacedDigit()
+            }
         }
     }
 }
@@ -373,11 +457,10 @@ private struct FolderRow: View {
         .padding(.leading, CGFloat(depth) * 14)
         .background(RoundedRectangle(cornerRadius: 5).fill(dropTarget == node.path ? Color.accentColor.opacity(0.25) : .clear).padding(-3))
         .tag(SidebarItem.folder(node.path))
-        .draggable(dragPrefix + node.path)
-        .dropDestination(for: String.self) { items, _ in
-            let paths = droppedPaths(items)
-            guard !paths.isEmpty else { return false }
-            model.library.move(paths, into: node.path)
+        .draggable(MeetingItem(node.path, in: model.library.meetings.root))
+        .dropDestination(for: MeetingItem.self) { items, _ in
+            guard !items.isEmpty else { return false }
+            model.library.move(items.map(\.path), into: node.path)
             return true
         } isTargeted: { dropTarget = $0 ? node.path : (dropTarget == node.path ? nil : dropTarget) }
         .contextMenu {
@@ -410,7 +493,7 @@ private struct UpdateNotice: View {
                     ProgressView().controlSize(.small)
                 } else if u.blocked != nil {
                     // Opens Settings on its Updates pane.
-                    SettingsPaneLink(pane: "updates", title: "Details")
+                    SettingsPaneLink(pane: .updates, title: "Details")
                 } else {
                     // Asked first: it quits Oatcake, and whatever is half done in a window goes with it.
                     Button("Update…") { confirming = true }.buttonStyle(.borderedProminent)

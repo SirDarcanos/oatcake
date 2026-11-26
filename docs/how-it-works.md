@@ -62,12 +62,15 @@ buttons, hides the sidebar.
 
 The sidebar has a recording in progress, Home, To-dos, Upcoming, Needs review, folders, and any
 meetings at the top level. A one-off call with no folder of its own is saved at the top level;
-drag it onto a folder to file it. Clicking the Meetings heading lists every meeting, and an empty
-folder offers **Record here** under the folder's name, beside the list. Drag the divider
-to resize the meeting list; it keeps that width when you switch screens. Settings (⌘, or the menu bar item) is its own window, in panes; changes
+drag it onto a folder to file it. **All meetings**, at the top of the Meetings section, lists every
+meeting, whatever folder it's in. A folder lists only its own meetings, and says so when they're all
+in the folders inside it; an empty folder offers **Record here** under the folder's name, beside the
+list. Drag the divider to resize the meeting list; it keeps that width
+when you switch screens. Settings (⌘, or the menu bar item) is its own window, in panes; changes
 apply as you make them (see [Settings](settings.md)).
 
-Oatcake opens on **Home**, or on a recording that was still going when it was last closed. Home
+Oatcake opens where it was when it was last closed: Home, To-dos or the meeting that was open (on
+the tab last chosen), with the folder that was listed; or on a recording that was still going. Home
 shows upcoming calls (the one on now or next has **Join the call** and **Start recording**) and a
 button to start a new recording or return to the one in progress. When to-dos are enabled, Home
 also shows up to five open items, earliest due first, with their assignees and due dates. Add or
@@ -75,12 +78,20 @@ tick off to-dos on Home, or choose **View all to-dos** to manage the full list.
 
 ⌘N starts a new recording, and ⌥⌘F (or the search button over the meeting list) opens search over
 the window. It finds meetings by their title, folder, summary, to-dos, notes and transcript as you
-type, newest first, with the words marked; one found by its text shows the line with them. ↑ and
+type, newest first, with the words marked; one found by its text shows the line with them. It says
+**Searching…** until every meeting's text has been looked through, then how many it found. ↑ and
 ↓ choose a meeting, Return or a click opens it on the tab where the words are, with them in Find and
-marked, and Escape closes search. ⌘F finds words in the transcript you're reading: lines with every
-word, one after another. ⇧⌘N makes a
-folder and ⌘R refreshes the calendar; all of these are in the File and Edit menus. View › Bigger
-Text (⌘+), Smaller Text (⌘-) and Actual Size (⌘0) change the size of what you read and type:
+marked, and Escape or a click outside closes search. Search keeps its words and results: open it
+again and ↓ goes on to the next. ⌘F finds words on the tab you're reading, marked wherever they are;
+on the transcript, ⌘G and ⇧⌘G step through the lines with every word. After following a link (a
+to-do's, a citation in Ask, a search result), ⌘[ goes back to where you were and ⌘] forward again.
+
+Everything is in the menus: File (New Folder, Refresh Calendars, Move to Trash), Edit (Find, Search
+Meetings, Ask About Your Meetings), View (the meeting's tabs, and Bigger Text, Smaller Text and
+Actual Size for what you read and type), Go (Back, Forward, Home, To-dos, All Meetings), Meeting
+(everything in the open meeting's **⋯** menu), Recording (New Recording, Stop Recording…, Join Call,
+Show Live Notes) and Help, which opens these pages. [Keyboard shortcuts](keyboard-shortcuts.md)
+lists the keys. Bigger Text (⌘+), Smaller Text (⌘-) and Actual Size (⌘0) change the size of
 summaries, transcripts (the meeting's, the live one and Who's who's), notes, answers, the meeting
 list, to-dos, times and section headings.
 
@@ -126,18 +137,26 @@ for that prompt. Until the recorder has sent any audio, **Cancel** throws the re
 Pick the microphone on the record screen, from the mic button during the call, or in Settings ›
 General: "Same as Mac" follows System Settings › Sound; a chosen mic is used until it's unplugged,
 then the Mac's input until it's back. Changing mic mid-call carries on recording, with the switch
-filled with silence so your track stays lined up with the call.
+filled with silence so your track stays lined up with the call. The call audio is watched the same
+way: if it stops arriving (the Mac slept with its lid closed) or its format changes (headphones
+connected), it's started again, with the gap filled with silence.
 
 You're warned after 30 seconds of a silent mic or no call audio, on the call's screen and with a
 notification, since you're probably looking at the call (the no-call-audio notification only
 while a calling app has the microphone: dictating on your own, there's no call audio to miss). The
 silent-mic notification comes once a recording, and once more if you change microphone (a headset
 that cuts out room noise is silent whenever you aren't talking); the call's screen goes on saying
-so for as long as the mic is silent. If the recorder stops or never starts (no permission, a full
-disk), Oatcake notices (within a couple of seconds once it stops, or after 15 seconds of not
-starting), says so the same two ways, and keeps and processes whatever was recorded. Stop asks
-first, and so does quitting Oatcake while a call is being recorded, analysed or summarised, or
-meetings are being imported.
+so for as long as the mic is silent. The recorder stops by itself before the disk is full (with
+100 MB left), so there's room to finish and process the call. If the recorder stops or never starts
+(no permission, a full disk), Oatcake notices (within a couple of seconds once it stops, or 15
+seconds after it was launched if it hasn't started; time spent on macOS's permission questions
+isn't counted), says so the same two ways, and keeps and processes whatever was recorded. A
+recorder that's stopped part-way still leaves where each track starts, so the two stay lined up;
+when it couldn't, Who's who says your lines may be out of step with the call's. Stop asks
+first, and so does quitting Oatcake while a call is being recorded, analysed or summarised, a draft
+for sharing or an answer is being written, or meetings are being imported. Quitting also asks when
+it would lose something you've typed: notes for a call that couldn't be recorded, edits that
+couldn't be saved, or names in Who's who.
 
 ### Live transcript
 
@@ -146,6 +165,8 @@ helper, `Oatcake --live`, transcribes the audio as the recorder writes it). Your
 Each line from the call side gets a fingerprint, and the name of whoever it sounds like: someone
 Oatcake knows by voice, or someone you've named on another line. A line nobody can be sure of gets
 an obviously made-up name, a different one every time ("Mystery Guest", "Captain Placeholder"…).
+The transcript follows each new line while you're at its end. Scroll up to read back and it stays
+where you are, with **Jump to latest** to take you back down.
 
 Click a line's name to say who said it: the menu lists the people Oatcake knows by voice and the
 people on the calendar invite. Oatcake follows that voice for the rest of the call, and fills in
@@ -155,7 +176,10 @@ name you gave. The names you give are kept in the recording (`live-names.json`),
 starts from them after the call (see [Review](#3-review-whos-who)).
 
 One line gives a rougher fingerprint than a whole call, and can hold two people, so the live names
-are for following the call; the voices are told apart properly once it's over. Matching uses the same rule
+are for following the call; the voices are told apart properly once it's over. When the live
+transcript starts again partway through a call (Name voices turned on, or Oatcake reopened), it
+catches up from the start two minutes at a time, showing lines as it goes. If its helper stops,
+the pane says so; turning the live transcript off and on again starts another. Matching uses the same rule
 as review (see [Accuracy](models.md#accuracy)). Settings › General turns the live transcript off,
 or only the naming of voices, which saves about 180 MB of memory during a call.
 
@@ -163,7 +187,8 @@ or only the naming of voices, which saves about 180 MB of memory during a call.
 
 When a calling app or a browser starts using your microphone and nothing is being recorded, a
 notification offers **Start recording** (under the calendar event happening now, if there is
-one). When a recording has had a calling app on the microphone, and that app has let go and the
+one: of two that overlap, the one that started last, so a call inside a day-long block is the
+call). When a recording has had a calling app on the microphone, and that app has let go and the
 call audio has been quiet for 15 seconds, a notification says the call seems to have ended; 30
 seconds later the recording stops and starts processing, unless you choose **Keep recording** (on
 the notification or the call's screen) or the call comes back. Music still playing, or a call
@@ -193,15 +218,22 @@ On this Mac, in the background. The speech model (Parakeet unless you've chosen 
 transcribes both tracks. The call audio is split into
 voices by FluidAudio's batch diariser (pyannote segmentation, WeSpeaker fingerprints, VBx
 clustering). It runs as a helper process (`Oatcake --analyse`), so a problem there can't take the
-window or a recording in progress with it. Mic lines that repeat the call audio (speaker echo) are
+window or a recording in progress with it. Recordings are analysed one at a time (each loads the
+speech models and its whole call), the others waiting their turn; the helper stops when Oatcake
+quits, and the analysis starts again from the beginning next time. A track that can't be read
+stops the analysis, rather than counting as silence. Mic lines that repeat the call audio (speaker echo) are
 dropped. Voices you named in the live transcript get those names (a voice takes the name given to
 the lines it said most of); known voices are recognised from saved voiceprints; other names are
 suggested from the conversation by the summary model, quoting the words that gave it away (not when
 After a call is set to save the transcript only: see
 [Saving without Who's who](#saving-without-whos-who)). The recording waits under
-Needs review with its step (1–5), and the Dock icon's badge counts the recordings waiting there. A
+Needs review with its step (1–5), and the Dock icon's badge counts the recordings waiting there.
+When one is ready for Who's who and Oatcake isn't in front, a notification says so. A
 failure shows the reason, with **Try again** and **Discard…**; **Discard…** is in the toolbar while
-it's processing and on Who's who as well.
+it's processing and on Who's who as well, and in the menu you get by Control-clicking the
+recording in the sidebar. A recording whose Who's who can't be opened says why, with **Try again**
+(it's analysed again) and **Discard…**. A recording whose recorder went without being able to
+finish it (the disk was full) still waits here, rather than being hidden until Oatcake reopens.
 
 ## 3. Review (Who's who)
 
@@ -233,7 +265,9 @@ names where the old ones were in its summary and to-dos (as whole words: each "V
 one voice, so it's an exact swap wherever the model wrote it that way), and leaves your notes and
 its title as they are. Name them while the summary is still being written and it's written again
 from the named transcript. **Keep as is** keeps the names it has. If a call can't be saved by
-itself, it waits here as usual.
+itself, it waits here as usual, and so does one with audio in which no speech was found (so it
+can be checked, and its audio isn't deleted). Quit while names are being suggested, and they're
+suggested again (and the call saved) when Oatcake next opens.
 
 ## 4. Save
 
@@ -263,8 +297,14 @@ she/her/hers it writes is changed to they/them/their afterwards, with the verb a
 Tabs, in the toolbar over the meeting: Summary (with the meeting's to-dos at the top), Transcript
 and My notes (⌘1–⌘3), and Draft (⌘4) in a meeting that has a [draft for sharing](#draft-for-sharing), each
 Rendered or as editable Markdown from the switch at the top right of the note (saved as you type;
-Summary shows `todo.md` and `summary.md`). Everything else that can be done to the meeting is in
-the **⋯** menu at the right of the toolbar. **Copy** puts the tab you're on (the summary with its
+Summary shows `todo.md` and `summary.md`). If the file changes while you type (its summary
+arrives, or it's edited in another app), Oatcake doesn't save over it: it shows the file as it is
+now and keeps what you typed beside it, as `summary (your version).md` and so on, and says so.
+Everything else that can be done to the meeting is in
+the **⋯** menu at the right of the toolbar, and the same commands are in the Meeting menu and the
+meeting's right-click menu in the list. Those for the tab you're on (**Copy**, **Regenerate
+Summary**…) are greyed out on a tab they don't apply to, and in the right-click menu of a meeting
+that isn't open. **Copy** puts the tab you're on (the summary with its
 to-dos, the transcript, or your notes) on the clipboard under the meeting's title and date,
 formatted for Google Docs, Pages or mail and as Markdown for anything that only takes plain text,
 and **Share** sends the same text with Mail, Messages or another app.
@@ -273,7 +313,8 @@ and **Share** sends the same text with Mail, Messages or another app.
 
 If a meeting has saved audio, a player sits below its title, with the recording's length. Use the
 slider or click a time in the rendered transcript to jump to that point in the recording, before or
-after pressing play. If playback is paused, it
+after pressing play. Space plays and pauses while no text field has the keyboard, and ⌥← and ⌥→ go
+back and on 15 seconds. If playback is paused, it
 stays paused at the new time. Playback stops when you leave the meeting. For calls recorded in
 Oatcake, turn on [Keep call audio after saving](settings.md#storage) to make audio available for
 future meetings.
@@ -304,27 +345,37 @@ renames them in the draft too.
 
 ### To-dos
 
-Tick to-dos off in place; a due date can be a date ("Fri, Oct 30") or a day as it was said
-("Friday", "tomorrow", "end of the week"), counted from the day of the meeting; a to-do's time
-jumps to that moment in the transcript. **To-dos** at the top of the sidebar gathers every
-meeting's to-dos (open and overdue counts beside it): Open / Done / All, grouped by due date,
-folder or owner, filtered by owner ("Mine" is your name from Settings). Ticking one there updates
-that meeting's `todo.md`, and under Open it leaves the list (it's under Done if you didn't mean
-it). Add a to-do under a meeting's Summary and it goes in that meeting's `todo.md`; add one on the
-To-dos page and it goes in the Meetings folder's own `todo.md`, owned by you unless you name
-someone. Type owner and due date after dashes: `Send the deck - Jane - due Fri, Nov 6`. If you keep
-your tasks somewhere else, turn off [Collect to-dos](settings.md#general) in Settings › General.
+Tick to-dos off in place, and ⌘Z ticks one back; a due date can be a date ("Fri, Oct 30") or a
+day as it was said ("Friday", "tomorrow", "end of the week"), counted from the day of the meeting;
+a to-do's time (on the line under it, after its owner and due date) jumps to that moment in the
+transcript. **To-dos** at the top of the sidebar gathers every meeting's to-dos (open and overdue
+counts beside it): Open / Done / All, grouped by due date, folder or owner, and everyone's, yours
+("Mine" is your name from Settings) or one person's. It keeps those choices while Oatcake is open.
+Ticking one there updates that meeting's `todo.md`, and under Open it leaves the list (⌘Z brings
+it back, and it's under Done too). Add a to-do under a meeting's Summary and it goes in that
+meeting's `todo.md`; add one on the To-dos page and it goes in the Meetings folder's own
+`todo.md`, owned by you unless you name someone. Type owner and due date after dashes, as the
+page says under the field: `Send the deck - Jane - due Fri, Nov 6`. Only the last piece that isn't
+a due date is the owner, so a task can have a dash of its own (`Compare A - B pricing - Jane`).
+Right-click one of your own list's to-dos to **Edit** it in place (Return saves, Escape doesn't)
+or **Delete** it. If you keep your tasks somewhere else, turn off
+[Collect to-dos](settings.md#general) in Settings › General.
 
 ### Organising meetings
 
-Organise meetings by dragging them onto folders; ⌘-click or ⇧-click selects several, and they all
-move. Right-click a meeting for **Rename…**, **Show in Finder** or **Move to Trash**, or several for
-**Show in Finder** or **Move to Trash** (⌘⌫ in the File menu does the same); **Show in Finder** is in the meeting's **⋯** menu too. Renaming
-a meeting changes its title (in `meeting.json`) and its folder's name, which keeps its date.
-Folders can hold folders. Click the arrow next to a folder's name to show or hide its subfolders.
-Right-click a folder for **New Folder Inside…**, **Rename…**, **Show in Finder** or **Move to
-Trash** (which asks first if it holds meetings). Finder and the app stay in step. The middle
-column's width drags, like the sidebar's.
+Organise meetings by dragging them onto folders, or with **Move To** in a meeting's menus, which
+lists every folder; ⌘-click or ⇧-click selects several, and they all move. Right-click a meeting for
+the same commands as its **⋯** menu, among them **Rename…**, **Move To**, **Show in Finder** and
+**Move to Trash**; right-click several for **Move To**, **Show in Finder** or **Move to Trash**.
+⌘⌫ (File › Move to Trash) moves the meetings selected in the list to the Trash and opens the next
+one, as in Mail, and ⌘Z puts back what was just moved. Renaming a meeting changes its title (in
+`meeting.json`) and its folder's name, which keeps its date. Dragged out of Oatcake, a meeting is
+its folder (into Finder or a mail, say), or its summary where only text goes.
+Folders can hold folders. Click the arrow next to a folder's name, or press → and ←, to show or hide
+its subfolders. Right-click a folder for **New Folder Inside…**, **Rename…** (or press Return),
+**Show in Finder** or **Move to Trash** (or ⌘⌫, which asks first if it holds meetings). Finder and
+the app stay in step: a folder or meeting that goes from Finder while it's open gives way to the
+nearest folder that's still there. The middle column's width drags, like the sidebar's.
 
 ### Rename Speakers
 

@@ -124,6 +124,29 @@ import Testing
         #expect(found.map(\.path) == [review] && !found[0].text.contains("To-dos"))
     }
 
+    /// Each other meeting's share of the room is counted in bytes, as the model's tokens are, so it
+    /// holds in Chinese and Japanese, where a character is three bytes; and it's cut at a whole character.
+    @Test func otherMeetingsInChineseAndJapanese() throws {
+        let meetings = TestMeetings()
+        defer { meetings.remove() }
+        let phrases = ["预算", "予算"]
+        for (i, line) in ["我们讨论了明年的预算和招聘计划。", "来年度の予算と採用計画について話し合いました。"].enumerated() {
+            let summary = (0..<200).map { "- \(line) 第\($0)項\n" }.joined()
+            try meetings.write("Team/2026-11-0\(i + 1) 1000 Sync", .summary, summary, meta: #"{"title":"Sync"}"#)
+        }
+        let lib = Meetings(root: meetings.root)
+        let tokens = 600
+        let found = otherMeetings(lib, others: lib.tree().allMeetings, besides: nil, phrases: phrases, tokens: tokens)
+        #expect(found.count == 2)
+        let share = LocalModels.bytes(forTokens: tokens / found.count)
+        for meeting in found {
+            #expect(meeting.text.utf8.count <= share && meeting.text.utf8.count > share - 4)
+            #expect(meeting.text.contains("预算") || meeting.text.contains("予算"))
+        }
+        // A whole character, however many bytes it takes: a family emoji is one.
+        #expect("ab👨‍👩‍👧".prefix(utf8: 5) == "ab" && "ab👨‍👩‍👧".prefix(utf8: 100) == "ab👨‍👩‍👧" && "日本語".prefix(utf8: 7) == "日本")
+    }
+
     @Test func askPieces() {
         // A tag with several times, a time past the hour, and a path that needs encoding.
         let odd = "Board (Q4)/2026-10-29 1630 Budget & plan #2"

@@ -5,7 +5,6 @@ import SwiftUI
 struct HomeView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openSettings) private var openSettings
-    @AppStorage("settingsPane") private var settingsPane = "general"
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -78,10 +77,7 @@ struct HomeView: View {
                 }
             } else {
                 Text("Connect your calendar to see what’s coming up.").foregroundStyle(.secondary)
-                Button("Connect calendar") {
-                    settingsPane = "calendar"
-                    openSettings()
-                }
+                Button("Connect calendar") { showSettingsPane(.calendar, openSettings) }
             }
         }
     }

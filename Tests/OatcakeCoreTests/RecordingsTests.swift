@@ -42,16 +42,32 @@ import Testing
         let kept = try recording("r2", saved: "2026-11-10 1400 Two", audio: true)
         let orphan = try recording("r3", saved: "2026-11-10 1400 Three", audio: true)
         let waiting = try recording("r4", saved: nil, audio: true)
+        // A track of one byte, which isn't a sample: there's no audio to write into its meeting.
+        let broken = try recording("r5", saved: "2026-11-10 1400 Five", audio: false)
+        try Data([0]).write(to: broken.appendingPathComponent("mic.pcm"))
         _ = try meeting("2026-11-10 1400 One", recording: "r1")
         // Saved as "…Two" at the top level, and moved into a folder and renamed since.
         let two = try meeting("Clients/2026-11-10 1400 Second", recording: "r2")
+        _ = try meeting("2026-11-10 1400 Five", recording: "r5")
         let rec = { (dir: URL) in Recording(id: dir.lastPathComponent, dir: dir, title: "Call", startedAt: Date(), state: .saved) }
-        #expect(Recordings.hasAudio(rec(kept)) && !Recordings.hasAudio(rec(plain)))
+        #expect(Recordings.hasAudio(rec(kept)) && !Recordings.hasAudio(rec(plain)) && Recordings.hasAudio(rec(orphan)))
 
-        Recordings.tidySaved(meetingsRoot: root, recordings: recordings)
-        // Nothing kept: gone. Audio kept: in its meeting, then gone. No meeting to put it in, or not saved yet: left alone.
-        #expect(try fm.contentsOfDirectory(atPath: recordings.path).sorted() == ["r3", "r4"])
-        #expect(Recordings.hasAudio(rec(orphan)) && Recordings.hasAudio(rec(waiting)))
+        var trashed: [String] = []
+        let problems = Recordings.tidySaved(meetingsRoot: root, recordings: recordings) {
+            trashed.append($0.lastPathComponent)
+            try? fm.removeItem(at: $0)
+        }
+        // Nothing kept: gone. Audio kept: in its meeting, then gone. Its meeting gone: to the Trash, as
+        // it's the only copy of that audio. Not saved yet: left alone. Audio that couldn't be written into
+        // its meeting: left to try again, and said.
+        #expect(try fm.contentsOfDirectory(atPath: recordings.path).sorted() == ["r4", "r5"])
+        #expect(trashed == ["r3"])
+        #expect(Recordings.hasAudio(rec(waiting)) && Recordings.hasAudio(rec(broken)))
+        #expect(problems == ["The call audio of “Call” couldn’t be kept with its meeting: This recording has no audio to keep."])
+        // With the Meetings folder missing altogether (a drive that isn't plugged in), nothing is taken for gone.
+        let elsewhere = try recording("r6", saved: "2026-11-10 1400 Six", audio: true)
+        Recordings.tidySaved(meetingsRoot: tmp.appendingPathComponent("Unplugged"), recordings: recordings)
+        #expect(fm.exists(elsewhere))
         let audio = try AVAudioFile(forReading: two.appendingPathComponent("audio.m4a"))
         #expect(abs(Double(audio.length) / audio.fileFormat.sampleRate - 2.0) < 0.1)
         #expect(try fm.contentsOfDirectory(atPath: two.path).sorted() == ["audio.m4a", "meeting.json"])
@@ -137,5 +153,38 @@ import Testing
         try "{}".write(to: dir.appendingPathComponent("meta.json"), atomically: true, encoding: .utf8)
         Recordings.finishInterrupted(rec)
         #expect(readText(dir.appendingPathComponent("meta.json")) == "{}")
+
+        // Its last status said where each track starts: the tracks line up, and nothing is a guess.
+        let id2 = "2026-11-10T15-00-00-000Z"
+        let dir2 = try make(id2, in: recordings, files: [
+            "status.json": try encodeJSON(RecorderStatus(state: .recording, elapsed: 1500, micOffset: 1200.5, systemOffset: 0.2)),
+        ])
+        try Data(count: 3200).write(to: dir2.appendingPathComponent("mic.pcm"))
+        try Data(count: 3200).write(to: dir2.appendingPathComponent("system.pcm"))
+        Recordings.finishInterrupted(try #require(Recordings.get(id2, recordings: recordings)))
+        let known = try readJSON(RecorderMeta.self, dir2.appendingPathComponent("meta.json"))
+        #expect(known.micOffset == 1200.5 && known.systemOffset == 0.2 && known.interrupted == nil)
+    }
+
+    /// What waits under Needs review: recorded and processed recordings, and one whose recorder went
+    /// without a meta.json that nobody could write, unless it's the call being recorded now.
+    @Test func waitingRecordings() throws {
+        let recordings = try folder()
+        defer { try? FileManager.default.removeItem(at: recordings) }
+        let meta = try encodeJSON(RecorderMeta(startedAt: "2026-11-10T14:00:00Z", endedAt: "2026-11-10T14:30:00Z", micOffset: 0, systemOffset: 0))
+        _ = try make("2026-11-10T14-00-00-000Z", in: recordings, files: ["meta.json": meta])
+        _ = try make("2026-11-11T14-00-00-000Z", in: recordings, files: ["meta.json": meta, "analysis.json": "{}"])
+        _ = try make("2026-11-12T14-00-00-000Z", in: recordings, files: ["meta.json": meta, "analysis.json": "{}", "saved.json": "{}"])
+        // No meta.json, and no recorder: its pid file names this process, which isn't one.
+        let stranded = try make("2026-11-13T14-00-00-000Z", in: recordings, files: ["recorder.pid": String(getpid())])
+        try Data(count: 32_000 * 3).write(to: stranded.appendingPathComponent("system.pcm"))
+        try Data(count: 32_000).write(to: stranded.appendingPathComponent("mic.pcm"))
+
+        let waiting = Recordings.waiting(except: [], recordings: recordings)
+        #expect(waiting.map(\.id) == ["2026-11-13T14-00-00-000Z", "2026-11-11T14-00-00-000Z", "2026-11-10T14-00-00-000Z"])
+        #expect(waiting.map(\.state) == [.recorded, .processed, .recorded])
+        #expect(Recordings.waiting(except: ["2026-11-13T14-00-00-000Z"], recordings: recordings).count == 2)
+        // The longer track's length: three seconds.
+        #expect(Recordings.audioSeconds(waiting[0]) == 3 && Recordings.audioSeconds(waiting[1]) == 0)
     }
 }

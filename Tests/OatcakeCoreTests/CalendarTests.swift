@@ -160,6 +160,13 @@ import Testing
         #expect(eventHappening([renewal, next], at: at("09:47:00"), unless: ["Renewal sync"]) == nil)
         #expect(eventHappening([renewal, next], at: at("09:51:00"), unless: ["Renewal sync"]) == nil)
         #expect(eventHappening([renewal, next], at: at("09:51:00"), unless: ["Other call"])?.id == "Renewal sync")
+        // A call inside a longer block is the call, once it has started; before, the block is still what's on.
+        let conference = event("Conference", "2026-11-18T09:00:00Z", "2026-11-18T17:00:00Z")
+        let call = event("Partner call", "2026-11-18T14:00:00Z", "2026-11-18T14:30:00Z")
+        #expect(eventHappening([conference, call], at: at("14:01:00"))?.id == "Partner call")
+        #expect(eventHappening([call, conference], at: at("14:01:00"))?.id == "Partner call")
+        #expect(eventHappening([conference, call], at: at("13:55:00"))?.id == "Conference")
+        #expect(eventHappening([conference, call], at: at("14:31:00"))?.id == "Conference")
     }
 
     @Test func callLinks() {
@@ -341,8 +348,14 @@ import Testing
     @Test func staleAndChanged() {
         let now = parseISO("2026-11-10T12:00:00Z")!
         #expect(CalendarCache().isStale(now: now))
-        #expect(!CalendarCache(checkedAt: "2026-11-10T11:30:00Z").isStale(now: now))
-        #expect(CalendarCache(checkedAt: "2026-11-10T10:59:59Z").isStale(now: now))
+        #expect(!CalendarCache(checkedAt: "2026-11-10T11:30:00Z", updatedAt: "2026-11-10T11:30:00Z").isStale(now: now))
+        #expect(CalendarCache(checkedAt: "2026-11-10T10:59:59Z", updatedAt: "2026-11-10T10:59:59Z").isStale(now: now))
+        // One that failed is tried again a minute later, then after a wait that doubles, up to the hour.
+        let failed = { (at: String, failures: Int?) in CalendarCache(checkedAt: at, updatedAt: "2026-11-10T08:00:00Z", error: "x", failures: failures) }
+        #expect(!failed("2026-11-10T11:59:30Z", 1).isStale(now: now) && failed("2026-11-10T11:59:00Z", 1).isStale(now: now))
+        #expect(failed("2026-11-10T11:59:00Z", nil).isStale(now: now))
+        #expect(!failed("2026-11-10T11:57:00Z", 3).isStale(now: now) && failed("2026-11-10T11:56:00Z", 3).isStale(now: now))
+        #expect(!failed("2026-11-10T11:01:00Z", 12).isStale(now: now) && failed("2026-11-10T11:00:00Z", 12).isStale(now: now))
 
         let event = { (reply: String) in
             parseCalendar(self.feed("DTSTART:20261110T100000Z", "DTEND:20261110T103000Z", "ATTENDEE;CN=Jane Doe;PARTSTAT=\(reply):mailto:jane@example.com"),
@@ -366,5 +379,146 @@ import Testing
         #expect(read.error == "the calendar address returned 404 not found" && read.failure == "Couldn't update the calendar: the calendar address returned 404 not found")
         // As it's written now, it reads back as it was.
         #expect(try JSONDecoder().decode(CalendarCache.self, from: Data(try encodeJSON(failed).utf8)) == failed)
+    }
+
+    /// An event's times are read from the cache file's text once, when it's read or made, and follow
+    /// the text when it changes; the cache file keeps only the text.
+    @Test func datesReadOnce() throws {
+        let json = #"{"id":"e@2026-11-10T10:00:00.000Z","title":"Sync","start":"2026-11-10T10:00:00.000Z","end":"2026-11-10T10:30:00.000Z","allDay":false,"attendees":[]}"#
+        var event = try JSONDecoder().decode(CalendarEvent.self, from: Data(json.utf8))
+        #expect(event.startDate == parseISO("2026-11-10T10:00:00Z") && event.endDate == parseISO("2026-11-10T10:30:00Z"))
+        event.start = "2026-11-10T09:00:00.000Z"
+        #expect(event.startDate == parseISO("2026-11-10T09:00:00Z"))
+        let saved = try encodeJSON(event)
+        #expect(!saved.contains("startDate") && !saved.contains("endDate") && saved.contains("2026-11-10T09:00:00.000Z"))
+        #expect(try JSONDecoder().decode(CalendarEvent.self, from: Data(saved.utf8)) == event)
+    }
+
+    /// Why a fetch failed, said plainly from what the connection reported; each failure in a row
+    /// counts towards the wait before the next try, and one that works starts the count again.
+    @Test func whyAFetchFailed() async throws {
+        #expect(fetchFailure(.notConnectedToInternet) == "this Mac isn’t connected to the internet")
+        #expect(fetchFailure(.cannotFindHost) == "the calendar’s server couldn’t be found")
+        #expect(fetchFailure(.serverCertificateUntrusted) == "a secure connection to the calendar’s server couldn’t be made")
+        #expect(fetchFailure(.timedOut) == "the calendar took too long to answer")
+        #expect(fetchFailure(.badServerResponse) == "Oatcake couldn’t reach the calendar" && fetchFailure(nil) == "Oatcake couldn’t reach the calendar")
+        // Nothing listens on port 1 of this Mac.
+        let first = await fetchCalendar("http://127.0.0.1:1/calendar.ics", previous: CalendarCache(updatedAt: "2026-11-10T08:00:00Z"))
+        #expect(first.error == "the calendar’s server didn’t answer" && first.failures == 1 && first.updatedAt == "2026-11-10T08:00:00Z")
+        let second = await fetchCalendar("http://127.0.0.1:1/calendar.ics", previous: first)
+        #expect(second.failures == 2)
+    }
+
+    /// A feed is read up to a limit, so a server that sends without end doesn't fill the memory.
+    @Test func feedSizeLimit() async throws {
+        func bytes(_ count: Int) -> AsyncStream<UInt8> {
+            AsyncStream { continuation in
+                for _ in 0..<count { continuation.yield(65) }
+                continuation.finish()
+            }
+        }
+        #expect(try await readCalendar(bytes(100), limit: 100).count == 100)
+        await #expect(throws: OatcakeError("the calendar is too large to read")) { try await readCalendar(bytes(101), limit: 100) }
+        await #expect(throws: OatcakeError.self) { try await readCalendar(bytes(0), limit: 100, expected: 101) }
+    }
+
+    /// Feeds that RFC 5545 allows, or that break its rules, and that the reader got wrong. Whether
+    /// Google's or Outlook's feeds send them isn't known; each is written here to RFC 5545's shape.
+    @Test func casesFeedsMaySend() {
+        let november = (from: "2026-11-01T00:00:00Z", to: "2026-12-01T00:00:00Z")
+        func ics(_ events: [String]...) -> String {
+            (["BEGIN:VCALENDAR"] + events.flatMap { ["BEGIN:VEVENT"] + $0 + ["END:VEVENT"] } + ["END:VCALENDAR"]).joined(separator: "\n")
+        }
+        func events(_ text: String, from: String = november.from, to: String = november.to) -> [CalendarEvent] {
+            parseCalendar(text, from: parseISO(from)!, to: parseISO(to)!)
+        }
+        let weekly = ["UID:w", "SUMMARY:Weekly", "DTSTART:20261102T100000Z", "DTEND:20261102T103000Z", "RRULE:FREQ=WEEKLY;COUNT=3"]
+
+        // Events with no UID are each kept, under the same ID at every fetch.
+        let noUID = ics(["SUMMARY:First", "DTSTART:20261110T100000Z", "DTEND:20261110T103000Z"],
+                        ["SUMMARY:Second", "DTSTART:20261110T110000Z", "DTEND:20261110T113000Z"])
+        #expect(events(noUID).map(\.title) == ["First", "Second"])
+        #expect(events(noUID).map(\.id) == events(noUID).map(\.id) && Set(events(noUID).map(\.id)).count == 2)
+
+        // A changed occurrence whose RECURRENCE-ID can't be read is left out, not taken for the series.
+        let unreadable = ics(weekly, ["UID:w", "RECURRENCE-ID:soon", "SUMMARY:Changed", "DTSTART:20261109T150000Z", "DTEND:20261109T153000Z"])
+        #expect(events(unreadable).map(\.start) == ["2026-11-02T10:00:00.000Z", "2026-11-09T10:00:00.000Z", "2026-11-16T10:00:00.000Z"])
+
+        // A change to one occurrence and every one after it moves those after it too.
+        let onwards = ics(weekly, ["UID:w", "RECURRENCE-ID;RANGE=THISANDFUTURE:20261109T100000Z", "SUMMARY:Weekly, later",
+                                   "DTSTART:20261109T110000Z", "DTEND:20261109T113000Z"])
+        #expect(events(onwards).map(\.start) == ["2026-11-02T10:00:00.000Z", "2026-11-09T11:00:00.000Z", "2026-11-16T11:00:00.000Z"])
+        #expect(events(onwards).map(\.title) == ["Weekly", "Weekly, later", "Weekly, later"])
+
+        // A changed copy of an event that doesn't recur takes its place.
+        let moved = ics(["UID:once", "SUMMARY:Once", "DTSTART:20261110T100000Z", "DTEND:20261110T103000Z"],
+                        ["UID:once", "RECURRENCE-ID:20261110T100000Z", "SUMMARY:Once, later", "DTSTART:20261110T150000Z", "DTEND:20261110T153000Z"])
+        #expect(events(moved).map(\.start) == ["2026-11-10T15:00:00.000Z"] && events(moved).first?.seriesId == nil)
+
+        // Hourly and finer.
+        #expect(starts(feed("DTSTART:20261110T090000Z", "DTEND:20261110T091500Z", "RRULE:FREQ=HOURLY;INTERVAL=2;COUNT=3"), from: november.from, to: november.to)
+            == ["2026-11-10T09:00:00.000Z", "2026-11-10T11:00:00.000Z", "2026-11-10T13:00:00.000Z"])
+        #expect(starts(feed("DTSTART:20261110T090000Z", "RRULE:FREQ=MINUTELY;INTERVAL=30;COUNT=3"), from: november.from, to: november.to)
+            == ["2026-11-10T09:00:00.000Z", "2026-11-10T09:30:00.000Z", "2026-11-10T10:00:00.000Z"])
+        // Ones with no end that began long before the window (more steps ago than the expansion takes
+        // from DTSTART): every seventh hour since 2000 (the one at 22:00 is still going at 01:00), every
+        // sixth on Tuesdays only, and every seventh minute since January.
+        #expect(starts(feed("DTSTART:20000101T000000Z", "DTEND:20000101T040000Z", "RRULE:FREQ=HOURLY;INTERVAL=7"), from: "2026-11-10T01:00:00Z", to: "2026-11-10T13:00:00Z")
+            == ["2026-11-09T22:00:00.000Z", "2026-11-10T05:00:00.000Z", "2026-11-10T12:00:00.000Z"])
+        #expect(starts(feed("DTSTART:20000101T000000Z", "RRULE:FREQ=HOURLY;INTERVAL=6;BYDAY=TU"), from: "2026-11-09T00:00:00Z", to: "2026-11-12T00:00:00Z")
+            == ["2026-11-10T00:00:00.000Z", "2026-11-10T06:00:00.000Z", "2026-11-10T12:00:00.000Z", "2026-11-10T18:00:00.000Z"])
+        #expect(starts(feed("DTSTART:20260101T000000Z", "RRULE:FREQ=MINUTELY;INTERVAL=7"), from: "2026-11-10T10:00:00Z", to: "2026-11-10T10:30:00Z")
+            == ["2026-11-10T10:05:00.000Z", "2026-11-10T10:12:00.000Z", "2026-11-10T10:19:00.000Z", "2026-11-10T10:26:00.000Z"])
+
+        // RFC 5545's own example (section 3.8.5.3): every 20th Monday of the year.
+        #expect(starts(feed("DTSTART;TZID=America/New_York:19970519T090000", "RRULE:FREQ=YEARLY;BYDAY=20MO"), from: "1997-01-01T00:00:00Z", to: "2000-01-01T00:00:00Z")
+            == ["1997-05-19T13:00:00.000Z", "1998-05-18T13:00:00.000Z", "1999-05-17T13:00:00.000Z"])
+
+        // A day taken out as midnight in the series' zone takes out that day's 10:00.
+        #expect(starts(feed("DTSTART;TZID=America/New_York:20261102T100000", "RRULE:FREQ=DAILY;COUNT=4", "EXDATE;TZID=America/New_York:20261103T000000"),
+                       from: november.from, to: november.to)
+            == ["2026-11-02T15:00:00.000Z", "2026-11-04T15:00:00.000Z", "2026-11-05T15:00:00.000Z"])
+
+        // Every day of an all-day series ends at midnight, the days the clocks change on included
+        // (25 October in Europe, 1 November in America; a Mac in a zone without them sees 24 hours each day).
+        let days = events(feed("DTSTART;VALUE=DATE:20261020", "DTEND;VALUE=DATE:20261021", "RRULE:FREQ=DAILY;COUNT=20"), from: "2026-10-19T00:00:00Z")
+        #expect(days.count == 20)
+        #expect(days.allSatisfy { gregorian.date(byAdding: .day, value: 1, to: $0.startDate) == $0.endDate })
+    }
+
+    /// Reminders: each call once for each of its times, one reminder when several have come at once,
+    /// none for the call being recorded, and none again after Oatcake is opened again.
+    @Test func callReminders() throws {
+        func event(_ id: String, _ start: String, allDay: Bool = false) -> CalendarEvent {
+            CalendarEvent(id: id, title: id, start: start, end: "2026-11-18T11:00:00.000Z", allDay: allDay, attendees: [])
+        }
+        let call = event("Weekly sync", "2026-11-18T10:00:00.000Z"), offsite = event("Offsite", "2026-11-18T00:00:00.000Z", allDay: true)
+        let recorded = event("Being recorded", "2026-11-18T10:00:00.000Z")
+        let events = [offsite, call, recorded]
+        func at(_ time: String) -> Date { parseISO("2026-11-18T\(time)Z")! }
+        var sent = SentReminders()
+        let due = { (sent: inout SentReminders, time: String) in sent.due(events, minutes: [5, 1], at: at(time), recording: recorded.id).map(\.id) }
+        #expect(due(&sent, "09:54:00").isEmpty)
+        #expect(due(&sent, "09:55:00") == ["Weekly sync"] && due(&sent, "09:56:00").isEmpty)
+        #expect(due(&sent, "09:59:00") == ["Weekly sync"] && due(&sent, "09:59:30").isEmpty && due(&sent, "10:00:30").isEmpty)
+
+        // Opened a minute before: one reminder for both times, and none after it.
+        var late = SentReminders()
+        #expect(due(&late, "09:59:10") == ["Weekly sync"] && due(&late, "09:59:40").isEmpty)
+        // Too late to remind: more than a minute after it started.
+        var later = SentReminders()
+        #expect(due(&later, "10:01:10").isEmpty)
+
+        // Kept in a file, so opening Oatcake again doesn't remind again.
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-reminders-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        var first = SentReminders()
+        #expect(due(&first, "09:56:00") == ["Weekly sync"])
+        try first.save(to: file)
+        var reopened = SentReminders.load(file)
+        #expect(reopened == first && due(&reopened, "09:57:00").isEmpty && due(&reopened, "09:59:00") == ["Weekly sync"])
+
+        // Older settings without the times have the one reminder they had, 5 minutes before.
+        #expect(try JSONDecoder().decode(Config.self, from: Data("{}".utf8)).reminderMinutes == [5])
     }
 }
