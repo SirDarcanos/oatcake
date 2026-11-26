@@ -81,7 +81,17 @@ marked, and Escape closes search. ⌘F finds words in the transcript you're read
 word, one after another. ⇧⌘N makes a
 folder and ⌘R refreshes the calendar; all of these are in the File and Edit menus. View › Bigger
 Text (⌘+), Smaller Text (⌘-) and Actual Size (⌘0) change the size of what you read and type:
-summaries, transcripts, notes and answers.
+summaries, transcripts (the meeting's, the live one and Who's who's), notes, answers, the meeting
+list, to-dos, times and section headings.
+
+Oatcake follows the Mac's accessibility settings (System Settings › Accessibility › Display). With
+**Reduce motion**, the recording dot doesn't pulse, the refresh arrow doesn't turn, notes at the
+bottom of the window fade rather than slide in, and a transcript or Ask jumps to a line rather than
+scrolling smoothly to it. With **Increase contrast**, the edges of fields and cards are darker, and
+notices and times get an edge of their own. With **Differentiate without colour**, an error's
+symbol is an octagon, not the warning's triangle. VoiceOver reads out each note at the bottom of
+the window (an error's note goes when you press it) and says when an answer in Ask is ready, and
+the menu bar item says the time until the next call, or how long a call has been recorded.
 
 By default, closing the window keeps Oatcake running in the background, checking for calls and
 sending reminders. It stops appearing as a running app in the Dock and stays in the menu bar.
@@ -195,7 +205,8 @@ it's processing and on Who's who as well.
 
 ## 3. Review (Who's who)
 
-Change the title or the folder it's saved in if you want to. One card per voice: play its clips,
+Change the title or the folder it's saved in if you want to. One card per voice: play its clips
+(the first words said in each are under it, so voices can be told apart without sound),
 confirm or type the name, or pick one of the people on the call's calendar invite (each is offered
 until they've been given a voice) (with where the suggestion came from: named by you during the
 call, recognised from before, or guessed from the conversation), merge it into another

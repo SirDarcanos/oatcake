@@ -7,6 +7,7 @@ struct LiveView: View {
     let rec: Recording
     @FocusState private var focused: UUID?
     @AppStorage(TextScale.key) private var textScale = 1.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ViewState private var devices: [InputDevice] = []
     @ViewState private var showTranscript = UserDefaults.standard.object(forKey: "liveTranscriptShown") as? Bool ?? true
     /// People Oatcake knows by voice, to say who said a line.
@@ -200,10 +201,10 @@ struct LiveView: View {
                                 } else {
                                     Text(callPlaceholder(for: rec.id, lineAt: line.start)).fontWeight(.semibold).foregroundStyle(.secondary)
                                 }
-                                Text(clock(line.start)).foregroundStyle(.tertiary).monospacedDigit()
+                                Text(clock(line.start)).foregroundStyle(.secondary).monospacedDigit()
                             }
-                            .font(.caption)
-                            Text(line.text).font(.callout).textSelection(.enabled)
+                            .font(.scaled(.caption1, textScale))
+                            Text(line.text).font(.scaled(.callout, textScale)).textSelection(.enabled)
                         }
                     }
                     if let stopped { Text(stopped).font(.callout).foregroundStyle(.red) }
@@ -212,7 +213,7 @@ struct LiveView: View {
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .onChange(of: model.recording.liveLines.count) { withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
+            .onChange(of: model.recording.liveLines.count) { withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo("end", anchor: .bottom) } }
         }
         .background(Color(nsColor: .windowBackgroundColor))
     }
@@ -238,7 +239,7 @@ struct LiveView: View {
                 Button("Take back “\(given ?? "")”") { model.recording.nameLiveLine(line, as: nil) }
             }
         } label: {
-            Text(line.speaker ?? callPlaceholder(for: rec.id, lineAt: line.start)).font(.caption.weight(.semibold))
+            Text(line.speaker ?? callPlaceholder(for: rec.id, lineAt: line.start)).font(.scaled(.caption1, textScale, weight: .semibold))
                 .foregroundStyle(color.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.secondary))
         }
         // Drawn as the name it is, like yours beside it: a borderless menu would set it in its own font.
@@ -287,7 +288,7 @@ struct LiveView: View {
         return HStack(alignment: .firstTextBaseline, spacing: 10) {
             Chip(text: line.prep ? "Prep" : clock(line.at ?? (started ? elapsed : 0)),
                  style: line.prep ? .prep : line.at == nil ? .pending : .normal)
-                .frame(width: 58, alignment: .leading)
+                .frame(width: 58 * TextScale.clamped(textScale), alignment: .leading)
             TextField(index == lines.count - 1 && line.text.isEmpty ? "Type a point, then Return" : "", text: Binding(
                 get: { line.text },
                 set: { text in
@@ -303,6 +304,8 @@ struct LiveView: View {
                 }))
                 .textFieldStyle(.plain)
                 .font(.system(size: 14 * TextScale.clamped(textScale)))
+                // Only the last line has a placeholder, so each says what it is.
+                .accessibilityLabel(line.prep ? "Prep note" : line.at.map { "Note at \(clock($0))" } ?? "New note")
                 .focused($focused, equals: line.id)
                 .onSubmit { returnPressed(on: line) }
                 .onKeyPress(.upArrow) { move(from: line, by: -1) }

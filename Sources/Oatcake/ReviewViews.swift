@@ -148,6 +148,7 @@ struct ReviewView: View {
     @ViewState private var saved = false
     @ViewState private var player = ClipPlayer()
     @ViewState private var paneWidth: CGFloat = 900
+    @AppStorage(TextScale.key) private var textScale = 1.0
 
     /// What's been set so far lives with the app, so leaving this screen and coming back keeps it.
     private var draft: ReviewDraft {
@@ -440,28 +441,33 @@ struct ReviewView: View {
     }
 
     private func clips(_ quotes: [Quote]) -> some View {
-        HStack(spacing: 8) {
+        HStack(alignment: .top, spacing: 8) {
             ForEach(quotes, id: \.clip) { q in
                 let on = player.playing == q.clip
-                Button { player.toggle(q.clip) } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: on ? "pause.fill" : "play.fill").font(.system(size: 9))
-                        Text(clock(q.start)).monospacedDigit()
-                    }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(on ? "Pause" : "Play") the clip at \(clock(q.start))")
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(alignment: .leading) {
-                        GeometryReader { g in
-                            Capsule().fill(Color.accentColor.opacity(0.18)).frame(width: on ? g.size.width * player.fraction : 0)
+                VStack(alignment: .leading, spacing: 4) {
+                    Button { player.toggle(q.clip) } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: on ? "pause.fill" : "play.fill").font(.system(size: 9))
+                            Text(clock(q.start)).monospacedDigit()
                         }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("\(on ? "Pause" : "Play") the clip at \(clock(q.start))")
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(alignment: .leading) {
+                            GeometryReader { g in
+                                Capsule().fill(Color.accentColor.opacity(0.18)).frame(width: on ? g.size.width * player.fraction : 0)
+                            }
+                        }
+                        .background(Capsule().fill(Color.fill))
+                        .clipShape(Capsule())
                     }
-                    .background(Capsule().fill(Color.fill))
-                    .clipShape(Capsule())
+                    .buttonStyle(.plain)
+                    .help(q.text)
+                    // The first words said in it, so the voices can be told apart without the sound on.
+                    Text(q.text).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
-                .buttonStyle(.plain)
-                .help(q.text)
+                .frame(maxWidth: 200, alignment: .leading)
             }
         }
     }
@@ -481,10 +487,10 @@ struct ReviewView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack {
                             Text(name).fontWeight(.semibold).foregroundStyle(colors[name].map { AnyShapeStyle($0) } ?? AnyShapeStyle(.secondary))
-                            Text(clock(l.start)).foregroundStyle(.tertiary).monospacedDigit()
+                            Text(clock(l.start)).foregroundStyle(.secondary).monospacedDigit()
                         }
-                        .font(.caption)
-                        Text(l.text).font(.callout).textSelection(.enabled)
+                        .font(.scaled(.caption1, textScale))
+                        Text(l.text).font(.scaled(.callout, textScale)).textSelection(.enabled)
                     }
                 }
             }

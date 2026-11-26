@@ -290,9 +290,12 @@ struct NewRecordingView: View {
                     Text(p).textSelection(.enabled)
                     Spacer(minLength: 8)
                     Button { setPrep(prep.enumerated().filter { $0.offset != index }.map(\.element)) } label: {
+                        // 24 points to click around a small ✕, which stays on the line's baseline.
                         Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
+                            .alignmentGuide(.firstTextBaseline) { $0[.firstTextBaseline] }
+                            .frame(width: 24, height: 24).contentShape(Rectangle())
                     }
-                    .buttonStyle(.borderless).foregroundStyle(.tertiary)
+                    .buttonStyle(.borderless).foregroundStyle(.secondary)
                     .help("Remove this prep note").accessibilityLabel("Remove “\(p)”")
                 }
             }

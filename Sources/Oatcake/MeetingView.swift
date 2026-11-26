@@ -74,6 +74,7 @@ struct MeetingView: View {
     @ViewState private var match = 0
     @FocusState private var findFocused: Bool
     @AppStorage(TextScale.key) private var textScale = 1.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// View › Bigger Text and Smaller Text: how big the note's own text is drawn.
     private var scale: CGFloat { TextScale.clamped(textScale) }
@@ -520,11 +521,11 @@ struct MeetingView: View {
                 .frame(maxWidth: .infinity)
             }
             .onChange(of: current) {
-                if let current { withAnimation { proxy.scrollTo(current, anchor: UnitPoint(x: 0, y: 0.33)) } }
+                if let current { withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo(current, anchor: UnitPoint(x: 0, y: 0.33)) } }
             }
             .onChange(of: flash) {
                 guard flash >= 0 else { return }
-                withAnimation { proxy.scrollTo(flash, anchor: UnitPoint(x: 0, y: 0.33)) }
+                withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo(flash, anchor: UnitPoint(x: 0, y: 0.33)) }
                 Task {
                     try? await Task.sleep(for: .seconds(1.8))
                     withAnimation { flash = -1 }
@@ -726,7 +727,10 @@ struct MeetingView: View {
                     }
                 }
                 HStack(spacing: 10) {
-                    Image(systemName: "circle").font(.system(size: 15)).foregroundStyle(.quaternary)
+                    // Dashed, not lighter, to tell it from a to-do's own circle: light enough for that couldn't
+                    // be seen. As wide as a to-do's checkbox, so the circles line up.
+                    Image(systemName: "circle.dashed").font(.system(size: 15)).foregroundStyle(.secondary).frame(width: 24)
+                        .accessibilityHidden(true)
                     TextField("Add a to-do, then Return", text: $newTodo)
                         .textFieldStyle(.plain)
                         .help("Add an owner or due date with dashes: Send the deck - Jane - due Fri, Nov 6")
@@ -879,7 +883,7 @@ struct MeetingView: View {
             // The same chip as a to-do's or a note's time.
             Chip(text: row.stamp, help: "Go to this moment in the recording") { playback.seek(to: at) }
         } else {
-            Text(row.stamp).foregroundStyle(.tertiary).monospacedDigit()
+            Text(row.stamp).foregroundStyle(.secondary).monospacedDigit()
         }
     }
 

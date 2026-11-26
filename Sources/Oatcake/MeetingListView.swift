@@ -12,6 +12,7 @@ struct MeetingListView: View {
     /// matters when there are several.
     @ViewState private var picked: Set<String> = []
     @ViewState private var draft = ""
+    @AppStorage(TextScale.key) private var textScale = 1.0
 
     var body: some View {
         // The top level lists every meeting, each labelled with the folder it's in.
@@ -108,7 +109,7 @@ struct MeetingListView: View {
                 }
                 Spacer(minLength: 4)
                 if m.granola {
-                    Text("Granola").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+                    Text("Granola").font(.scaled(.caption2, textScale, weight: .medium)).foregroundStyle(.secondary)
                         .padding(.horizontal, 5).padding(.vertical, 1)
                         .background(RoundedRectangle(cornerRadius: 4).fill(Color.fill))
                 }
@@ -126,9 +127,10 @@ struct MeetingListView: View {
                 }
             }
             if !m.preview.isEmpty {
-                Text(m.preview).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Text(m.preview).font(.scaled(.caption1, textScale)).foregroundStyle(.secondary).lineLimit(2)
             }
         }
+        .font(.scaled(.body, textScale))
         .padding(.vertical, 4)
         .draggable(dragPrefix + m.path)
     }

@@ -17,6 +17,7 @@ struct AskBar: View {
     /// The conversation's own height: the panel is as tall as that, up to its limit.
     @ViewState private var contentHeight: CGFloat = 0
     @AppStorage(TextScale.key) private var textScale = 1.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var placeholder: String {
         if !model.ask.turns.isEmpty { return "Ask a follow-up…" }
@@ -51,7 +52,7 @@ struct AskBar: View {
             }
             .padding(.leading, 16)
             .padding(.trailing, 6)
-            .frame(height: 40)
+            .frame(minHeight: 40)
             .background(.regularMaterial, in: Capsule())
             .overlay(Capsule().strokeBorder(Color.line))
             .frame(maxWidth: 560)
@@ -64,6 +65,11 @@ struct AskBar: View {
             .overlay(alignment: .top) { Divider() }
         }
         .onChange(of: focused) { if focused, !chat.turns.isEmpty { chat.open = true } }
+        // VoiceOver hears nothing of an answer arriving unless it's told.
+        .onChange(of: chat.turns.last.map { !$0.running } ?? false) { _, finished in
+            guard finished, let last = chat.turns.last, !last.stopped else { return }
+            announce(last.answer != nil ? "Answer ready" : "Couldn’t answer. \(explainModelError(last.error ?? ""))")
+        }
         .onKeyPress(.escape) {
             guard chat.open else { return .ignored }
             chat.open = false
@@ -82,7 +88,7 @@ struct AskBar: View {
     private func panel(_ chat: AskChat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Ask about your meetings").font(.headline)
+                Text("Ask about your meetings").font(.headline).accessibilityAddTraits(.isHeader)
                 Spacer()
                 Button("New chat") { chat.newChat(); focused = true }.disabled(chat.running != nil)
                 Button("Hide") { chat.open = false }.help("Hide (Esc)")
@@ -109,7 +115,7 @@ struct AskBar: View {
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
                 }
                 // Show the newest question at the top, so a long answer is read from its start.
-                .onChange(of: chat.turns.count) { if let last = chat.turns.last { withAnimation { proxy.scrollTo(last.id, anchor: .top) } } }
+                .onChange(of: chat.turns.count) { if let last = chat.turns.last { withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo(last.id, anchor: .top) } } }
             }
             // As tall as the conversation, up to 420 points; a short answer isn't put in a tall empty panel.
             .frame(height: min(max(contentHeight, 60), 420))
@@ -144,7 +150,7 @@ struct AskBar: View {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
                         Text("\(turn.step ?? "Thinking")…").lineLimit(1)
-                        Text("\(Int(context.date.timeIntervalSince(turn.startedAt))) s").foregroundStyle(.tertiary).monospacedDigit()
+                        Text("\(Int(context.date.timeIntervalSince(turn.startedAt))) s").monospacedDigit()
                     }
                     .foregroundStyle(.secondary)
                 }

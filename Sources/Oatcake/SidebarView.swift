@@ -24,6 +24,7 @@ struct SidebarView: View {
     @ViewState private var draft = ""
     @ViewState private var newFolderIn: String?
     @ViewState private var dropTarget: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         List(selection: selectionBinding) {
@@ -51,7 +52,8 @@ struct SidebarView: View {
                 HStack {
                     Text("Meetings")
                     Spacer()
-                    Button { newFolderIn = ""; draft = "" } label: { Image(systemName: "folder.badge.plus") }
+                    // 24 points to click; the symbol stays at the frame's end, in line with the counts.
+                    Button { newFolderIn = ""; draft = "" } label: { Image(systemName: "folder.badge.plus").frame(width: 24, height: 24, alignment: .trailing).contentShape(Rectangle()) }
                         .buttonStyle(.borderless).help("New folder").accessibilityLabel("New folder")
                         .padding(.trailing, 1.5) // This symbol's badge reaches further right than the refresh arrow.
                 }
@@ -246,7 +248,9 @@ struct SidebarView: View {
                 Button { model.calendar.refresh(force: true) } label: {
                     Image(systemName: "arrow.clockwise")
                         .foregroundStyle(calendar.hasFailures ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
-                        .symbolEffect(.rotate, isActive: model.calendar.fetching)
+                        .symbolEffect(.rotate, isActive: model.calendar.fetching && !reduceMotion)
+                        .frame(width: 24, height: 24, alignment: .trailing)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Refresh calendars")
@@ -282,7 +286,8 @@ struct SidebarView: View {
         }
         return HStack(spacing: 6) {
             Text(label).font(.caption.weight(bold ? .semibold : .regular)).monospacedDigit()
-                .foregroundStyle(color).frame(width: 62, alignment: .leading)
+                // A column for the time, wider for a word that needs more ("Starting…").
+                .foregroundStyle(color).fixedSize().frame(minWidth: 62, alignment: .leading)
             CalendarBadges(calendars: calendars)
             Text(e.title).lineLimit(1)
             Spacer(minLength: 0)
@@ -354,7 +359,7 @@ private struct FolderRow: View {
                             .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(.secondary)
                             .rotationEffect(.degrees(open.contains(node.path) ? 90 : 0))
-                            .frame(width: 12, height: 16)
+                            .frame(width: 24, height: 24)
                             .contentShape(Rectangle())
                     }
                     .accessibilityLabel("\(open.contains(node.path) ? "Hide" : "Show") the folders in \(node.name)")

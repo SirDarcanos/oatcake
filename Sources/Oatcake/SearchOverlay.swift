@@ -61,7 +61,7 @@ struct SearchOverlay: View {
                            onEscape: { close() })
                 .accessibilityLabel("Search meetings")
             if !query.isEmpty {
-                Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary).frame(width: 24, height: 24).contentShape(Rectangle()) }
                     .buttonStyle(.plain).help("Clear the search").accessibilityLabel("Clear the search")
             }
         }

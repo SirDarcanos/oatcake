@@ -24,6 +24,7 @@ struct TodosView: View {
     /// so two quick ticks in one meeting don't undo each other.
     @ViewState private var local: [String: String] = [:]
     @FocusState private var addFocused: Bool
+    @AppStorage(TextScale.key) private var textScale = 1.0
 
     private let day: TimeInterval = 86_400
 
@@ -73,7 +74,7 @@ struct TodosView: View {
             }
             .padding(.horizontal, 14)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary).allowsHitTesting(false) }
+            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(Color.line).allowsHitTesting(false) }
         }
     }
 
@@ -116,9 +117,9 @@ struct TodosView: View {
                     HStack(spacing: 6) {
                         if grouping == .owner, let o = group.items.first?.todo.owner, !o.isEmpty { Avatar(name: o, size: 18) }
                         Text(group.label).foregroundStyle(group.key == "0" && grouping == .due ? AnyShapeStyle(.red) : AnyShapeStyle(.primary))
-                        Text("\(group.items.count)").foregroundStyle(.tertiary)
+                        Text("\(group.items.count)").foregroundStyle(.secondary)
                     }
-                    .font(.callout.weight(.semibold))
+                    .font(.scaled(.callout, textScale, weight: .semibold))
                     .padding(.top, 24)
                     .padding(.bottom, 6)
                     ForEach(group.items) { item in row(item, today: today, myName: myName, showOwner: grouping != .owner) }
@@ -208,7 +209,7 @@ struct TodosView: View {
             TodoCheckbox(checked: item.todo.done, what: item.todo.text) { tick(item) }
                 .padding(.top, homePreview ? 0 : 1)
             VStack(alignment: .leading, spacing: 3) {
-                Text(item.todo.text).strikethrough(item.todo.done).textSelection(.enabled)
+                Text(item.todo.text).strikethrough(item.todo.done).textSelection(.enabled).font(.scaled(.body, textScale))
                 HStack(spacing: 8) {
                     if item.meeting.path.isEmpty {
                         Text("Your list").foregroundStyle(.secondary)
@@ -229,7 +230,7 @@ struct TodosView: View {
                         Chip(text: item.todo.stamp) { model.openMeeting(item.meeting.path, jump: Jump(tab: .transcript, stamp: item.todo.stamp)) }
                     }
                 }
-                .font(.caption)
+                .font(.scaled(.caption1, textScale))
             }
             Spacer(minLength: 8)
             // Grouped by owner, the group heading already names them.
@@ -240,8 +241,9 @@ struct TodosView: View {
                         Text(ownerLabel(item.todo.owner, myName)).lineLimit(1)
                     }
                 }
-                .font(.callout)
-                .frame(width: 150, alignment: homePreview ? .trailing : .leading)
+                .font(.scaled(.callout, textScale))
+                // A column, so it's the same width on every row: wider with bigger text.
+                .frame(width: 150 * TextScale.clamped(textScale), alignment: homePreview ? .trailing : .leading)
             }
             // Overdue says so in more than red.
             HStack(spacing: 4) {
@@ -249,10 +251,10 @@ struct TodosView: View {
                 Text(dueLabel(item, today: today)).lineLimit(1)
             }
                 .accessibilityLabel(late ? "Overdue, due \(dueLabel(item, today: today))" : dueLabel(item, today: today))
-                .font(.callout).monospacedDigit()
-                .foregroundStyle(late ? AnyShapeStyle(.red) : item.dueDate == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
-                // Room for the overdue mark beside "Mon, Nov 23".
-                .frame(width: 112, alignment: .trailing)
+                .font(.scaled(.callout, textScale)).monospacedDigit()
+                .foregroundStyle(late ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                // Room for the overdue mark beside "Mon, Nov 23", and more when a date needs it.
+                .frame(minWidth: 112 * TextScale.clamped(textScale), alignment: .trailing)
         }
         .padding(.vertical, 7)
     }
@@ -265,10 +267,12 @@ struct TodosView: View {
 
     private var addField: some View {
         HStack(spacing: 10) {
-            Image(systemName: "circle").font(.system(size: 15)).foregroundStyle(.quaternary)
+            // Dashed, not lighter, to tell it from a to-do's own circle; as wide as its checkbox.
+            Image(systemName: "circle.dashed").font(.system(size: 15)).foregroundStyle(.secondary).frame(width: 24)
                 .accessibilityHidden(true)
             TextField("Add a to-do, then Return", text: $draft)
                 .textFieldStyle(.plain)
+                .font(.scaled(.body, textScale))
                 .focused($addFocused)
                 .help("Yours unless you name someone: Send the deck - Jane - due Fri, Nov 6")
                 .onSubmit(add)

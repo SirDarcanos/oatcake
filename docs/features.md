@@ -123,6 +123,16 @@ Everything Oatcake does today, with a link to where each is described. Planned w
   meetings and times they draw on. [Ask](how-it-works.md#5-ask)
 - Follow-ups in the same conversation as you move between Home and meetings. [Ask](how-it-works.md#5-ask)
 
+## Accessibility
+
+- VoiceOver: headings, a name for every button and note line, the notes at the bottom of the
+  window and Ask's answers read out, and the menu bar item's countdown.
+  [The window](how-it-works.md#the-window)
+- Reduce motion, Increase contrast and Differentiate without colour followed, and Bigger Text for
+  lists, to-dos and transcripts as well as what you read. [The window](how-it-works.md#the-window)
+- Fields and cards edged at 3:1 or more against the window, light and dark, and buttons at least
+  24 points to click.
+
 ## Local MCP server
 
 [Turn it on in Settings](settings.md#other-apps-local-mcp-server) to let an MCP app on the same Mac browse
