@@ -52,10 +52,16 @@ import Testing
         let rec = { (dir: URL) in Recording(id: dir.lastPathComponent, dir: dir, title: "Call", startedAt: Date(), state: .saved) }
         #expect(Recordings.hasAudio(rec(kept)) && !Recordings.hasAudio(rec(plain)) && Recordings.hasAudio(rec(orphan)))
 
-        let problems = Recordings.tidySaved(meetingsRoot: root, recordings: recordings)
-        // Nothing kept: gone. Audio kept: in its meeting, then gone. Its meeting gone: gone too. Not saved
-        // yet: left alone. Audio that couldn't be written into its meeting: left to try again, and said.
+        var trashed: [String] = []
+        let problems = Recordings.tidySaved(meetingsRoot: root, recordings: recordings) {
+            trashed.append($0.lastPathComponent)
+            try? fm.removeItem(at: $0)
+        }
+        // Nothing kept: gone. Audio kept: in its meeting, then gone. Its meeting gone: to the Trash, as
+        // it's the only copy of that audio. Not saved yet: left alone. Audio that couldn't be written into
+        // its meeting: left to try again, and said.
         #expect(try fm.contentsOfDirectory(atPath: recordings.path).sorted() == ["r4", "r5"])
+        #expect(trashed == ["r3"])
         #expect(Recordings.hasAudio(rec(waiting)) && Recordings.hasAudio(rec(broken)))
         #expect(problems == ["The call audio of “Call” couldn’t be kept with its meeting: This recording has no audio to keep."])
         // With the Meetings folder missing altogether (a drive that isn't plugged in), nothing is taken for gone.

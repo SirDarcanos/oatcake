@@ -363,13 +363,14 @@ public enum Recordings {
      * was kept (Keep call audio) first has it written into its meeting's folder as audio.m4a, so it's
      * with the meeting and goes to the Trash with it; if that can't be written, the folder stays to be
      * tried again, and what went wrong is returned to be said. One whose meeting has gone (to the
-     * Trash, say) goes too, audio and all: nothing is left to keep it for, and looking for its meeting
-     * meant searching the whole Meetings folder every time. Not when the whole Meetings folder is
+     * Trash, say) goes too, so its meeting isn't searched for through the whole Meetings folder every
+     * time: to the Trash if it still holds audio, deleted if not. Not when the whole Meetings folder is
      * missing (a drive that isn't plugged in): that's no sign of what happened to one meeting. Slow for
      * kept audio, so it's run in the background: at launch and after each save.
      */
     @discardableResult
-    public static func tidySaved(meetingsRoot: URL, recordings: URL = Paths.recordings) -> [String] {
+    public static func tidySaved(meetingsRoot: URL, recordings: URL = Paths.recordings,
+                                 trash: (URL) -> Void = { try? FileManager.default.trashItem(at: $0, resultingItemURL: nil) }) -> [String] {
         let fm = FileManager.default
         var problems: [String] = []
         for id in (try? fm.contentsOfDirectory(atPath: recordings.path)) ?? [] {
@@ -381,7 +382,11 @@ public enum Recordings {
                 continue
             }
             guard let meeting = savedMeeting(id, saved.meeting, under: meetingsRoot) else {
-                if fm.exists(meetingsRoot) { try? fm.removeItem(at: dir) }
+                // Audio that never reached its meeting is the only copy, so it goes to the Trash, where
+                // it can still be got back, rather than being deleted.
+                if fm.exists(meetingsRoot) {
+                    if hasTracks { trash(dir) } else { try? fm.removeItem(at: dir) }
+                }
                 continue
             }
             if hasTracks {
