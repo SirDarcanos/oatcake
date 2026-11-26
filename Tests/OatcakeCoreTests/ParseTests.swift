@@ -19,11 +19,21 @@ import Testing
         let shifted = "- [ ] New first\n" + md
         #expect(toggleTodo(shifted, line: 0, text: "Send the deck") == "- [ ] New first\n- [x] Send the deck — Jane — due Fri, Nov 6 — [12:34]\n- [x] Book room\nnot a todo\n* [X] Done — John")
         #expect(toggleTodo(shifted, line: 1, text: "Gone since") == nil)
+        // A spaced dash in the task itself: only the last piece that isn't a field is the owner.
+        let dashed = parseTodos("- [ ] Compare A — B pricing — John — due Fri, Nov 6 — [01:15]\n- [ ] Compare A — B pricing — due Fri\n")
+        #expect(dashed[0] == Todo(line: 0, done: false, text: "Compare A — B pricing", owner: "John", due: "Fri, Nov 6", stamp: "01:15"))
+        #expect(dashed[1].text == "Compare A" && dashed[1].owner == "B pricing")
     }
 
     @Test func typedTodos() {
         #expect(typedTodo("Send the deck - due Fri, Nov 6", owner: "John") == "Send the deck — John — due Fri, Nov 6")
         #expect(typedTodo("Send the deck - Jane - due Fri, Nov 6", owner: "John") == "Send the deck — Jane — due Fri, Nov 6")
+        // The task keeps a dash of its own, as it was typed.
+        let typed = typedTodo("Send the deck - draft two -- Jane - due Fri", owner: "John")
+        #expect(typed == "Send the deck - draft two — Jane — due Fri")
+        #expect(parseTodos("- [ ] \(typed)").first.map { [$0.text, $0.owner, $0.due] } == ["Send the deck - draft two", "Jane", "Fri"])
+        #expect(typedTodo("Send the deck") == "Send the deck" && typedTodo("Send the deck", owner: "") == "Send the deck")
+        #expect(typedTodo("  Call Jane — [12:34]  ", owner: "John") == "Call Jane — John — [12:34]")
         #expect(addTodo("- [ ] One\n\n", "Two") == "- [ ] One\n- [ ] Two\n")
         #expect(addTodo("", "Two") == "- [ ] Two\n")
     }

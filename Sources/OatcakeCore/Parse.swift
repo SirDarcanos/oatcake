@@ -91,21 +91,28 @@ public struct Todo: Equatable, Hashable, Sendable {
 private let todoFormat = try! NSRegularExpression(pattern: #"^\s*[-*]\s+\[( |x|X)\]\s+(.*)$"#)
 private let lonelyStamp = try! NSRegularExpression(pattern: #"^\[\#(stampPattern)\]$"#)
 
-/// "- [ ] Task — Owner — due Fri, Oct 30 — [12:34]" (owner, due date and time optional).
+/**
+ * "- [ ] Task — Owner — due Fri, Oct 30 — [12:34]" (owner, due date and time optional). Only the
+ * last piece that isn't the due date or the time is the owner: a task can have a spaced dash of its
+ * own ("Compare A — B pricing — John"), and that part stays in the task.
+ */
 public func parseTodos(_ markdown: String) -> [Todo] {
     markdown.components(separatedBy: "\n").enumerated().compactMap { index, line in
         guard let g = firstMatch(todoFormat, line), let box = g[1], let body = g[2] else { return nil }
         let pieces = body.replacingOccurrences(of: #"\s+—\s+"#, with: "\u{0}", options: .regularExpression).components(separatedBy: "\u{0}")
         var todo = Todo(line: index, done: box != " ", text: pieces[0], owner: "", due: "", stamp: "")
+        var words: [String] = []
         for p in pieces.dropFirst() {
             if let stamp = firstMatch(lonelyStamp, p)?[1] ?? nil {
                 todo.stamp = padStamp(stamp)
             } else if p.range(of: #"^due\s+"#, options: [.regularExpression, .caseInsensitive]) != nil {
                 todo.due = p.replacingOccurrences(of: #"^due\s+"#, with: "", options: [.regularExpression, .caseInsensitive])
             } else {
-                todo.owner = p
+                words.append(p)
             }
         }
+        todo.owner = words.popLast() ?? ""
+        todo.text = ([pieces[0]] + words).joined(separator: " — ")
         return todo
     }
 }
@@ -132,17 +139,22 @@ public func toggleTodo(_ markdown: String, line: Int, text: String) -> String? {
 /**
  * A typed to-do in todo.md's form. " - " and " -- " count as the separator (an em dash is awkward
  * to type), and `owner` fills in when none is given: "Send the deck - due Fri, Nov 6" with owner
- * "John" becomes "Send the deck — John — due Fri, Nov 6".
+ * "John" becomes "Send the deck — John — due Fri, Nov 6". As in parseTodos, only the last piece that
+ * isn't a field is the owner: "Send the deck - draft two - Jane" keeps "Send the deck - draft two".
  */
 public func typedTodo(_ text: String, owner: String? = nil) -> String {
-    var parts = text.trimmed.replacingOccurrences(of: #"\s+(?:—|--|-)\s+"#, with: "\u{0}", options: .regularExpression).components(separatedBy: "\u{0}")
+    // The pieces, with the separators typed between them (pieces at even places, separators at odd).
+    let parts = text.trimmed.replacingOccurrences(of: #"\s+(?:—|--|-)\s+"#, with: "\u{0}$0\u{0}", options: .regularExpression).components(separatedBy: "\u{0}")
+    let pieces = stride(from: 0, to: parts.count, by: 2).map { parts[$0] }
     let isField = { (p: String) in
         p.range(of: #"^due\s"#, options: [.regularExpression, .caseInsensitive]) != nil
             || p.range(of: "^\\[\(stampForm)\\]$", options: .regularExpression) != nil
     }
-    let named = parts.dropFirst().contains { !isField($0) }
-    if let owner, !owner.isEmpty, !named { parts.insert(owner, at: 1) }
-    return parts.joined(separator: " — ")
+    let named = pieces.indices.dropFirst().last { !isField(pieces[$0]) }
+    var task = pieces[0]
+    for i in pieces.indices.dropFirst() where !isField(pieces[i]) && i != named { task += parts[2 * i - 1] + pieces[i] }
+    let who = named.map { pieces[$0] } ?? owner.flatMap { $0.isEmpty ? nil : $0 }
+    return ([task] + (who.map { [$0] } ?? []) + pieces.filter(isField)).joined(separator: " — ")
 }
 
 /// todo.md with a new open to-do at the end.
