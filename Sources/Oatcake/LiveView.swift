@@ -441,7 +441,9 @@ private struct LiveBar: View {
             }
             .fixedSize()
             .help(mic.text)
-            .onTapGesture { Task { devices = (try? await Recordings.listInputs()) ?? devices } }
+            // Looked for again as the pointer reaches the menu, so a microphone plugged in since is there:
+            // a menu keeps its clicks to itself, so a tap gesture on it can't be relied on to run.
+            .onHover { inside in if inside { Task { devices = (try? await Recordings.listInputs()) ?? devices } } }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 12)
