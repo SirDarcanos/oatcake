@@ -53,6 +53,8 @@ struct AppServices {
     var confirm: @MainActor (Confirmation) -> Void = { _ in }
     /// Takes a question back, on screen or waiting its turn: what it asked about has been settled another way.
     var withdraw: @MainActor (Confirmation.ID) -> Void = { _ in }
+    /// The question is on screen, or waiting its turn.
+    var isAsking: @MainActor (Confirmation.ID) -> Bool = { _ in false }
     /// Something on disk has changed: read the Meetings folder and the recordings again.
     var refresh: @MainActor () -> Void = {}
     var showWindow: @MainActor () -> Void = {}
@@ -119,6 +121,7 @@ final class AppModel {
                               toast: { [unowned self] text, isError in self.toast(text, isError: isError) },
                               confirm: { [unowned self] in self.confirm($0) },
                               withdraw: { [unowned self] in self.endConfirmation($0) },
+                              isAsking: { [unowned self] in self.isAsking($0) },
                               refresh: { [unowned self] in self.refresh() },
                               showWindow: { [unowned self] in self.showWindow() },
                               selection: { [unowned self] in self.selection },
@@ -313,6 +316,11 @@ final class AppModel {
 
     func confirm(_ question: Confirmation) {
         if confirmation == nil { confirmation = question } else { waitingQuestions.append(question) }
+    }
+
+    /// The question is on screen, or waiting to be.
+    func isAsking(_ id: Confirmation.ID) -> Bool {
+        confirmation?.id == id || waitingQuestions.contains { $0.id == id }
     }
 
     /// A question has been answered, or taken back because what it asked about was settled another

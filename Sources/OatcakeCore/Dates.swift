@@ -51,11 +51,12 @@ public func weekdayName(_ date: Date, short: Bool = false, locale: Locale = .aut
     date.formatted(style(locale).weekday(short ? .abbreviated : .wide))
 }
 
-/// A length of time as whole seconds under a minute, and to the nearest minute from then on.
+/// A length of time as whole seconds under a minute, and in whole minutes from then on: rounded down,
+/// so "silent for 2 minutes" is never said after 90 seconds.
 private func parts(_ seconds: Double) -> (hours: Int, minutes: Int, seconds: Int) {
     let seconds = max(0, seconds)
     guard seconds >= 60 else { return (0, 0, Int(seconds)) }
-    let minutes = Int((seconds / 60).rounded())
+    let minutes = Int(seconds / 60)
     return (minutes / 60, minutes % 60, 0)
 }
 

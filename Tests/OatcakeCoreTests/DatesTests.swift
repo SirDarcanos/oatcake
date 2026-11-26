@@ -54,6 +54,7 @@ import Testing
         #expect(longDuration(1) == "1 second")
         #expect(longDuration(47.8) == "47 seconds")
         #expect(longDuration(60) == "1 minute")
+        #expect(longDuration(90) == "1 minute")
         #expect(longDuration(32 * 60 + 20) == "32 minutes")
         #expect(longDuration(65 * 60) == "1 hour 5 minutes")
         #expect(longDuration(2 * 3600) == "2 hours")

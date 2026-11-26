@@ -394,6 +394,9 @@ final class RecordingController {
     /// A question about the call being recorded. If the recording ends some other way while it's
     /// still up (the recorder stops by itself, the call ends), the question goes with it.
     private func ask(_ question: Confirmation) {
+        // One at a time: a second, queued behind the first, would replace it here, and the first would
+        // then stay up after the call had ended.
+        if let liveQuestion, app.isAsking(liveQuestion) { return }
         liveQuestion = question.id
         app.confirm(question)
     }
