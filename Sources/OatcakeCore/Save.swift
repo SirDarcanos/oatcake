@@ -254,12 +254,17 @@ public func writeSummary(_ config: Config, meeting rel: String) async throws {
 public func writeSummary(_ draft: SummaryDraft, config: Config, meeting rel: String) throws {
     let meetings = Meetings(root: config.meetingsRoot)
     // Anything typed into the summary while the model was writing stays, with the model's below it.
-    let typed = try meetings.read(rel).summary.replacingOccurrences(of: #"\s*$"#, with: "", options: .regularExpression)
-    try meetings.write(rel, .summary, typed.trimmed.isEmpty ? draft.summary : typed + "\n\n" + draft.summary)
+    try meetings.update(rel, .summary) { now in
+        let typed = now.replacingOccurrences(of: #"\s*$"#, with: "", options: .regularExpression)
+        return typed.trimmed.isEmpty ? draft.summary : typed + "\n\n" + draft.summary
+    }
     if !draft.todo.isEmpty {
-        // Read now: to-dos may have been added or ticked while the model was writing.
-        let existing = try meetings.read(rel).todo.replacingOccurrences(of: #"\s*$"#, with: "", options: .regularExpression)
-        try meetings.write(rel, .todo, existing.isEmpty ? draft.todo : existing + "\n" + draft.todo)
+        // As the file is now: to-dos may have been added or ticked while the model was writing, or be
+        // being ticked as these arrive.
+        try meetings.update(rel, .todo) { now in
+            let existing = now.replacingOccurrences(of: #"\s*$"#, with: "", options: .regularExpression)
+            return existing.isEmpty ? draft.todo : existing + "\n" + draft.todo
+        }
     }
 }
 

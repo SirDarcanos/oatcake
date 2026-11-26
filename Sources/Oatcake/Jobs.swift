@@ -31,6 +31,8 @@ struct ReviewDraft: Equatable {
     /// Where the meeting will be saved, relative to the Meetings folder.
     var folder: String
     var voices: [String: Voice]
+    /// Changed on the screen since it was opened or saved: quitting would lose it.
+    var edited = false
 }
 
 @MainActor @Observable
@@ -61,7 +63,10 @@ final class Jobs {
     private var staleSummaries = Set<UUID>()
     /// Jobs regenerating a meeting's to-dos that are followed by its summary: a voice was left out meanwhile.
     private var summaryAgain = Set<UUID>()
+    /// By recording. One that's been saved is kept until its screen is left, which still shows it.
     var reviewDrafts: [String: ReviewDraft] = [:]
+    /// Names typed (or anything else set) in Who's who that haven't been saved.
+    var hasNamesTyped: Bool { reviewDrafts.values.contains(where: \.edited) }
     /// Meetings whose to-dos couldn't be read from the model's reply, and why, by path.
     var todoProblems: [String: String] = [:]
     /// Meetings whose draft for sharing is being written now, and why the last attempt failed, by path.
@@ -157,6 +162,9 @@ final class Jobs {
             if let outcome { apply(id, outcome) }
             // Settings › General › After a call: saved now, rather than waiting under Needs review.
             if outcome?.done == true, config.afterCall != .review { autoSave(id) }
+            // Waiting under Needs review. Away from Oatcake (its window closed, say) the Dock badge may
+            // not be there to see, so it's said.
+            if outcome?.done == true, config.afterCall == .review, !NSApp.isActive { Reminders.readyToCheck(rec.title, id: id) }
         }
     }
 
@@ -204,7 +212,7 @@ final class Jobs {
                 summaryAgain.formUnion(writing)
             }
         }
-        reviewDrafts.removeValue(forKey: rec.id)
+        reviewDrafts[rec.id]?.edited = false
         tidySavedRecordings()
         return saved
     }
@@ -252,6 +260,7 @@ final class Jobs {
             analyses.removeValue(forKey: rec.id)?.cancel()
             try Recordings.discard(rec.id)
             reviewDrafts.removeValue(forKey: rec.id)
+            Reminders.withdrawReadyToCheck(rec.id)
             progress.removeValue(forKey: rec.id)
             app.showFolder()
             toast("Recording discarded")
@@ -262,7 +271,8 @@ final class Jobs {
     /// Saves a reviewed recording as a meeting and starts writing its summary. Returns the meeting's path.
     func saveRecording(_ rec: Recording, decisions: [String: Decision], folder: String, title: String) throws -> String {
         let path = try saveMeeting(config, rec, decisions: decisions, folder: folder, title: title)
-        reviewDrafts.removeValue(forKey: rec.id)
+        reviewDrafts[rec.id]?.edited = false
+        Reminders.withdrawReadyToCheck(rec.id)
         writeSummary(path)
         tidySavedRecordings()
         return path
@@ -345,11 +355,14 @@ final class Jobs {
             } catch {
                 summaryErrors[summaryJobs[job] ?? path] = error.localizedDescription
             }
+            // Cleared once the folder has been read again with what was written. The meeting's view then
+            // reads the meeting itself, and keeps its summary and to-dos closed until that's in: until
+            // then they'd show what was there before, to be typed over.
+            await app.refreshed()
             let meeting = summaryJobs[job] ?? path
             summarising.remove(meeting)
             summaryJobs.removeValue(forKey: job)
             if summaryAgain.remove(job) != nil { writeSummary(meeting, only: .summary) }
-            refresh()
         }
     }
 

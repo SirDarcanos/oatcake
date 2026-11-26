@@ -177,12 +177,11 @@ public struct LocalChat: Sendable {
         }
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let choice = (json?["choices"] as? [[String: Any]])?.first
+        // Out of room, whatever it had written by then: its reasoning used it all, or the reply was cut
+        // off part way (a summary that stops mid-sentence, to-dos with half their JSON).
         let reply = withoutReasoning(((choice?["message"] as? [String: Any])?["content"] as? String) ?? "")
-        guard !reply.isEmpty else {
-            // Its reasoning used up the room before it got to the reply.
-            if choice?["finish_reason"] as? String == "length" { throw ModelOutOfRoom() }
-            throw OatcakeError("The model gave an empty reply.")
-        }
+        if choice?["finish_reason"] as? String == "length" { throw ModelOutOfRoom(reply: reply) }
+        guard !reply.isEmpty else { throw OatcakeError("The model gave an empty reply.") }
         return reply
     }
 }
@@ -192,14 +191,18 @@ let wordsForNothing: Set<String> = ["null", "none", "n/a", "unknown", "not state
 
 let outOfRoomMessage = "The model ran out of room before it finished its reply. Trying again usually works."
 
-/// A reply that was all reasoning, cut off before the answer: the room it was given ran out.
+/// A reply cut off before it was finished, or before it began after the model's reasoning: the room it
+/// was given ran out.
 public struct ModelOutOfRoom: LocalizedError, Equatable {
+    /// What it had written of its reply by then, without its reasoning.
+    public var reply = ""
     public var errorDescription: String? { outOfRoomMessage }
 }
 
 /// A reply without the model's reasoning, for servers that leave it in the text between <think> tags.
+/// Reasoning that's never closed is all there is: there's no reply after it.
 func withoutReasoning(_ reply: String) -> String {
-    reply.replacingOccurrences(of: #"(?s)^\s*<think>.*?</think>"#, with: "", options: .regularExpression).trimmed
+    reply.replacingOccurrences(of: #"(?s)^\s*<think>(.*?</think>|.*$)"#, with: "", options: .regularExpression).trimmed
 }
 
 /// What Check it works in Settings › Models found.
@@ -222,8 +225,9 @@ public func checkModel(_ llm: LlmConfig, server: ModelServer = .shared) async th
             try await chat.complete([ChatMessage("system", "Reply with the single word OK and nothing else."), ChatMessage("user", "Say OK.")],
                                     think: false, maxTokens: 20)
         })
-    } catch is ModelOutOfRoom {
-        return .stillReasoning
+    } catch let cut as ModelOutOfRoom {
+        // A reply that ran past the check's few tokens is a reply all the same.
+        return cut.reply.isEmpty ? .stillReasoning : .replied(cut.reply)
     }
 }
 
