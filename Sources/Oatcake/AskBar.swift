@@ -7,12 +7,6 @@ private let meetingSuggestions = [
     "Who said they’d follow up, and on what?",
 ]
 
-private let homeSuggestions = [
-    "What did we decide in my last call about the launch?",
-    "Who agreed to follow up about the offsite?",
-    "What’s still open from recent calls about hiring?",
-]
-
 /// The floating "ask about your meetings" lozenge; the conversation opens above it.
 struct AskBar: View {
     @Environment(AppModel.self) private var model
@@ -23,7 +17,16 @@ struct AskBar: View {
 
     private var placeholder: String {
         if !model.ask.turns.isEmpty { return "Ask a follow-up…" }
-        return path == nil ? "Ask about your calls..." : "Ask about this call, or any other…"
+        return path == nil ? "Ask about your calls…" : "Ask about this call, or any other…"
+    }
+
+    /// From Home, Ask finds calls by the words in the question, so these name the latest calls.
+    private var homeSuggestions: [String] {
+        let latest = listedIn(model.library.tree).prefix(2).map(meetingTitle)
+        guard let newest = latest.first else { return [] }
+        var questions = ["What did we decide in “\(newest)”?", "Who said they’d follow up after “\(newest)”, and on what?"]
+        if latest.count > 1 { questions.append("What’s still open from “\(latest[1])”?") }
+        return questions
     }
 
     var body: some View {

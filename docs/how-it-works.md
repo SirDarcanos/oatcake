@@ -306,13 +306,14 @@ who's who has **Name voices…** instead.
 
 ## 5. Ask
 
-Use **Ask about your calls...** at the bottom of Home to search across saved calls without opening
+Use **Ask about your calls…** at the bottom of Home to search across saved calls without opening
 one first ("when did Jane Doe first raise the launch date?"). On a meeting page, Ask starts with
 that call, so you can ask "what did we decide about hiring?" without naming the meeting. The model
 gets the open call’s summary, to-dos, notes and transcript (or the closest parts of a long transcript).
 If the question reaches beyond the open call, Oatcake also searches other meetings and favours ones
 in the same folder. From Home it searches the whole library without favouring a folder. Search results
-include summaries, to-dos and matching transcript lines. The model never opens a file or runs anything itself. Answers link to the meetings they
+include summaries, to-dos and matching transcript lines. The model never opens a file or runs
+anything itself. Answers link to the meetings they
 draw on, and a time in an answer opens the transcript at that moment. An answer is one piece of
 text: select any stretch of it, or all of it, and copy. Web links in an answer are shown as text,
 not made clickable. Follow-ups continue the same conversation as you move between Home and meetings.
