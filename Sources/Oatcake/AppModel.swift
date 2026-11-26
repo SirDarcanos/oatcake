@@ -51,7 +51,7 @@ struct AppServices {
     var toast: @MainActor (_ text: String, _ isError: Bool) -> Void = { _, _ in }
     /// Asks a question before an action.
     var confirm: @MainActor (Confirmation) -> Void = { _ in }
-    /// Takes a question back if it's still the one being asked: what it asked about has been settled another way.
+    /// Takes a question back, on screen or waiting its turn: what it asked about has been settled another way.
     var withdraw: @MainActor (Confirmation.ID) -> Void = { _ in }
     /// Something on disk has changed: read the Meetings folder and the recordings again.
     var refresh: @MainActor () -> Void = {}
@@ -85,7 +85,7 @@ final class AppModel {
     private(set) var confirmation: Confirmation?
     private var waitingQuestions: [Confirmation] = []
     var toastText: String?
-    /// The toast showing says something went wrong: it stays longer, and goes when it's clicked.
+    /// The toast showing says something went wrong: it stays until it's clicked.
     var toastIsError = false
     let updater = Updater()
     let ask = AskChat()
