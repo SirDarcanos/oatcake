@@ -10,23 +10,8 @@ struct HomeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                HStack {
-                    Text("Home").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
-                    Spacer()
-                    if model.recording.live != nil {
-                        Button { model.selection = .live } label: {
-                            Label("Return to recording", systemImage: "waveform")
-                        }
-                        .buttonStyle(.borderedProminent)
-                    } else {
-                        Button { model.newRecording() } label: {
-                            Label("New recording", systemImage: "circle.fill")
-                                .labelStyle(NewRecordingLabelStyle())
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
-                    }
-                }
+                // No record button of its own: the sidebar's New recording (or Return to recording) is beside it.
+                Text("Home").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
                 upcoming
                 if model.config.todosEnabled { TodosView(homePreview: true) }
             }
@@ -48,30 +33,31 @@ struct HomeView: View {
                             .symbolEffect(.rotate, isActive: model.calendar.fetching && !reduceMotion)
                     }
                     .buttonStyle(.borderless)
-                    .accessibilityLabel("Refresh calendar")
-                    .help("Refresh calendar")
+                    .accessibilityLabel("Refresh calendars")
+                    .help("Refresh calendars")
                     .disabled(model.calendar.fetching)
                 }
             }
             if model.calendar.hasCalendars {
                 let now = model.calendar.now
                 let events = upcomingCalls(model.calendar.events, at: now)
-                if model.calendar.hasFailures {
-                    Label("Some calendars couldn’t update. Check Settings → Calendars.", systemImage: "exclamationmark.triangle")
-                        .font(.callout).foregroundStyle(.secondary)
-                } else if !model.calendar.hasUpdated {
-                    Text("Fetching calendars…").foregroundStyle(.secondary)
-                } else if events.isEmpty {
-                    Text("No more meetings today or tomorrow.").foregroundStyle(.secondary)
-                }
+                let next = events.first { $0.startDate > now }
+                UpcomingNote(empty: events.isEmpty)
                 if !events.isEmpty {
-                    let first = events.first?.id
-                    // Joining and recording are offered for calls under way and the next one to start.
-                    let next = events.first { $0.startDate > now }?.id
+                    // The sidebar's rows, with room beside them to join the call under way or the next one.
                     rows {
                         ForEach(events) { event in
-                            if event.id != first { Divider() }
-                            callRow(event, now: now, first: event.id == first, actionable: event.startDate <= now || event.id == next)
+                            if event.id != events.first?.id { Divider() }
+                            HStack(spacing: 12) {
+                                UpcomingRow(event: event, next: next, now: now)
+                                if event.startDate <= now || event.id == next?.id, let link = event.callLink, let url = URL(string: link) {
+                                    Button { NSWorkspace.shared.open(url) } label: {
+                                        Label("Join the call", systemImage: "video")
+                                    }
+                                    .accessibilityLabel("Join the call: \(event.title)")
+                                }
+                            }
+                            .padding(.vertical, 8)
                         }
                     }
                 }
@@ -80,46 +66,6 @@ struct HomeView: View {
                 Button("Connect calendar") { showSettingsPane(.calendar, openSettings) }
             }
         }
-    }
-
-    private func callRow(_ event: CalendarEvent, now: Date, first: Bool, actionable: Bool) -> some View {
-        let day = Calendar.current.isDate(event.startDate, inSameDayAs: now) ? "Today" : "Tomorrow"
-        let time = event.startDate <= now ? "In progress" : "\(day) at \(hhmm(event.startDate))"
-        let calendars = model.calendar.labels(for: event)
-        let names = calendars.map(\.name).joined(separator: ", ")
-        return HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    CalendarBadges(calendars: calendars)
-                    Text(event.title).fontWeight(first ? .semibold : .regular)
-                        .accessibilityLabel("\(event.title), \(names)")
-                }
-                .help(names)
-                Text(actionable && event.startDate > now ? "Next · \(time)" : time)
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 12)
-            // Later calls are only listed.
-            if actionable, let link = event.callLink, let url = URL(string: link) {
-                Button { NSWorkspace.shared.open(url) } label: {
-                    Label("Join the call", systemImage: "video")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .accessibilityLabel("Join the call: \(event.title)")
-            }
-            if actionable, model.recording.live == nil {
-                Button { model.newRecording(event) } label: {
-                    Label("Start recording", systemImage: "circle.fill")
-                        .padding(.horizontal, 6)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
-                .controlSize(.large)
-                .accessibilityLabel("Start recording: \(event.title)")
-            }
-        }
-        .padding(.vertical, 10)
     }
 
     private func heading(_ title: String) -> some View {

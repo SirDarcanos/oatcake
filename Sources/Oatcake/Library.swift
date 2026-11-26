@@ -109,10 +109,19 @@ final class Library {
         return made
     }
 
-    /// Moves meetings or folders to the Trash, and returns the paths that went. One that can't be moved
-    /// stops the rest, and the toast says how many went before it and why. Edit › Undo (⌘Z) puts them back.
+    /// Moves meetings or folders to the Trash. Several at once ask first, as a folder with meetings in it
+    /// does. `done` is given the paths that went, once they have.
+    func trash(_ nodes: [TreeNode], done: @escaping ([String]) -> Void = { _ in }) {
+        guard nodes.count > 1 else { return done(moveToTrash(nodes)) }
+        app.confirm(Confirmation(title: "Move \(nodes.count) meetings to the Trash?",
+                                 text: "You can put them back from the Trash in Finder.",
+                                 ok: "Move to Trash", cancel: "Cancel") { [self] in done(moveToTrash(nodes)) })
+    }
+
+    /// Returns the paths that went. One that can't be moved stops the rest, and the toast says how many
+    /// went before it and why. Edit › Undo (⌘Z) puts them back.
     @discardableResult
-    func trash(_ nodes: [TreeNode]) -> [String] {
+    private func moveToTrash(_ nodes: [TreeNode]) -> [String] {
         var gone: [String] = []
         var inTrash: [(node: TreeNode, url: URL)] = []
         // Put back into the Meetings folder they came from, even if another has been chosen since.
@@ -166,12 +175,12 @@ final class Library {
     func trashFolder(_ node: TreeNode) {
         let count = node.allMeetings.count
         guard count > 0 else {
-            trash([node])
+            moveToTrash([node])
             return
         }
         app.confirm(Confirmation(title: "Move “\(node.name)” to the Trash?",
                                     text: "It holds \(count == 1 ? "1 meeting, which goes" : "\(count) meetings, which go") with it. You can put \(count == 1 ? "it" : "them") back from the Trash in Finder.",
-                                    ok: "Move to Trash", cancel: "Cancel") { [self] in trash([node]) })
+                                    ok: "Move to Trash", cancel: "Cancel") { [self] in moveToTrash([node]) })
     }
 
     func reveal(_ path: String) { reveal([path]) }
@@ -280,7 +289,7 @@ final class Library {
             let r = try await Task.detached { try work(url, root) }.value
             let text = [r.imported > 0 ? "Imported \(plural(r.imported, "meeting")) into the \(r.folder) folder." : "Nothing new to import.",
                         r.skipped > 0 ? "\(plural(r.skipped, "meeting")) already here." : nil,
-                        r.unreadable > 0 ? "\(plural(r.unreadable, "meeting")) couldn't be read." : nil].compactMap { $0 }.joined(separator: " ")
+                        r.unreadable > 0 ? "\(plural(r.unreadable, "meeting")) couldn’t be read." : nil].compactMap { $0 }.joined(separator: " ")
             importOutcomes[source] = (text, false)
             refresh()
         } catch {

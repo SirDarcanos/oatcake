@@ -25,7 +25,7 @@ private enum SaveStatus {
         case .saving: "Saving…"
         case .saved: "Saved"
         case .failed: "Couldn’t save"
-        case .todo: "Saved to todo.md"
+        case .todo: "Saved"
         }
     }
 }
@@ -96,7 +96,16 @@ struct MeetingView: View {
     var body: some View {
         Group {
             if !loadError.isEmpty {
-                Text(loadError).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 10) {
+                    Text("Couldn’t open this meeting").font(.headline)
+                    Text(loadError).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    HStack {
+                        Button("Try again") { load() }
+                        Button("Show in Finder") { model.library.reveal(path) }
+                    }
+                }
+                .padding(40)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let files {
                 content(files)
             } else {
@@ -345,7 +354,7 @@ struct MeetingView: View {
             }
             .menuIndicator(.hidden)
             .accessibilityLabel("More")
-            .help("Draft for sharing, regenerate, rename speakers, copy, share, rename, move, show in Finder or move to the Trash")
+            .help("Draft for sharing, regenerate, rename people, copy, share, rename, move, show in Finder or move to the Trash")
         }
     }
 
@@ -408,17 +417,17 @@ struct MeetingView: View {
         .fixedSize()
     }
 
-    /// Rendered or Markdown: how the note below is shown. It sits at the top right of the note, beside its title.
+    /// Read or Edit: how the tab below is shown, laid out or as its Markdown. It sits at the top right, beside the title.
     private var viewSwitch: some View {
         Picker("View", selection: Binding(get: { markdown }, set: { flush(); markdown = $0; Remembered.markdown = $0; status = .quiet })) {
-            Text("Rendered").tag(false)
-            Text("Markdown").tag(true)
+            Text("Read").tag(false)
+            Text("Edit").tag(true)
         }
         .pickerStyle(.segmented)
         .labelsHidden()
         .controlSize(.small)
         .fixedSize()
-        .help("Read the note as it’s laid out, or edit its Markdown")
+        .help("Read this tab as it’s laid out, or edit its Markdown")
     }
 
     /// What Copy and Share take: the tab you're on, as Markdown under the meeting's title and date.
@@ -446,7 +455,7 @@ struct MeetingView: View {
         model.toast("Copied the \(what)")
     }
 
-    /// A meeting saved without checking who's who has Name voices… instead, until Keep as is.
+    /// A meeting saved without checking who's who has Check who's who… instead, until Keep these names.
     private var canRenameSpeakers: Bool {
         guard !speakers.isEmpty else { return false }
         guard let id = meta.recording else { return true }
@@ -572,12 +581,19 @@ struct MeetingView: View {
         })
     }
 
+    /// A to-do's due date as the To-dos page writes it, in the Mac's region; todo.md's own words when
+    /// they aren't a date ("end of the week").
+    private func dueText(_ due: String) -> String {
+        let when = parseISO(meta.startedAt) ?? meetingDate(node)
+        return dueDate(due, meetingDate: when).map { shortDay($0) } ?? due
+    }
+
     private var metaLine: String {
         let date = parseISO(meta.startedAt) ?? meetingDate(node)
         let length = parseISO(meta.endedAt).flatMap { end in parseISO(meta.startedAt).map { end.timeIntervalSince($0) } }
         let withWhom = (meta.participants ?? []).filter { $0 != model.config.myName }
             .map { $0.replacingOccurrences(of: #"\s*\(.*\)$"#, with: "", options: .regularExpression) }
-        return [date.map { "\(weekday($0)), \(longDate($0))" }, date.map(hhmm), length.map(minutes),
+        return [date.map { longDay($0) }, date.map { timeOfDay($0) }, length.map(longDuration),
                 !granola && !withWhom.isEmpty ? "with \(withWhom.joined(separator: ", "))" : nil]
             .compactMap { $0 }.joined(separator: " · ")
     }
@@ -592,12 +608,15 @@ struct MeetingView: View {
                  ? "Voices Oatcake didn’t recognise are “Voice 1”, “Voice 2”… Name them and this meeting’s transcript, summary and to-dos are updated."
                  : "Oatcake recognised every voice from before and used those names. Change one and this meeting’s transcript, summary and to-dos are updated.")
             HStack(spacing: 10) {
-                Button("Name voices…") {
+                Button("Check who’s who…") {
                     flush()
                     model.selection = .job(id)
                 }
-                Button("Keep as is") { model.jobs.keepAsIs(id) }
-                    .help("Keep these names. The recording’s voice clips are deleted, so its voices can’t be named later.")
+                Button("Keep these names…") {
+                    model.confirm(Confirmation(title: "Keep these names?",
+                                               text: "The recording’s voice clips are deleted for good, so its voices can’t be named later. The meeting stays as it is.",
+                                               ok: "Keep these names", cancel: "Cancel") { model.jobs.keepAsIs(id) })
+                }
             }
             .padding(.top, 6)
         }
@@ -740,7 +759,7 @@ struct MeetingView: View {
                 // No to-dos yet: just the field to add one.
                 if !todos.isEmpty { SectionLabel(text: "To-dos\(open > 0 ? " · \(open) open" : "")") }
                 ForEach(todos, id: \.line) { t in
-                    let detail = [t.owner.isEmpty ? nil : ownerLabel(t.owner, model.config.myName), t.due.isEmpty ? nil : "due \(t.due)"].compactMap { $0 }
+                    let detail = [t.owner.isEmpty ? nil : ownerLabel(t.owner, model.config.myName), t.due.isEmpty ? nil : "due \(dueText(t.due))"].compactMap { $0 }
                     // The time in the call goes on the line under the to-do, after its owner and due date, as on the To-dos page.
                     TodoRow(todo: t, task: marked(t.text), tick: { tick(t) }) {
                         if !detail.isEmpty || !t.stamp.isEmpty {
@@ -752,9 +771,9 @@ struct MeetingView: View {
                     }
                 }
                 HStack(spacing: 10) {
-                    // Dashed, not lighter, to tell it from a to-do's own circle: light enough for that couldn't
-                    // be seen. As wide as a to-do's checkbox, so the circles line up.
-                    Image(systemName: "circle.dashed").font(.system(size: 15)).foregroundStyle(.secondary).frame(width: 24)
+                    // A plus, not a lighter circle, to tell it from a to-do's own circle: light enough for that
+                    // couldn't be seen. As wide as a to-do's checkbox, so the circles line up.
+                    Image(systemName: "plus.circle").font(.system(size: 15)).foregroundStyle(.secondary).frame(width: 24)
                         .accessibilityHidden(true)
                     TextField("Add a to-do, then Return", text: $newTodo)
                         .textFieldStyle(.plain)
@@ -893,7 +912,7 @@ struct MeetingView: View {
                 .background(RoundedRectangle(cornerRadius: 8).fill(i == flash || i == current ? Color.orange.opacity(0.16) : .clear))
                 .id(i)
             }
-            if rows.isEmpty { Text("transcript.md is empty.").foregroundStyle(.secondary) }
+            if rows.isEmpty { Text("This meeting has no transcript.").foregroundStyle(.secondary) }
         }
     }
 
@@ -936,7 +955,7 @@ private struct DraftForSharingSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Draft for Sharing").font(.headline)
+            Text("Draft for sharing").font(.headline)
             Text("Oatcake’s model writes this meeting’s \(todos ? "summary and to-dos" : "summary") again for other people to read, following your draft for sharing instructions in Settings › Summaries. It doesn’t read the transcript or your notes.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -959,7 +978,7 @@ private struct DraftForSharingSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(replacing ? "Replace Draft" : "Write Draft") {
+                Button(replacing ? "Replace draft" : "Write draft") {
                     write(request.trimmed)
                     dismiss()
                 }

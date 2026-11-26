@@ -56,7 +56,7 @@ struct MeetingListView: View {
                         MoveMenu(model: model, paths: nodes.map(\.path), title: "Move \(nodes.count) Meetings To")
                         Button("Show in Finder") { model.library.reveal(nodes.map(\.path)) }
                         Divider()
-                        Button("Move \(nodes.count) Meetings to Trash") { model.trash(nodes) }
+                        Button("Move \(nodes.count) Meetings to Trash…") { model.trash(nodes) }
                     }
                 }
                 // File › Move to Trash (⌘⌫, as in Finder) acts on the selection while the list has the
@@ -100,10 +100,10 @@ struct MeetingListView: View {
         let calendars = model.calendar.labels(for: m.calendarIDs)
         return VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
-                Text(date.map { "\(shortWeekday($0)), \(compactDate($0))" } ?? m.name).fontWeight(.semibold).lineLimit(1)
+                Text(date.map { shortDay($0) } ?? m.name).fontWeight(.semibold).lineLimit(1)
                 if let date {
                     Text("·").foregroundStyle(.tertiary)
-                    Text(hhmm(date)).foregroundStyle(.secondary).monospacedDigit()
+                    Text(timeOfDay(date)).foregroundStyle(.secondary).monospacedDigit()
                 }
                 Spacer(minLength: 4)
                 if m.granola {

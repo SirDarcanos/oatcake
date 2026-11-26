@@ -131,15 +131,13 @@ struct Notice<Content: View>: View {
     enum Tone { case amber, red, grey, blue }
     let tone: Tone
     @ViewBuilder var content: Content
-    @Environment(\.accessibilityDifferentiateWithoutColor) private var withoutColour
     @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             switch tone {
             case .amber: Image(systemName: "exclamationmark.triangle").foregroundStyle(Color.amber)
-            // Told apart from a warning by more than its red, when that's asked for.
-            case .red: Image(systemName: withoutColour ? "xmark.octagon" : "exclamationmark.triangle").foregroundStyle(.red)
+            case .red: Image(systemName: "xmark.octagon").foregroundStyle(.red)
             case .grey: Image(systemName: "doc.text").foregroundStyle(.secondary)
             case .blue: ProgressView().controlSize(.small)
             }
@@ -304,7 +302,7 @@ struct ToastView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            if isError { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red) }
+            if isError { Image(systemName: "xmark.octagon.fill").foregroundStyle(.red) }
             Text(text).font(.callout.weight(.medium)).fixedSize(horizontal: false, vertical: true)
             if isError { Image(systemName: "xmark").font(.caption.weight(.semibold)).foregroundStyle(.secondary) }
         }

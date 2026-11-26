@@ -46,13 +46,16 @@ struct Place: Equatable {
     var folder: String
 }
 
-/// "Stop recording?" and the like: a question with a destructive answer.
+/// "Discard this recording?" and the like: a question asked before an action. `destructive`: the
+/// answer deletes or replaces something, so its button is red and Return doesn't press it; otherwise
+/// (Stop recording) it's the default button.
 struct Confirmation: Identifiable {
     let id = UUID()
     var title: String
     var text: String
     var ok: String
     var cancel: String
+    var destructive = true
     var action: () async throws -> Void
 }
 
@@ -62,10 +65,12 @@ struct Confirmation: Identifiable {
 struct AppServices {
     var config: @MainActor () -> Config = { Config.defaults() }
     var toast: @MainActor (_ text: String, _ isError: Bool) -> Void = { _, _ in }
-    /// Asks a question with a destructive answer.
+    /// Asks a question before an action.
     var confirm: @MainActor (Confirmation) -> Void = { _ in }
-    /// Takes a question back if it's still the one being asked: what it asked about has been settled another way.
+    /// Takes a question back, on screen or waiting its turn: what it asked about has been settled another way.
     var withdraw: @MainActor (Confirmation.ID) -> Void = { _ in }
+    /// The question is on screen, or waiting its turn.
+    var isAsking: @MainActor (Confirmation.ID) -> Bool = { _ in false }
     /// Something on disk has changed: read the Meetings folder and the recordings again.
     var refresh: @MainActor () -> Void = {}
     /// The same, returning once what was read is in place.
@@ -122,12 +127,15 @@ final class AppModel {
     private var history = History<Place>()
     /// The first read of the Meetings folder has put back where Oatcake was when it last closed.
     private var placeRestored = false
-    var confirmation: Confirmation?
+    /// The question on screen. One asked while it's up waits its turn: put in its place, the alert's
+    /// buttons would answer a question it didn't show.
+    private(set) var confirmation: Confirmation?
+    private var waitingQuestions: [Confirmation] = []
     /// Markdown typed in meetings and not written yet, kept here rather than by the meeting's view so
     /// that quitting and updating can write it too (saveEdits).
     var edits = MeetingEdits()
     var toastText: String?
-    /// The toast showing says something went wrong: it stays longer, and goes when it's clicked.
+    /// The toast showing says something went wrong: it stays until it's clicked.
     var toastIsError = false
     let updater = Updater()
     let ask = AskChat()
@@ -162,8 +170,9 @@ final class AppModel {
     private func wire() {
         let app = AppServices(config: { [unowned self] in self.config },
                               toast: { [unowned self] text, isError in self.toast(text, isError: isError) },
-                              confirm: { [unowned self] in self.confirmation = $0 },
-                              withdraw: { [unowned self] id in if self.confirmation?.id == id { self.confirmation = nil } },
+                              confirm: { [unowned self] in self.confirm($0) },
+                              withdraw: { [unowned self] in self.endConfirmation($0) },
+                              isAsking: { [unowned self] in self.isAsking($0) },
                               refresh: { [unowned self] in self.refresh() },
                               refreshed: { [unowned self] in await self.refreshed() },
                               showWindow: { [unowned self] in self.showWindow() },
@@ -477,26 +486,52 @@ final class AppModel {
     /// one in the list opens, as in Mail, so the keyboard carries on from there.
     func trash(_ nodes: [TreeNode]) {
         let listed = listedIn(library.tree?.find(folder) ?? library.tree).map(\.path)
-        let gone = Set(library.trash(nodes))
-        if case .meeting(let open, _) = selection, gone.contains(open) {
-            selection = rowAfterRemoving(gone, from: listed).map { .meeting($0) } ?? .folder
+        // Several are asked about first, so what went is known only once they've gone.
+        library.trash(nodes) { [self] trashed in
+            let gone = Set(trashed)
+            if case .meeting(let open, _) = selection, gone.contains(open) {
+                selection = rowAfterRemoving(gone, from: listed).map { .meeting($0) } ?? .folder
+            }
         }
     }
 
-    /// A passing note at the bottom of the window. One that says something went wrong stays for
-    /// eight seconds or until it's clicked. Each is read out by VoiceOver, which never sees the note
-    /// itself; one that says something went wrong, before anything else it's saying.
+    /// A passing note at the bottom of the window. One that says something went wrong stays until
+    /// it's clicked (or another note takes its place), so it isn't gone before it's been read. Each is
+    /// read out by VoiceOver, which never sees the note itself; one that says something went wrong,
+    /// before anything else it's saying.
     func toast(_ text: String, isError: Bool = false) {
         withAnimation {
             toastText = text
             toastIsError = isError
         }
         toastTask?.cancel()
-        toastTask = Task {
-            try? await Task.sleep(for: .seconds(isError ? 8 : 2.4))
+        toastTask = isError ? nil : Task {
+            try? await Task.sleep(for: .seconds(2.4))
             if !Task.isCancelled { withAnimation { toastText = nil } }
         }
         announce(text, priority: isError ? .high : .medium)
+    }
+
+    func confirm(_ question: Confirmation) {
+        if confirmation == nil { confirmation = question } else { waitingQuestions.append(question) }
+    }
+
+    /// The question is on screen, or waiting to be.
+    func isAsking(_ id: Confirmation.ID) -> Bool {
+        confirmation?.id == id || waitingQuestions.contains { $0.id == id }
+    }
+
+    /// A question has been answered, or taken back because what it asked about was settled another
+    /// way. The next one waiting is asked a moment later, once the alert has gone.
+    func endConfirmation(_ id: Confirmation.ID) {
+        waitingQuestions.removeAll { $0.id == id }
+        guard confirmation?.id == id else { return }
+        confirmation = nil
+        guard !waitingQuestions.isEmpty else { return }
+        Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            if confirmation == nil, !waitingQuestions.isEmpty { confirmation = waitingQuestions.removeFirst() }
+        }
     }
 
     func dismissToast() {
@@ -531,8 +566,7 @@ final class AppModel {
     func ignore(_ event: CalendarEvent, series: Bool) {
         guard let item = series ? IgnoredEvent.series(of: event) : .occurrence(event) else { return }
         saveConfig(with(config) { $0.ignoredCalendarEvents = withoutEnded($0.ignoredCalendarEvents, now: Date()).filter { !$0.covers(item) } + [item] })
-        toast(series ? "“\(event.title)” is ignored from now on. Settings › Calendars can bring it back."
-                     : "“\(event.title)”, \(shortWeekday(event.startDate)) \(hhmm(event.startDate)), is ignored. Settings › Calendars can bring it back.")
+        toast(series ? "Ignoring “\(event.title)” from now on" : "Ignoring “\(event.title)” on \(dayAndTime(event.startDate))")
     }
 
     func stopIgnoring(_ item: IgnoredEvent) {
@@ -663,13 +697,13 @@ final class AppModel {
         if let live = recording.live, recording.recorderFailure == nil {
             return ("Stop recording and quit?",
                     "Oatcake is recording “\(live.title)”. Quitting stops the recording. What’s been recorded so far is transcribed the next time you open Oatcake.",
-                    "Stop Recording and Quit")
+                    "Stop recording and quit")
         }
         var doing: [String] = []
         var after: [String] = []
         if jobs.isAnalysingAny {
-            doing.append("analysing a call")
-            after.append("The analysis starts again the next time you open Oatcake.")
+            doing.append("transcribing a call")
+            after.append("Transcribing starts again the next time you open Oatcake.")
         }
         if !jobs.summarising.isEmpty {
             doing.append("writing a summary")
@@ -710,11 +744,11 @@ final class AppModel {
     /// Why an update has to wait, if it does.
     var busyReason: String? {
         if recording.isRecording { return "Oatcake is recording a call. Install the update after you stop." }
-        if jobs.isAnalysingAny { return "Oatcake is analysing a call. Install the update when it's done." }
+        if jobs.isAnalysingAny { return "Oatcake is transcribing a call. Install the update when it’s done." }
         if !jobs.summarising.isEmpty { return "Oatcake is writing a summary. Try again in a moment." }
         if !jobs.drafting.isEmpty { return "Oatcake is writing a draft for sharing. Try again in a moment." }
         if ask.running != nil { return "Oatcake is answering a question. Try again in a moment." }
-        if library.importing != nil { return "Oatcake is importing meetings. Install the update when it's done." }
+        if library.importing != nil { return "Oatcake is importing meetings. Install the update when it’s done." }
         return nil
     }
 

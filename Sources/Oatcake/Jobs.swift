@@ -225,7 +225,7 @@ final class Jobs {
         // transcribed): saved, it would have an empty transcript, and with Keep call audio off its
         // tracks would go and it couldn't be analysed again.
         if analysis.lines.isEmpty, Recordings.audioSeconds(rec) > 5 {
-            toast("Couldn’t save “\(rec.title)” by itself: no speech was found in its audio. It’s waiting under Needs review.", isError: true)
+            toast("Couldn’t save “\(rec.title)” by itself: no speech was found in its audio. It’s waiting under Who’s who.", isError: true)
             return
         }
         let folder = rec.folder ?? ""
@@ -245,7 +245,7 @@ final class Jobs {
             // Watching it being processed: on to the meeting.
             if app.selection() == .job(id) { app.select(.meeting(path, jump: Jump(tab: withSummary ? .summary : .transcript))) }
         } catch {
-            toast("Couldn’t save “\(rec.title)” by itself: \(error.localizedDescription) It’s waiting under Needs review.", isError: true)
+            toast("Couldn’t save “\(rec.title)” by itself: \(error.localizedDescription) It’s waiting under Who’s who.", isError: true)
         }
     }
 

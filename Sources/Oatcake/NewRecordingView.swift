@@ -6,8 +6,8 @@ private let newFolder = "\u{0}new"
 
 private func eventWhen(_ e: CalendarEvent) -> String {
     let cal = Calendar.current
-    let day = cal.isDateInToday(e.startDate) ? "Today" : cal.isDateInTomorrow(e.startDate) ? "Tomorrow" : weekday(e.startDate)
-    return ["\(day) · \(hhmm(e.startDate))–\(hhmm(e.endDate))", e.callLink.flatMap(callApp)].compactMap { $0 }.joined(separator: " · ")
+    let day = cal.isDateInToday(e.startDate) ? "Today" : cal.isDateInTomorrow(e.startDate) ? "Tomorrow" : weekdayName(e.startDate)
+    return ["\(day) · \(timeOfDay(e.startDate))–\(timeOfDay(e.endDate))", e.callLink.flatMap(callApp)].compactMap { $0 }.joined(separator: " · ")
 }
 
 struct NewRecordingView: View {
@@ -156,7 +156,7 @@ struct NewRecordingView: View {
             }
             GridRow {
                 Text("Title").foregroundStyle(.secondary)
-                TextField("Leave blank to use “\(folderName.isEmpty ? (folder == newFolder ? "the new folder’s name" : "Untitled meeting") : folderName)”", text: $title)
+                TextField(folderName.isEmpty && folder == newFolder ? "Leave blank to use the new folder’s name" : "Leave blank to use “\(folderName.isEmpty ? "Untitled meeting" : folderName)”", text: $title)
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 360)
                     .focused($focus, equals: .title)

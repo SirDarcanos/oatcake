@@ -30,6 +30,18 @@ import Testing
         .init(embedding: embedding, call: call, at: at)
     }
 
+    /// What Rename speakers… warns of before it's done: a name given to someone already there, or to
+    /// two speakers, makes them one; a swap, a blank field and "Several people" don't.
+    @Test func findsTheSpeakersARenameMerges() {
+        let speakers = ["Tester", "Voice 1", "Voice 2", "Jane"]
+        let merged = speakersMerged(speakers, by: ["Voice 1": "Jane Doe", "Voice 2": " Jane Doe ", "Jane": "Jane"])
+        #expect(merged.map(\.name) == ["Jane Doe"])
+        #expect(merged.map(\.speakers) == [["Voice 1", "Voice 2"]])
+        #expect(speakersMerged(speakers, by: ["Voice 1": "Jane"]).map(\.speakers) == [["Voice 1", "Jane"]])
+        #expect(speakersMerged(speakers, by: ["Voice 1": "Voice 2", "Voice 2": "Voice 1"]).isEmpty)
+        #expect(speakersMerged(speakers, by: ["Voice 1": "", "Voice 2": "Several people"]).isEmpty)
+    }
+
     /// The speakers in the order they first speak, with how much they said and their first words;
     /// "Several people" isn't one, and an imported transcript (Granola's) has none to rename.
     @Test func listsTheSpeakers() {

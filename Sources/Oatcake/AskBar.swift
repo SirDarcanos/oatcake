@@ -159,7 +159,7 @@ struct AskBar: View {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
                         Text("\(turn.step ?? "Thinking")…").lineLimit(1)
-                        Text("\(Int(context.date.timeIntervalSince(turn.startedAt))) s").monospacedDigit()
+                        Text(shortDuration(context.date.timeIntervalSince(turn.startedAt))).monospacedDigit()
                     }
                     .foregroundStyle(.secondary)
                 }

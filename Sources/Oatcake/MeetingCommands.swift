@@ -55,7 +55,7 @@ extension MeetingTab {
         switch self {
         case .summary: "Summary"
         case .transcript: "Transcript"
-        case .notes: "Notes"
+        case .notes: "My Notes"
         case .draft: "Draft"
         }
     }
@@ -87,7 +87,7 @@ struct MeetingMenuItems: View {
             .help(todos ? "Write this meeting’s summary and to-dos again for other people to read"
                   : "Write this meeting’s summary again for other people to read")
         if templates.isEmpty {
-            Button { perform(.regenerate(.summary, .meetings)) } label: { Label("Regenerate Summary", systemImage: "arrow.clockwise") }
+            Button { perform(.regenerate(.summary, .meetings)) } label: { Label("Regenerate Summary", systemImage: "sparkles") }
                 .disabled(!canRegenerate || summarising)
                 .help("Write the summary again with the current instructions in Settings")
         } else {
@@ -99,7 +99,7 @@ struct MeetingMenuItems: View {
                 ForEach(templates, id: \.name) { t in
                     Toggle(t.name, isOn: Binding(get: { current == t.name }, set: { _ in perform(.regenerate(.summary, .picked(t.name))) }))
                 }
-            } label: { Label("Regenerate Summary", systemImage: "arrow.clockwise") }
+            } label: { Label("Regenerate Summary", systemImage: "sparkles") }
                 .disabled(!canRegenerate || summarising)
                 .help("Write the summary again, with a template if you pick one")
         }
@@ -108,7 +108,7 @@ struct MeetingMenuItems: View {
                 .disabled(!canRegenerate || summarising)
                 .help("Write the to-dos again with the current instructions in Settings")
         }
-        Button { perform(.renameSpeakers) } label: { Label("Rename Speakers…", systemImage: "person.2") }
+        Button { perform(.renameSpeakers) } label: { Label("Rename People…", systemImage: "person.2") }
             .disabled(!(open?.canRenameSpeakers ?? false) || summarising)
             .help(todos ? "Change who’s who in this meeting: the names in its transcript, summary and to-dos"
                   : "Change who’s who in this meeting: the names in its transcript and summary")

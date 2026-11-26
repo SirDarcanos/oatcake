@@ -351,9 +351,9 @@ final class RecordingController {
                 startLiveTranscript(rec)
                 updateMenuBar()
                 // In place of the notification that said it couldn't.
-                Reminders.say("Oatcake is recording after all", "The recorder was slow to start. “\(rec.title)” is being recorded.", id: "recorder-failed")
+                Reminders.say("Oatcake is recording after all", "Recording took a while to start. “\(rec.title)” is being recorded.", id: "recorder-failed")
             } else if status.state == .error {
-                recorderFailure = status.error ?? "The recorder stopped."
+                recorderFailure = status.error ?? couldntStart
                 failureIsFinal = true
             }
             return
@@ -369,11 +369,11 @@ final class RecordingController {
             active.removeValue(forKey: rec.id)
             liveEnded(rec, watching: watching)
             if finished {
-                Reminders.say("Recording stopped", status.error ?? "The recorder stopped by itself. Oatcake is transcribing “\(rec.title)”.", id: "recorder-stopped")
+                Reminders.say("Recording stopped", status.error ?? "Recording stopped by itself. Oatcake is transcribing what was recorded of “\(rec.title)”.", id: "recorder-stopped")
                 toast("The recording stopped")
             } else {
                 Reminders.say("Recording stopped unexpectedly",
-                              "The recorder quit part-way through “\(rec.title)”. What it captured is being transcribed. Start a new recording to carry on with the call.",
+                              "Recording stopped part-way through “\(rec.title)”. What was recorded is being transcribed. Start recording again to carry on with the call.",
                               id: "recorder-stopped")
                 toast("The recording stopped unexpectedly")
             }
@@ -384,7 +384,7 @@ final class RecordingController {
         // as not having started. (While macOS asks about the microphone or system audio, the recorder
         // is running: it says who it is before it asks.)
         guard status.state != .starting || launchedAt.map({ Date().timeIntervalSince($0) > 15 }) == true else { return }
-        let why = status.state == .error ? status.error ?? "The recorder stopped." : "The recorder didn’t start."
+        let why = status.state == .error ? status.error ?? couldntStart : couldntStart
         recorderFailure = why
         failureIsFinal = status.state != .starting
         stopLiveTranscript()
@@ -423,16 +423,24 @@ final class RecordingController {
         (status.systemLevel ?? 0) < 0.001 || Date().timeIntervalSince(Reminders.lastSound) < 6
     }
 
+    /// Said when nothing could be recorded, unless the recorder said why.
+    private var couldntStart: String {
+        "Oatcake couldn’t start recording. Check that it’s allowed in System Settings › Privacy & Security › Microphone and Screen & System Audio Recording, then start again."
+    }
+
     func confirmStop() {
         ask(Confirmation(
             title: "Stop recording?",
             text: "Oatcake will transcribe the call and ask you to check who’s who. You can’t add more to this recording afterwards.",
-            ok: "Stop recording", cancel: "Keep recording") { [self] in await stopLive() })
+            ok: "Stop recording", cancel: "Keep recording", destructive: false) { [self] in await stopLive() })
     }
 
     /// A question about the call being recorded. If the recording ends some other way while it's
     /// still up (the recorder stops by itself, the call ends), the question goes with it.
     private func ask(_ question: Confirmation) {
+        // One at a time: a second, queued behind the first, would replace it here, and the first would
+        // then stay up after the call had ended.
+        if let liveQuestion, app.isAsking(liveQuestion) { return }
         liveQuestion = question.id
         app.confirm(question)
     }
@@ -612,7 +620,7 @@ final class RecordingController {
                 let folder = try folderForEvent(event.title, event.seriesId != nil)
                 try startRecording(title: event.title, folder: folder, options: startOptions(event))
             } else {
-                try startRecording(title: "Call", folder: "", options: .init())
+                try startRecording(title: "Untitled meeting", folder: "", options: .init())
             }
         } catch {
             toast(error.localizedDescription, isError: true)

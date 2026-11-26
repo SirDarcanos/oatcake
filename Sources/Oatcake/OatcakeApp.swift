@@ -106,7 +106,7 @@ private struct TabItems: View {
     var body: some View {
         let open = model.meetingInView
         ForEach(Array(MeetingTab.allCases.enumerated()), id: \.offset) { i, tab in
-            Button(tab == .notes ? "My Notes" : tab.menuName) { model.request(.tab(tab)) }
+            Button(tab.menuName) { model.request(.tab(tab)) }
                 .keyboardShortcut(KeyEquivalent(Character("\(i + 1)")), modifiers: .command)
                 .disabled(!(open?.tabs.contains(tab) ?? false))
         }
@@ -346,13 +346,14 @@ struct ContentView: View {
             // Only one that says something went wrong takes clicks (to dismiss it).
             if let text = model.toastText { ToastView(text: text, isError: model.toastIsError) { model.dismissToast() }.allowsHitTesting(model.toastIsError) }
         }
-        .alert(model.confirmation?.title ?? "", isPresented: Binding(get: { model.confirmation != nil }, set: { if !$0 { model.confirmation = nil } }),
+        .alert(model.confirmation?.title ?? "", isPresented: Binding(get: { model.confirmation != nil }, set: { if !$0, let id = model.confirmation?.id { model.endConfirmation(id) } }),
                presenting: model.confirmation) { confirmation in
             Button(confirmation.cancel, role: .cancel) {}
-            Button(confirmation.ok, role: .destructive) {
+            Button(confirmation.ok, role: confirmation.destructive ? .destructive : nil) {
                 // A failure (say, the recording had already stopped) is shown rather than lost.
                 Task { do { try await confirmation.action() } catch { model.toast(error.localizedDescription, isError: true) } }
             }
+            .keyboardShortcut(confirmation.destructive ? nil : .defaultAction)
         } message: { confirmation in
             Text(confirmation.text)
         }

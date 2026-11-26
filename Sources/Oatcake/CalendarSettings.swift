@@ -28,7 +28,7 @@ struct CalendarSettingsRows: View {
                     Text(calendar.status(for: source.id)).settingsHint()
                 }
             }
-            Button("Add Calendar…") { editor = CalendarSettingsEdit(existing: nil) }
+            Button("Add calendar…") { editor = CalendarSettingsEdit(existing: nil) }
                 .help("Add a calendar")
                 .disabled(calendar.settingsProblem != nil)
         }
@@ -99,7 +99,7 @@ struct CalendarEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(existing == nil ? "Add Calendar" : "Edit Calendar").font(.title2.weight(.semibold))
+            Text(existing == nil ? "Add calendar" : "Edit calendar").font(.title2.weight(.semibold))
             Form {
                 TextField("Name", text: $name, prompt: Text("Work or Personal"))
                 LabeledContent("Badge colour") {
@@ -114,7 +114,7 @@ struct CalendarEditor: View {
             }
             HStack {
                 if existing != nil {
-                    Button("Remove Calendar…", role: .destructive) { removing = true }
+                    Button("Remove calendar…", role: .destructive) { removing = true }
                 }
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)

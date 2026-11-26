@@ -60,19 +60,23 @@ folder's name, how many meetings it has, and the search button; over the right-h
 screen's own controls, what it is at the left and what can be done at the right. **View › Hide Sidebar** (⌃⌘S), or the button beside the window's
 buttons, hides the sidebar.
 
-The sidebar has a recording in progress, Home, To-dos, Upcoming, Needs review, folders, and any
+The sidebar has a recording in progress, Home, To-dos, Upcoming, Who's who, folders, and any
 meetings at the top level. A one-off call with no folder of its own is saved at the top level;
 drag it onto a folder to file it. **All meetings**, at the top of the Meetings section, lists every
 meeting, whatever folder it's in. A folder lists only its own meetings, and says so when they're all
 in the folders inside it; an empty folder offers **Record here** under the folder's name, beside the
 list. Drag the divider to resize the meeting list; it keeps that width
 when you switch screens. Settings (⌘, or the menu bar item) is its own window, in panes; changes
-apply as you make them (see [Settings](settings.md)).
+apply as you make them (see [Settings](settings.md)). Dates and times are written the way your
+Mac's region writes them ("Thu 29 Oct" or "Thu, Oct 29"), on its 12- or 24-hour clock. A note
+at the bottom of the window says what just happened; one that says something went wrong stays
+until you click it.
 
 Oatcake opens where it was when it was last closed: Home, To-dos or the meeting that was open (on
 the tab last chosen), with the folder that was listed; or on a recording that was still going. Home
-shows upcoming calls (the one on now or next has **Join the call** and **Start recording**) and a
-button to start a new recording or return to the one in progress. When to-dos are enabled, Home
+shows upcoming calls, the same rows as the sidebar's Upcoming (click one for New recording,
+right-click to ignore it), with **Join the call** beside the one on now or next. The
+sidebar's **New recording** button is beside it, or **Return to recording** during a call. When to-dos are enabled, Home
 also shows up to five open items, earliest due first, with their assignees and due dates. Add or
 tick off to-dos on Home, or choose **View all to-dos** to manage the full list.
 
@@ -99,8 +103,8 @@ Oatcake follows the Mac's accessibility settings (System Settings › Accessibil
 **Reduce motion**, the recording dot doesn't pulse, the refresh arrow doesn't turn, notes at the
 bottom of the window fade rather than slide in, and a transcript or Ask jumps to a line rather than
 scrolling smoothly to it. With **Increase contrast**, the edges of fields and cards are darker, and
-notices and times get an edge of their own. With **Differentiate without colour**, an error's
-symbol is an octagon, not the warning's triangle. VoiceOver reads out each note at the bottom of
+notices and times get an edge of their own. An error's symbol is an octagon, not the warning's
+triangle, so the two differ in more than colour. VoiceOver reads out each note at the bottom of
 the window (an error's note goes when you press it) and says when an answer in Ask is ready, and
 the menu bar item says the time until the next call, or how long a call has been recorded.
 
@@ -153,10 +157,11 @@ seconds after it was launched if it hasn't started; time spent on macOS's permis
 isn't counted), says so the same two ways, and keeps and processes whatever was recorded. A
 recorder that's stopped part-way still leaves where each track starts, so the two stay lined up;
 when it couldn't, Who's who says your lines may be out of step with the call's. Stop asks
-first, and so does quitting Oatcake while a call is being recorded, analysed or summarised, a draft
+first (Return stops), and so does quitting Oatcake while a call is being recorded, analysed or summarised, a draft
 for sharing or an answer is being written, or meetings are being imported. Quitting also asks when
 it would lose something you've typed: notes for a call that couldn't be recorded, edits that
-couldn't be saved, or names in Who's who.
+couldn't be saved, or names in Who's who. A question asked while another is on screen waits for
+that one to be answered.
 
 ### Live transcript
 
@@ -171,8 +176,8 @@ where you are, with **Jump to latest** to take you back down.
 Click a line's name to say who said it: the menu lists the people Oatcake knows by voice and the
 people on the calendar invite. Oatcake follows that voice for the rest of the call, and fills in
 the earlier lines that sound like it too. Naming a line someone else when Oatcake had put a known
-person's name on it puts that person's saved voiceprint aside for this call. **Take back** undoes a
-name you gave. The names you give are kept in the recording (`live-names.json`), and Who's who
+person's name on it puts that person's saved voiceprint aside for this call. **Not Jane Doe** (or
+whoever it was) in the same menu undoes a name you gave. The names you give are kept in the recording (`live-names.json`), and Who's who
 starts from them after the call (see [Review](#3-review-whos-who)).
 
 One line gives a rougher fingerprint than a whole call, and can hold two people, so the live names
@@ -227,11 +232,11 @@ the lines it said most of); known voices are recognised from saved voiceprints; 
 suggested from the conversation by the summary model, quoting the words that gave it away (not when
 After a call is set to save the transcript only: see
 [Saving without Who's who](#saving-without-whos-who)). The recording waits under
-Needs review with its step (1–5), and the Dock icon's badge counts the recordings waiting there.
+Who's who, transcribing, with its step (1–5), and the Dock icon's badge counts the recordings waiting there.
 When one is ready for Who's who and Oatcake isn't in front, a notification says so. A
-failure shows the reason, with **Try again** and **Discard…**; **Discard…** is in the toolbar while
-it's processing and on Who's who as well, and in the menu you get by Control-clicking the
-recording in the sidebar. A recording whose Who's who can't be opened says why, with **Try again**
+failure shows the reason, with **Try again** and **Discard…** (and says when trying again won't help); **Discard…** is in the toolbar while
+it's being transcribed and on Who's who as well, and in the menu you get by Control-clicking the
+recording in the sidebar. Once it's transcribed, it's **Ready to check**. A recording whose Who's who can't be opened says why, with **Try again**
 (it's analysed again) and **Discard…**. A recording whose recorder went without being able to
 finish it (the disk was full) still waits here, rather than being hidden until Oatcake reopens.
 
@@ -242,7 +247,7 @@ Change the title or the folder it's saved in if you want to. One card per voice:
 confirm or type the name, or pick one of the people on the call's calendar invite (each is offered
 until they've been given a voice) (with where the suggestion came from: named by you during the
 call, recognised from before, or guessed from the conversation), merge it into another
-voice or into you, mark it as mixed ("Several people"), or leave it out when it isn't part of the
+voice or into you, say **Several people share this voice** ("Several people"), or **Leave out of this meeting** when it isn't part of the
 call (people talking in the background, say): its lines then stay out of the transcript, the
 summary and the to-dos. **Put back** undoes leaving one out, and **Undo** a merge. Unnamed voices
 are saved as "Voice 1", "Voice 2"… The transcript beside it updates as you name voices. Confirmed
@@ -250,21 +255,22 @@ voices with 30+ seconds of speech are saved, so they're recognised next time.
 
 ### Saving without Who's who
 
-Settings › General › **After a call** can save each call as soon as it's processed, instead of
+Settings › General › **After a call** can save each call as soon as it's transcribed, instead of
 waiting here: **Save with a summary**, or **Save the transcript only** (no summary or to-dos).
 Voices you named during the call, and voices Oatcake is sure it recognises from before, keep their
 names (a closer match than this screen asks for, since nobody is looking), and every other voice is "Voice 1", "Voice 2"…, whatever the
 model guessed from the conversation: a guess, or a match that wasn't sure enough, waits on the
 voice's card as a suggestion. **Save the transcript only** doesn't ask the model for names at all, so
-the call is saved as soon as it's processed and only a match that wasn't sure enough waits as a
+the call is saved as soon as it's transcribed and only a match that wasn't sure enough waits as a
 suggestion. No voice is remembered from names nobody checked.
 
-The meeting says it was saved without checking who's who: **Name voices…** opens this screen for
+The meeting says it was saved without checking who's who: **Check who's who…** opens this screen for
 it, and **Update meeting** writes its transcript and `meeting.json` again in place, puts the new
 names where the old ones were in its summary and to-dos (as whole words: each "Voice N" stands for
 one voice, so it's an exact swap wherever the model wrote it that way), and leaves your notes and
 its title as they are. Name them while the summary is still being written and it's written again
-from the named transcript. **Keep as is** keeps the names it has. If a call can't be saved by
+from the named transcript. **Keep these names…** keeps the names it has, once you've confirmed
+that its voice clips are deleted. If a call can't be saved by
 itself, it waits here as usual, and so does one with audio in which no speech was found (so it
 can be checked, and its audio isn't deleted). Quit while names are being suggested, and they're
 suggested again (and the call saved) when Oatcake next opens.
@@ -296,7 +302,7 @@ she/her/hers it writes is changed to they/them/their afterwards, with the verb a
 
 Tabs, in the toolbar over the meeting: Summary (with the meeting's to-dos at the top), Transcript
 and My notes (⌘1–⌘3), and Draft (⌘4) in a meeting that has a [draft for sharing](#draft-for-sharing), each
-Rendered or as editable Markdown from the switch at the top right of the note (saved as you type;
+laid out (**Read**) or as editable Markdown (**Edit**) from the switch at the top right of the tab (saved as you type;
 Summary shows `todo.md` and `summary.md`). If the file changes while you type (its summary
 arrives, or it's edited in another app), Oatcake doesn't save over it: it shows the file as it is
 now and keeps what you typed beside it, as `summary (your version).md` and so on, and says so.
@@ -366,9 +372,9 @@ or **Delete** it. If you keep your tasks somewhere else, turn off
 Organise meetings by dragging them onto folders, or with **Move To** in a meeting's menus, which
 lists every folder; ⌘-click or ⇧-click selects several, and they all move. Right-click a meeting for
 the same commands as its **⋯** menu, among them **Rename…**, **Move To**, **Show in Finder** and
-**Move to Trash**; right-click several for **Move To**, **Show in Finder** or **Move to Trash**.
-⌘⌫ (File › Move to Trash) moves the meetings selected in the list to the Trash and opens the next
-one, as in Mail, and ⌘Z puts back what was just moved. Renaming a meeting changes its title (in
+**Move to Trash**; right-click several for **Move To**, **Show in Finder** or **Move to Trash**, which asks first for several.
+⌘⌫ (File › Move to Trash) moves the meetings selected in the list to the Trash (asking first for
+several) and opens the next one, as in Mail, and ⌘Z puts back what was just moved. Renaming a meeting changes its title (in
 `meeting.json`) and its folder's name, which keeps its date. Dragged out of Oatcake, a meeting is
 its folder (into Finder or a mail, say), or its summary where only text goes.
 Folders can hold folders. Click the arrow next to a folder's name, or press → and ←, to show or hide
@@ -377,18 +383,19 @@ its subfolders. Right-click a folder for **New Folder Inside…**, **Rename…**
 the app stay in step: a folder or meeting that goes from Finder while it's open gives way to the
 nearest folder that's still there. The middle column's width drags, like the sidebar's.
 
-### Rename Speakers
+### Rename People
 
-**Rename Speakers…** in a meeting's **⋯** menu puts a wrong name right after the meeting is saved,
+**Rename People…** in a meeting's **⋯** menu puts a wrong name right after the meeting is saved,
 or
 names a "Voice 2": it lists the transcript's speakers, each with their first words, and a field for
 another name. Only that meeting changes: the transcript's labels (never what was said), the names
 in its summary and to-dos, and its people in `meeting.json`. Two names can swap, and giving two
-speakers one name makes them one; "Several people" stays as it is. The fingerprint saved from that
+speakers one name makes them one, which the sheet says before you choose Rename, since it can't be
+undone; "Several people" stays as it is. The fingerprint saved from that
 call goes with the name, so the next call isn't recognised as the wrong person too. It stays only
 when the new name is the old one spelt out ("John" → "John Smith") and the voice clearly matches
 their other calls (Settings › People renames a person everywhere). A meeting saved without checking
-who's who has **Name voices…** instead.
+who's who has **Check who's who…** instead.
 
 ## 5. Ask
 

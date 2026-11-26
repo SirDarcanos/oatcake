@@ -20,8 +20,8 @@ struct RenameSpeakersSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Rename speakers").font(.headline)
-            Text("Changes this meeting only: the names in its \(todos ? "transcript, summary and to-dos" : "transcript and summary"). Give two speakers the same name to make them one. A voice Oatcake learnt from this call goes with its new name.")
+            Text("Rename people").font(.headline)
+            Text("Changes this meeting only: the names in its \(todos ? "transcript, summary and to-dos" : "transcript and summary"). Give two people the same name to make them one. A voice Oatcake learnt from this call goes with its new name.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
@@ -42,6 +42,13 @@ struct RenameSpeakersSheet: View {
                             .accessibilityLabel("New name for \(s.name)")
                     }
                 }
+            }
+            // Said before Rename, as the fields are filled in: the transcript can't tell them apart again.
+            ForEach(speakersMerged(speakers.map(\.name), by: changes), id: \.name) { merge in
+                let names = merge.speakers.map { "“\($0)”" }
+                Text("\(names.dropLast().joined(separator: ", ")) and \(names.last ?? "") become one person, “\(merge.name)”, for good.")
+                    .foregroundStyle(Color.amber)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             HStack {
                 Spacer()

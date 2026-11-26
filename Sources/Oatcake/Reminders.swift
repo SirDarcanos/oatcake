@@ -19,7 +19,7 @@ enum Reminders {
 
     static func register() {
         let center = UNUserNotificationCenter.current()
-        let start = UNNotificationAction(identifier: startAction, title: "Open call and start note taking", options: [.foreground])
+        let start = UNNotificationAction(identifier: startAction, title: "Join and start recording", options: [.foreground])
         let record = UNNotificationAction(identifier: recordAction, title: "Start recording", options: [.foreground])
         // Not in the foreground: keeping a recording going shouldn't take you away from the call.
         let keep = UNNotificationAction(identifier: keepAction, title: "Keep recording", options: [])
@@ -89,7 +89,7 @@ enum Reminders {
     @MainActor static func readyToCheck(_ title: String, id: String) {
         let content = UNMutableNotificationContent()
         content.title = "Ready to check who’s who"
-        content.body = "“\(title)” is waiting under Needs review."
+        content.body = "“\(title)” is waiting under Who’s who."
         post(content, id: readyPrefix + id)
     }
 
@@ -112,7 +112,7 @@ enum Reminders {
             let minutes = Int((event.startDate.timeIntervalSinceNow / 60).rounded())
             let content = UNMutableNotificationContent()
             content.title = event.title
-            content.body = [minutes > 0 ? "In \(minutes) min" : "Starting now", "\(hhmm(event.startDate))–\(hhmm(event.endDate))",
+            content.body = [minutes > 0 ? "In \(longDuration(Double(minutes) * 60))" : "Starting now", "\(timeOfDay(event.startDate))–\(timeOfDay(event.endDate))",
                             event.callLink.flatMap(callApp)].compactMap { $0 }.joined(separator: " · ")
             content.categoryIdentifier = category
             // The request ID identifies the occurrence; Notification Center doesn’t need the invite.

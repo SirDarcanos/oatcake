@@ -118,9 +118,9 @@ struct SettingsView: View {
 
     private func afterCallHint(_ choice: AfterCall) -> String {
         switch choice {
-        case .review: "Each call waits under Needs review until you’ve named its voices and saved it."
-        case .saveWithSummary: "Each call is saved once it’s processed, and summarised. Voices Oatcake is sure it recognises keep their names; the rest are “Voice 1”, “Voice 2”… until you name them from the meeting."
-        case .saveTranscript: "Each call is saved once it’s processed, with no summary or to-dos. Voices Oatcake is sure it recognises keep their names; the rest are “Voice 1”, “Voice 2”… until you name them from the meeting."
+        case .review: "Each call waits under Who’s who until you’ve named its voices and saved it."
+        case .saveWithSummary: "Each call is saved once it’s transcribed, and summarised. Voices Oatcake is sure it recognises keep their names; the rest are “Voice 1”, “Voice 2”… until you name them from the meeting."
+        case .saveTranscript: "Each call is saved once it’s transcribed, with no summary or to-dos. Voices Oatcake is sure it recognises keep their names; the rest are “Voice 1”, “Voice 2”… until you name them from the meeting."
         }
     }
 
@@ -132,7 +132,7 @@ struct SettingsView: View {
             if model.mcpOffNotSaved, !model.config.mcpEnabled {
                 Text("Oatcake couldn’t save this, so apps you’ve added it to can still read your meetings.")
                     .settingsHint(.amber)
-                Button("Retry Saving") { model.retrySavingMCPOff() }
+                Button("Retry saving") { model.retrySavingMCPOff() }
             }
             if model.config.mcpEnabled {
                 if model.config.mcpApprovedRoot == nil {
@@ -230,11 +230,11 @@ struct SettingsView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(item.title)
-                            Text(item.series ? "This and following events" : parseISO(item.start).map { "\(shortWeekday($0)) \(hhmm($0))" } ?? "Once")
+                            Text(item.series ? "This and following events" : parseISO(item.start).map { dayAndTime($0) } ?? "Once")
                                 .settingsHint()
                         }
                         Spacer()
-                        Button("Stop Ignoring") { model.stopIgnoring(item) }
+                        Button("Stop ignoring") { model.stopIgnoring(item) }
                     }
                 }
             } header: {
@@ -271,7 +271,7 @@ struct SettingsView: View {
         if notificationsOff {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("Notifications are turned off for Oatcake in System Settings, so this can’t be shown.").settingsHint(.amber)
-                Button("Open Notification Settings") {
+                Button("Open notification settings") {
                     if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") { NSWorkspace.shared.open(url) }
                 }
                 .controlSize(.small)
@@ -365,7 +365,7 @@ struct SettingsView: View {
                           prompt: Text(String(LocalModels.nativeContext))) {
                     Text("Context").font(.body)
                     if let context = llm.own.context, context < LlmConfig.Own.minimumContext {
-                        Text("Oatcake needs at least \(LlmConfig.Own.minimumContext.formatted()) tokens, and plans for that")
+                        Text("Too small: Oatcake needs at least \(LlmConfig.Own.minimumContext.formatted()) and will assume that")
                             .font(.callout).foregroundStyle(Color.amber)
                     } else {
                         Text("Tokens your server is set to hold (Ollama’s num_ctx, llama.cpp’s -c). This tells Oatcake how much to send at once; it doesn’t change the server. Empty: \(LocalModels.nativeContext.formatted()).")
@@ -381,7 +381,7 @@ struct SettingsView: View {
                     Text("Reasoning switch")
                     Text(llm.own.reasoningControl == nil
                          ? "The server decides whether its model reasons first. Choose the switch it takes to use the Reasoning switches in Settings › Summaries."
-                         : "Each task’s Reasoning switch in Settings › Summaries is sent this way. A model that can’t turn reasoning off keeps its least.")
+                         : "Each task’s Reasoning switch in Settings › Summaries is sent this way. A model that can’t turn reasoning off uses its lowest setting.")
                         .settingsHint()
                 }
             }
@@ -459,7 +459,7 @@ struct SettingsView: View {
 
 /**
  * One of the model's sets of instructions, as a row saying whose they are. Edit… opens them below it,
- * saved as they're typed; Restore Default… brings Oatcake's own back.
+ * saved as they're typed; Restore default… brings Oatcake's own back.
  */
 private struct InstructionsRow: View {
     @Environment(AppModel.self) private var model
@@ -477,9 +477,9 @@ private struct InstructionsRow: View {
             HStack {
                 // It only does anything when the instructions have been changed, and then it asks: they're yours.
                 if editing {
-                    Button("Restore Default…") { restoring = true }.disabled(text.trimmed == standard.trimmed)
+                    Button("Restore default…") { restoring = true }.disabled(text.trimmed == standard.trimmed)
                         .alert("Restore Oatcake’s own \(title.lowercased())?", isPresented: $restoring) {
-                            Button("Restore Default", role: .destructive) { text = standard }
+                            Button("Restore default", role: .destructive) { text = standard }
                             Button("Cancel", role: .cancel) {}
                         } message: {
                             Text("The instructions you’ve written here are replaced, and can’t be brought back.")
@@ -528,7 +528,7 @@ private struct TemplatesSections: View {
     var body: some View {
         Section {
             LabeledContent {
-                Button("Add Template") { add() }
+                Button("Add template") { add() }
             } label: {
                 Text(model.config.summaryTemplates.isEmpty ? "None yet" : model.config.summaryTemplates.map(\.name).joined(separator: ", "))
                 Text("Pick one for a meeting from its ⋯ menu › Regenerate Summary.")
@@ -728,10 +728,16 @@ private struct ModelRow: View {
                 HStack {
                     // A download that was stopped, or failed, leaves what it had fetched: gigabytes that only this removes.
                     if LocalModels.hasPartialDownload(chosen) {
-                        Button("Remove Partial Download") { model.downloads.removeModel(chosen) }
+                        Button("Remove partial download…") { removing = true }
                             .help("Deletes the part of \(chosen.title) that has been downloaded so far")
+                            .alert("Remove the part of \(chosen.title) downloaded so far?", isPresented: $removing) {
+                                Button("Remove", role: .destructive) { model.downloads.removeModel(chosen) }
+                                Button("Cancel", role: .cancel) {}
+                            } message: {
+                                Text("Its download starts again from the beginning the next time it’s needed.")
+                            }
                     }
-                    Button(error == nil ? "Download Now" : "Try Again") { model.downloads.downloadModel(chosen) }
+                    Button(error == nil ? "Download now" : "Try again") { model.downloads.downloadModel(chosen) }
                 }
             } label: {
                 Text("\(chosen.title) isn’t downloaded yet")
@@ -835,7 +841,7 @@ private struct PeopleSection: View {
                             renaming = voice
                         }
                         if voices.count > 1 {
-                            Menu("Merge Into") {
+                            Menu("Merge into") {
                                 ForEach(voices.filter { $0.name != voice.name }) { other in
                                     Button(other.name) {
                                         merging = (voice, other, mergedFingerprints(voice.name, into: other.name) > maxSamplesPerPerson)
@@ -915,27 +921,28 @@ private struct PeopleSection: View {
     private func detail(_ voice: KnownVoice) -> String {
         if voice.calls == 0 { return "Recognised again after the next call you save with them" }
         let calls = "From \(voice.calls) call\(voice.calls == 1 ? "" : "s")"
-        return voice.lastSaved.map { "\(calls) · last \(shortDate($0))" } ?? calls
+        return voice.lastSaved.map { "\(calls) · last \(compactDate($0))" } ?? calls
     }
 }
 
-/// Settings › Updates: this version, Check Now, and the newer release when there is one.
+/// Settings › Updates: this version, Check now, and the newer release when there is one.
 private struct UpdatesSection: View {
     @Environment(AppModel.self) private var model
     @ViewState private var copied = false
+    @ViewState private var confirming = false
 
     var body: some View {
         let u = model.updater
         Section("Updates") {
             LabeledContent {
-                Button("Check Now") { Task { await u.check() } }.disabled(u.checking || u.installing != nil)
+                Button("Check now") { Task { await u.check() } }.disabled(u.checking || u.installing != nil)
             } label: {
                 Text("Oatcake \(u.current)")
                 Text(u.error ?? status(u)).foregroundStyle(u.error != nil ? Color.red : Color.secondary)
             }
             if let available = u.available {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("What's new in \(available.version)")
+                    Text("What’s new in \(available.version)")
                     if !available.notes.isEmpty {
                         Text(available.notes).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                     }
@@ -958,8 +965,9 @@ private struct UpdatesSection: View {
                         }
                     } else {
                         HStack {
-                            Button(u.installing ?? "Install and Relaunch") { Task { await u.install() } }
+                            Button(u.installing ?? "Install and relaunch…") { confirming = true }
                                 .buttonStyle(.borderedProminent).disabled(u.installing != nil)
+                                .installQuestion(available.version, isPresented: $confirming) { Task { await u.install() } }
                             Text("\(Int((Double(available.size) / 1e6).rounded())) MB download. Oatcake quits and reopens.").font(.callout).foregroundStyle(.secondary)
                         }
                     }
@@ -975,7 +983,7 @@ private struct UpdatesSection: View {
     private func status(_ u: Updater) -> String {
         if u.checking { return "Checking…" }
         if let available = u.available { return "Oatcake \(available.version) is available." }
-        if let checked = u.checkedAt { return "Up to date · checked at \(hhmm(checked))" }
+        if let checked = u.checkedAt { return "Up to date · checked at \(timeOfDay(checked))" }
         return "Not checked yet."
     }
 }

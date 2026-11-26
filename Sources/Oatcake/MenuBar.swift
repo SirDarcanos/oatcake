@@ -166,14 +166,14 @@ final class StatusItem: NSObject, NSMenuDelegate {
         case .recording(let name, let elapsed):
             // What it shows is said too, in words a clock's digits wouldn't be read as.
             (symbol, title, tip, accessibilityLabel) = ("record.circle.fill", elapsed.map { " " + clock($0) } ?? "",
-                                                       "Oatcake is recording “\(name)”", "Oatcake, recording" + (elapsed.map { " for \(minutes($0))" } ?? ""))
+                                                       "Oatcake is recording “\(name)”", "Oatcake, recording" + (elapsed.map { " for \(longDuration($0))" } ?? ""))
         case .upcoming(let events):
             let now = Date()
             let label = nextCallLabel(events, now: now)
             let spoken = nextCallLabel(events, now: now, spoken: true)
             let next = events.first { $0.startDate > now } ?? events.first
             (symbol, title, tip, accessibilityLabel) = ("oatcake", label.isEmpty ? "" : " " + label,
-                                                       next.map { "\($0.title) · \(hhmm($0.startDate))–\(hhmm($0.endDate))" } ?? "Nothing coming up on your calendar",
+                                                       next.map { "\($0.title) · \(timeOfDay($0.startDate))–\(timeOfDay($0.endDate))" } ?? "Nothing coming up on your calendar",
                                                        spoken.isEmpty ? "Oatcake" : spoken == "now" ? "Oatcake, a call is on now" : "Oatcake, next call \(spoken)")
         }
         // Set only on a change: this runs twice a second during a recording.
@@ -212,10 +212,10 @@ final class StatusItem: NSObject, NSMenuDelegate {
             let now = Date()
             let endOfTomorrow = Calendar.current.date(byAdding: .day, value: 2, to: Calendar.current.startOfDay(for: now)) ?? now
             listed = Array(events.filter { $0.startDate < endOfTomorrow }.prefix(6))
-            if listed.isEmpty { add("Nothing else today or tomorrow", nil) }
+            if listed.isEmpty { add(noMoreCalls, nil) }
             for (index, event) in listed.enumerated() {
                 let when = event.startDate <= now ? "Now" : Calendar.current.isDate(event.startDate, inSameDayAs: now)
-                    ? hhmm(event.startDate) : "\(shortWeekday(event.startDate)) \(hhmm(event.startDate))"
+                    ? timeOfDay(event.startDate) : dayAndTime(event.startDate)
                 add("\(when)   \(event.title)", #selector(openListed(_:)), tag: index)
             }
             menu.addItem(.separator())
@@ -306,10 +306,6 @@ func nextCallLabel(_ events: [CalendarEvent], now: Date, spoken: Bool = false) -
     let minutesAway = next.map { Int(($0.startDate.timeIntervalSince(now) / 60).rounded(.up)) }
     if events.contains(where: { $0.startDate <= now && $0.endDate > now }), (minutesAway ?? .max) > 15 { return "now" }
     guard let minutesAway, minutesAway < 24 * 60 else { return "" }
-    let (hours, mins) = (minutesAway / 60, minutesAway % 60)
-    if spoken {
-        return "in " + [hours > 0 ? "\(hours) hour\(hours == 1 ? "" : "s")" : nil, mins > 0 ? "\(mins) minute\(mins == 1 ? "" : "s")" : nil]
-            .compactMap { $0 }.joined(separator: " ")
-    }
-    return minutesAway < 60 ? "\(minutesAway)m" : "\(hours)h\(mins == 0 ? "" : " \(mins)m")"
+    if spoken { return "in " + longDuration(Double(minutesAway) * 60) }
+    return shortDuration(Double(minutesAway) * 60)
 }

@@ -124,7 +124,7 @@ struct TodosView: View {
                     .foregroundStyle(.secondary).padding(.top, 6)
                 addField.padding(.top, 22)
                 // How adding works, shown whether or not the field has the keyboard.
-                Text("Saved in your Meetings folder’s own todo.md, as yours unless you name someone: Send the deck - Jane - due Fri, Nov 6. To add one to a meeting, use the to-dos at the top of its summary.")
+                Text("Goes on your own list, as yours unless you name someone: Send the deck - Jane - due Fri, Nov 6. To add one to a meeting, use the to-dos at the top of its summary.")
                     .font(.caption).foregroundStyle(.secondary).padding(.top, 6)
                 ForEach(groups, id: \.key) { group in
                     HStack(spacing: 6) {
@@ -138,7 +138,7 @@ struct TodosView: View {
                     ForEach(group.items) { item in row(item, today: today, myName: myName, showOwner: grouping != .owner) }
                 }
                 if groups.isEmpty {
-                    Text(status == .done ? "Nothing ticked off yet." : owner == .everyone ? "No open to-dos." : "No open to-dos for this person.")
+                    Text(status == .done ? "Nothing ticked off yet." : "No \(status == .all ? "" : "open ")to-dos\(owner == .everyone ? "" : " for this person").")
                         .foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 40)
                 }
             }
@@ -303,13 +303,13 @@ struct TodosView: View {
         guard let due = item.dueDate else { return "No date" }
         // Days on the calendar: a day the clocks change on is still one day.
         let d = gregorian.dateComponents([.day], from: gregorian.startOfDay(for: today), to: due).day ?? 0
-        return d == 0 ? "Today" : d == 1 ? "Tomorrow" : item.todo.due
+        return d == 0 ? "Today" : d == 1 ? "Tomorrow" : shortDay(due, now: today)
     }
 
     private var addField: some View {
         HStack(spacing: 10) {
-            // Dashed, not lighter, to tell it from a to-do's own circle; as wide as its checkbox.
-            Image(systemName: "circle.dashed").font(.system(size: 15)).foregroundStyle(.secondary).frame(width: 24)
+            // A plus, not a lighter circle, to tell it from a to-do's own; as wide as its checkbox.
+            Image(systemName: "plus.circle").font(.system(size: 15)).foregroundStyle(.secondary).frame(width: 24)
                 .accessibilityHidden(true)
             TextField("Add a to-do, then Return", text: $draft)
                 .textFieldStyle(.plain)
@@ -328,7 +328,7 @@ struct TodosView: View {
             try model.library.addTodo("", typedTodo(text, owner: model.config.myName))
             local[""] = onDisk("")
             draft = ""
-            model.toast("Added to Meetings › todo.md")
+            model.toast("Added to your list")
         } catch {
             model.toast(error.localizedDescription, isError: true)
         }
@@ -343,7 +343,7 @@ struct TodosView: View {
         model.library.tick(path, item.todo, undo: undoManager) { [local = $local] text in
             // nil: nothing was ticked, and the list is read again.
             withAnimation { local.wrappedValue[path] = text }
-            if text != nil { model.toast("Saved to \(path.isEmpty ? "Meetings" : folderPath(path)) › todo.md") }
+            if text != nil { model.toast("\(item.todo.done ? "Unticked" : "Ticked") in \(path.isEmpty ? "your list" : "“\(item.meeting.title)”")") }
         }
     }
 
@@ -354,10 +354,10 @@ struct TodosView: View {
             guard try model.library.editTodo(path, line: item.todo.line, text: item.todo.text, to: body) else {
                 // It isn't in the file as it's shown here: nothing was changed, and the list is read again.
                 withAnimation { local[path] = nil }
-                return model.toast("That to-do has changed in todo.md since this list was read, so it wasn’t changed. The list has been read again.")
+                return model.toast("That to-do has changed in your list since this page was read, so it wasn’t changed. The list has been read again.")
             }
             withAnimation { local[path] = onDisk(path) }
-            model.toast("Saved to Meetings › todo.md")
+            model.toast(body == nil ? "Deleted from your list" : "Changed in your list")
         } catch {
             model.toast(error.localizedDescription, isError: true)
         }

@@ -41,7 +41,7 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 - Upcoming calls from multiple private iCal feeds, in one list on Home and in the sidebar, with a
   coloured dot for each source calendar. The names and dots are shown in New recording, and
   the dots carry over to saved meetings. [Calendar settings](settings.md#calendars)
-- **Start recording** on Home, or clicking a call in the sidebar, opens New recording for it, in the
+- Clicking a call under Upcoming, on Home or in the sidebar, opens New recording for it, in the
   folder named like it or a new one for a recurring meeting. [Calendar settings](settings.md#calendars)
 - **Join the call** on Home opens a Meet, Zoom or Teams call without starting a recording.
   [Calendar settings](settings.md#calendars)
@@ -71,8 +71,8 @@ Everything Oatcake does today, with a link to where each is described. Planned w
   [Review](how-it-works.md#3-review-whos-who)
 - Saving straight after processing instead, with a summary or the transcript only, and naming the
   voices later. [Saving without Who's who](how-it-works.md#saving-without-whos-who)
-- **Rename Speakers** for a saved meeting: put a wrong name right, name a "Voice 2", swap two
-  names or make two speakers one. [Rename Speakers](how-it-works.md#rename-speakers)
+- **Rename People** for a saved meeting: put a wrong name right, name a "Voice 2", swap two
+  names or make two speakers one. [Rename People](how-it-works.md#rename-people)
 - People Oatcake recognises listed in Settings, to rename, merge or forget, or to choose their
   colour. [People](settings.md#people)
 
@@ -108,8 +108,8 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 - Each meeting a folder of Markdown (`summary.md`, `todo.md`, `transcript.md`, `notes.md`) and
   `meeting.json` in a Meetings folder you choose, kept in step with Finder.
   [Save](how-it-works.md#4-save)
-- Summary, Transcript and My notes tabs (and Draft where there's a draft for sharing), each rendered or
-  as editable Markdown.
+- Summary, Transcript and My notes tabs (and Draft where there's a draft for sharing), each to read
+  laid out or to edit as Markdown.
   [Reading and editing](how-it-works.md#reading-and-editing)
 - Play and pause a saved call recording, and jump to a time from the slider or the transcript.
   [Listening to the recording](how-it-works.md#listening-to-the-recording)
@@ -138,8 +138,9 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 - VoiceOver: headings, a name for every button and note line, the notes at the bottom of the
   window and Ask's answers read out, and the menu bar item's countdown.
   [The window](how-it-works.md#the-window)
-- Reduce motion, Increase contrast and Differentiate without colour followed, and Bigger Text for
-  lists, to-dos and transcripts as well as what you read. [The window](how-it-works.md#the-window)
+- Reduce motion and Increase contrast followed, errors told from warnings by their symbol as well
+  as their colour, and Bigger Text for lists, to-dos and transcripts as well as what you read.
+  [The window](how-it-works.md#the-window)
 - Fields and cards edged at 3:1 or more against the window, light and dark, and buttons at least
   24 points to click.
 
