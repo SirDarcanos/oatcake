@@ -12,6 +12,8 @@ let stampScheme = "oatcake-stamp"
 struct MarkdownView: View {
     let markdown: String
     var fontSize: CGFloat = 14
+    /// Words being looked for (Find, or the search a meeting was opened from), marked where they are.
+    var marks: [String] = []
 
     var body: some View {
         let blocks = markdownBlocks(markdown)
@@ -32,24 +34,25 @@ struct MarkdownView: View {
     }
 
     @ViewBuilder private func blockView(_ block: MarkdownBlock) -> some View {
+        let text = markingFound(block.text, marks)
         switch block.kind {
         case .heading(let level):
-            Text(block.text).font(.system(size: level <= 2 ? fontSize + 2 : fontSize + 1, weight: .semibold))
+            Text(text).font(.system(size: level <= 2 ? fontSize + 2 : fontSize + 1, weight: .semibold))
         case .paragraph:
-            Text(block.text).font(.system(size: fontSize)).lineSpacing(fontSize * 0.3)
+            Text(text).font(.system(size: fontSize)).lineSpacing(fontSize * 0.3)
         case .listItem(let marker, let depth):
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(marker).font(.system(size: fontSize).monospacedDigit()).foregroundStyle(.secondary)
                     .frame(minWidth: 12, alignment: .trailing)
-                Text(block.text).font(.system(size: fontSize)).lineSpacing(fontSize * 0.3)
+                Text(text).font(.system(size: fontSize)).lineSpacing(fontSize * 0.3)
             }
             .padding(.leading, CGFloat(depth) * 18)
         case .quote:
-            Text(block.text).font(.system(size: fontSize)).foregroundStyle(.secondary)
+            Text(text).font(.system(size: fontSize)).foregroundStyle(.secondary)
                 .padding(.leading, 10)
                 .overlay(alignment: .leading) { Rectangle().fill(Color.line).frame(width: 3) }
         case .code:
-            Text(block.text).font(.system(size: fontSize - 1, design: .monospaced))
+            Text(text).font(.system(size: fontSize - 1, design: .monospaced))
                 .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: 6).fill(Color.fill))
         case .rule:
@@ -61,7 +64,7 @@ struct MarkdownView: View {
                     if index > 0 { Divider().gridCellUnsizedAxes(.horizontal) }
                     GridRow {
                         ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                            Text(cell).font(.system(size: fontSize - 1, weight: hasHeader && index == 0 ? .semibold : .regular))
+                            Text(markingFound(cell, marks)).font(.system(size: fontSize - 1, weight: hasHeader && index == 0 ? .semibold : .regular))
                                 .padding(.horizontal, 8).padding(.vertical, 4)
                         }
                     }

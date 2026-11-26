@@ -22,6 +22,8 @@ enum Selection: Equatable {
 struct Jump: Equatable {
     var tab: MeetingTab
     var stamp: String?
+    /// Words a search found the meeting by: the meeting opens with them in Find, marked.
+    var words: [String] = []
     var nonce = UUID()
 }
 
@@ -65,9 +67,10 @@ final class AppModel {
     let jobs: Jobs
     let downloads: ModelDownloads
     let calendar: CalendarController
-    /// Bumped by ⌘F and ⌥⌘F: the open meeting shows Find, the meeting list focuses its search.
+    /// Bumped by ⌘F: the open meeting shows Find.
     var findRequest = 0
-    var searchRequest = 0
+    /// Search (⌥⌘F, or its button over the meeting list) is open over the window.
+    var searching = false
     /// File › New Folder: the sidebar asks for the new top-level folder's name. It waits here until the
     /// sidebar takes it, which is after the window has opened if it was closed.
     var wantsNewFolder = false
@@ -168,7 +171,7 @@ final class AppModel {
 
         recording.resumeRecordings()
         library.watchMeetings()
-        // Load the library before showing Home, so its recent meetings are ready at launch.
+        // Load the library before the window shows, so the meeting list and Home's to-dos are ready at launch.
         library.tree = library.meetings.tree()
         if let tree = library.tree { library.setTodos(library.meetings.allTodos(in: tree)) }
         jobs.pending = Recordings.list().filter { $0.state == .recorded || $0.state == .processed }
@@ -255,14 +258,10 @@ final class AppModel {
         selection = .meeting(path, jump: jump)
     }
 
-    /// ⌥⌘F: the meeting list's search box, bringing the list back first if another screen is showing.
+    /// ⌥⌘F: search, over whatever is open.
     func searchMeetings() {
         showWindow()
-        switch selection {
-        case .meeting, .folder, nil: break
-        default: openFolder(folder)
-        }
-        DispatchQueue.main.async { self.searchRequest += 1 }
+        searching = true
     }
 
     func openFolder(_ path: String) {

@@ -134,7 +134,8 @@ struct TodosView: View {
             .frame(maxWidth: .infinity)
         }
         .toolbar {
-            ToolbarItem(placement: .principal) {
+            // What's shown, then how it's arranged.
+            ToolbarItem(placement: .automatic) {
                 Picker("Show", selection: $status) {
                     Text("Open · \(open.count)").tag(Status.open)
                     Text("Done").tag(Status.done)
@@ -143,6 +144,7 @@ struct TodosView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
             }
+            if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
             ToolbarItemGroup(placement: .automatic) {
                 Picker("Group by", selection: $grouping) {
                     Text("Due date").tag(Grouping.due)

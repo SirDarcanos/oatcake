@@ -29,7 +29,6 @@ struct HomeView: View {
                 }
                 upcoming
                 if model.config.todosEnabled { TodosView(homePreview: true) }
-                recent
             }
             .padding(28)
             .frame(maxWidth: 860)
@@ -124,73 +123,6 @@ struct HomeView: View {
             }
         }
         .padding(.vertical, 10)
-    }
-
-    private var recent: some View {
-        let meetings = Array(listedIn(model.library.tree).prefix(10))
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                heading("Recent meetings")
-                Spacer()
-                if !meetings.isEmpty {
-                    Button("View all meetings") { model.openFolder("") }.buttonStyle(.link)
-                }
-            }
-            if meetings.isEmpty {
-                Text("No saved meetings yet.").foregroundStyle(.secondary)
-            } else {
-                rows {
-                    Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 0) {
-                        ForEach(meetings, id: \.path) { meeting in
-                            if meeting.path != meetings.first?.path {
-                                Divider().gridCellUnsizedAxes(.horizontal)
-                            }
-                            GridRow {
-                                Button { model.openMeeting(meeting.path) } label: {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "doc.text").foregroundStyle(.secondary).accessibilityHidden(true)
-                                        CalendarBadges(calendars: model.calendar.labels(for: meeting.calendarIDs), describe: true)
-                                        Text(meetingTitle(meeting)).foregroundStyle(.primary).lineLimit(1)
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.vertical, 10)
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                HStack { folderBreadcrumb(parentOf(meeting.path)) }
-                                    .frame(maxWidth: 240, alignment: .trailing)
-                                    .gridCellAnchor(.trailing)
-                                if let date = meetingDate(meeting) {
-                                    Text(compactDate(date))
-                                        .font(.callout).foregroundStyle(.secondary)
-                                        .gridCellAnchor(.trailing)
-                                } else {
-                                    Color.clear.gridCellUnsizedAxes([.horizontal, .vertical]).accessibilityHidden(true)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder private func folderBreadcrumb(_ folder: String) -> some View {
-        let parts = folder.split(separator: "/")
-        if !parts.isEmpty {
-            HStack(spacing: 4) {
-                Image(systemName: "folder").foregroundStyle(.secondary).accessibilityHidden(true)
-                ForEach(parts.indices, id: \.self) { index in
-                    let path = parts.prefix(index + 1).joined(separator: "/")
-                    if index > 0 { Text("/").foregroundStyle(.secondary).accessibilityHidden(true) }
-                    Button(String(parts[index])) { model.openFolder(path) }
-                        .buttonStyle(.link)
-                        .lineLimit(1)
-                        .help("Open \(parts.prefix(index + 1).joined(separator: " / "))")
-                }
-            }
-            .font(.caption)
-        }
     }
 
     private func heading(_ title: String) -> some View {

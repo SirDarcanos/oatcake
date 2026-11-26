@@ -53,26 +53,32 @@ your own, on your Mac or your network, instead.
 
 ## The window
 
+The window is laid out as Mail's is, in three columns: the sidebar, the meetings in the selected
+folder, and the meeting itself (or whichever other screen is open: Home, To-dos, New recording, a
+call being recorded, Who's who). One toolbar runs across the top: over the meeting list, the
+folder's name, how many meetings it has, and the search button; over the right-hand pane, that
+screen's own controls, what it is at the left and what can be done at the right. **View › Hide Sidebar** (⌃⌘S), or the button beside the window's
+buttons, hides the sidebar.
+
+The sidebar has a recording in progress, Home, To-dos, Upcoming, Needs review, folders, and any
+meetings at the top level. A one-off call with no folder of its own is saved at the top level;
+drag it onto a folder to file it. Clicking the Meetings heading lists every meeting, and an empty
+folder offers **Record here**. Drag the divider to resize the meeting list; it keeps that width
+when you switch screens. Settings (⌘, or the menu bar item) is its own window, in panes; changes
+apply as you make them (see [Settings](settings.md)).
+
 Oatcake opens on **Home**, or on a recording that was still going when it was last closed. Home
-shows upcoming calls (the one on now or next has **Join the call** and **Start recording**), the ten
-most recent saved meetings across all folders, and a button to start a new recording or return to
-the one in progress. Click a recent meeting to open it, or **View all
-meetings** to open the library. When to-dos are enabled, Home also shows up to five open items,
-earliest due first, with their assignees and due dates. Add or tick off to-dos on Home, or choose
-**View all to-dos** to manage the full list.
+shows upcoming calls (the one on now or next has **Join the call** and **Start recording**) and a
+button to start a new recording or return to the one in progress. When to-dos are enabled, Home
+also shows up to five open items, earliest due first, with their assignees and due dates. Add or
+tick off to-dos on Home, or choose **View all to-dos** to manage the full list.
 
-When browsing meetings, the window has three columns: the sidebar, the meetings in the selected
-folder, and the meeting itself. The house icon next to Settings returns to Home. The sidebar has
-a recording in progress, To-dos, Upcoming, Needs review, folders, and any meetings at the top
-level. The same sidebar is available on Home. A one-off call with no
-folder of its own is saved at the top level; drag it onto a folder to file it. Clicking the
-Meetings heading lists every meeting, and an empty folder offers **Record here**. Drag the divider
-to resize the meeting list; it keeps that width when you switch screens. Settings (⌘,) is
-its own window, in panes; changes apply as you make them (see [Settings](settings.md)).
-
-⌘N starts a new recording, ⌥⌘F searches every meeting from the box above the meeting list (its
-title, folder, summary, to-dos, notes and transcript; a meeting found by its text shows the line
-with the words and opens there), and ⌘F finds words in the transcript you're reading. ⇧⌘N makes a
+⌘N starts a new recording, and ⌥⌘F (or the search button over the meeting list) opens search over
+the window. It finds meetings by their title, folder, summary, to-dos, notes and transcript as you
+type, newest first, with the words marked; one found by its text shows the line with them. ↑ and
+↓ choose a meeting, Return or a click opens it on the tab where the words are, with them in Find and
+marked, and Escape closes search. ⌘F finds words in the transcript you're reading: lines with every
+word, one after another. ⇧⌘N makes a
 folder and ⌘R refreshes the calendar; all of these are in the File and Edit menus. View › Bigger
 Text (⌘+), Smaller Text (⌘-) and Actual Size (⌘0) change the size of what you read and type:
 summaries, transcripts, notes and answers.
@@ -243,8 +249,8 @@ she/her/hers it writes is changed to they/them/their afterwards, with the verb a
 
 ### Reading and editing
 
-Tabs, above the meeting: Summary (with the meeting's to-dos at the top), Transcript and
-My notes (⌘1–⌘3), and Draft for Sharing (⌘4) in a meeting that has [one](#draft-for-sharing), each
+Tabs, in the toolbar over the meeting: Summary (with the meeting's to-dos at the top), Transcript
+and My notes (⌘1–⌘3), and Draft (⌘4) in a meeting that has a [draft for sharing](#draft-for-sharing), each
 Rendered or as editable Markdown from the switch at the top right of the note (saved as you type;
 Summary shows `todo.md` and `summary.md`). Everything else that can be done to the meeting is in
 the **⋯** menu at the right of the toolbar. **Copy** puts the tab you're on (the summary with its

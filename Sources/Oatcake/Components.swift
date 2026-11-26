@@ -149,6 +149,19 @@ extension View {
     func toolbarStatusPadding() -> some View { padding(.horizontal, 12) }
 }
 
+/// A transcript beside a screen's own column (the call's notes, Who's who's voices): 340 points,
+/// narrowing to 220 before that column goes under 380. The meeting list takes its column beside the
+/// pane, so in a narrow window there isn't room for both at full width.
+func sidePanelWidth(in paneWidth: CGFloat) -> CGFloat { min(340, max(220, paneWidth - 380)) }
+
+/// The toolbar over a screen that has nothing of its own up there (Home, New recording): a space, so
+/// the search field stays over the meeting list rather than sliding along to the window's end.
+struct EmptyPaneToolbar: ToolbarContent {
+    var body: some ToolbarContent {
+        if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
+    }
+}
+
 extension ToolbarContent {
     /// A title or a status in the toolbar, without the glass capsule macOS 26 draws behind toolbar
     /// items: in one, words read as a button.
@@ -285,3 +298,90 @@ struct SettingsPaneLink: View {
 /// SwiftUI's State property wrapper. In the macOS 27 SDK `@State` is a macro whose plugin ships only
 /// with Xcode, so with the Command Line Tools alone views use the property wrapper through this name.
 typealias ViewState<Value> = SwiftUI.State<Value>
+
+/// The words of a search or a Find: a meeting matches when it has all of them, anywhere.
+func searchWords(_ query: String) -> [String] { query.split(whereSeparator: \.isWhitespace).map(String.init) }
+
+/// The text with each of the words marked wherever it appears, in any case or accent: the system's
+/// find highlight, with the dark text it's made for (white on its see-through yellow can't be read
+/// in a dark window).
+func markingFound(_ text: AttributedString, _ words: [String]) -> AttributedString {
+    var out = text
+    for word in words where !word.isEmpty {
+        var from = out.startIndex
+        while from < out.endIndex, let found = out[from...].range(of: word, options: [.caseInsensitive, .diacriticInsensitive]) {
+            out[found].backgroundColor = Color(nsColor: .findHighlightColor)
+            out[found].foregroundColor = .black
+            from = found.upperBound
+        }
+    }
+    return out
+}
+
+func markingFound(_ text: String, _ words: [String]) -> AttributedString { markingFound(AttributedString(text), words) }
+
+/// A text field that leaves ↑, ↓, Return and Escape to the view around it, and takes the keyboard
+/// when it appears. In a SwiftUI TextField the field editor gets those keys first.
+struct KeyedTextField: NSViewRepresentable {
+    @Binding var text: String
+    var placeholder: String
+    var font: NSFont
+    var onMove: (Int) -> Void = { _ in }
+    var onReturn: () -> Void = {}
+    var onEscape: () -> Void = {}
+
+    final class Field: NSTextField {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let window = self.window else { return }
+                window.makeFirstResponder(self)
+            }
+        }
+    }
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = Field()
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.font = font
+        field.placeholderString = placeholder
+        field.usesSingleLineMode = true
+        field.lineBreakMode = .byTruncatingTail
+        field.delegate = context.coordinator
+        // Return through accessibility (VoiceOver's press) comes as the field's action.
+        field.target = context.coordinator
+        field.action = #selector(Coordinator.confirmed)
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        context.coordinator.parent = self
+        if field.stringValue != text { field.stringValue = text }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: KeyedTextField
+        init(parent: KeyedTextField) { self.parent = parent }
+
+        func controlTextDidChange(_ note: Notification) {
+            if let field = note.object as? NSTextField { parent.text = field.stringValue }
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            switch selector {
+            case #selector(NSResponder.moveUp(_:)): parent.onMove(-1)
+            case #selector(NSResponder.moveDown(_:)): parent.onMove(1)
+            case #selector(NSResponder.insertNewline(_:)): parent.onReturn()
+            case #selector(NSResponder.cancelOperation(_:)): parent.onEscape()
+            default: return false
+            }
+            return true
+        }
+
+        @objc func confirmed() { parent.onReturn() }
+    }
+}

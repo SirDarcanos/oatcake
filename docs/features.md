@@ -103,7 +103,7 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 - Each meeting a folder of Markdown (`summary.md`, `todo.md`, `transcript.md`, `notes.md`) and
   `meeting.json` in a Meetings folder you choose, kept in step with Finder.
   [Save](how-it-works.md#4-save)
-- Summary, Transcript and My notes tabs (and Draft for Sharing where there's one), each rendered or
+- Summary, Transcript and My notes tabs (and Draft where there's a draft for sharing), each rendered or
   as editable Markdown.
   [Reading and editing](how-it-works.md#reading-and-editing)
 - Play and pause a saved call recording, and jump to a time from the slider or the transcript.

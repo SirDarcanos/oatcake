@@ -11,6 +11,7 @@ struct LiveView: View {
     @ViewState private var showTranscript = UserDefaults.standard.object(forKey: "liveTranscriptShown") as? Bool ?? true
     /// People Oatcake knows by voice, to say who said a line.
     @ViewState private var knownVoices: [String] = []
+    @ViewState private var paneWidth: CGFloat = 900
 
     private var status: RecorderStatus { model.recording.status }
     private var started: Bool { status.state == .recording && model.recording.recorderFailure == nil }
@@ -45,9 +46,10 @@ struct LiveView: View {
             }
             if showTranscript && model.config.liveTranscript {
                 Divider()
-                transcript.frame(width: 340)
+                transcript.frame(width: sidePanelWidth(in: paneWidth))
             }
           }
+          .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { paneWidth = $0 }
             Divider()
             bar
         }
@@ -60,8 +62,9 @@ struct LiveView: View {
 
     // MARK: Header
 
+    /// The recording's state, then what can be done to it.
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .principal) {
+        ToolbarItem(placement: .automatic) {
             HStack(spacing: 8) {
                 if started {
                     RecDot()
@@ -75,6 +78,7 @@ struct LiveView: View {
             .toolbarStatusPadding()
         }
         .withoutCapsule()
+        if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
         if model.config.liveTranscript {
             ToolbarItem(placement: .automatic) {
                 Toggle(isOn: Binding(get: { showTranscript }, set: { showTranscript = $0; UserDefaults.standard.set($0, forKey: "liveTranscriptShown") })) {

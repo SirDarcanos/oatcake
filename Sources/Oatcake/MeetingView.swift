@@ -103,7 +103,17 @@ struct MeetingView: View {
             }
         }
         .onAppear {
-            if let jump { tab = jump.tab }
+            if let jump {
+                tab = jump.tab
+                // Opened from search: its words in Find, marked wherever they are in the meeting. Read
+                // as laid out, as ⌘F does: the Markdown editors mark nothing.
+                if !jump.words.isEmpty {
+                    query = jump.words.joined(separator: " ")
+                    finding = true
+                    markdown = false
+                    Remembered.markdown = false
+                }
+            }
             load()
         }
         .onChange(of: model.library.diskVersion) { load() }
@@ -248,10 +258,18 @@ struct MeetingView: View {
 
     // MARK: Toolbar
 
-    /// The tabs sit above the meeting itself (tabBar). Up here, on the right: how saving is going,
-    /// while there's something to say, and one menu with everything that can be done to the meeting.
+    /// Over the meeting: the tabs at the left; at the right, how saving is going, while there's
+    /// something to say, and one menu with everything that can be done to it. (.navigation would
+    /// put the tabs over the meeting list.)
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-        // What follows goes to the right. (With nothing in the middle of the toolbar, nothing else pushes it there.)
+        // The tabs are a new toolbar item when the draft's tab comes or goes. Changed in place, the
+        // item kept the width of three when Draft for Sharing… added the fourth as its sheet closed,
+        // and the four were squeezed into it until the draft was written.
+        if showsDraftTab {
+            ToolbarItem(placement: .automatic) { tabPicker }
+        } else {
+            ToolbarItem(placement: .automatic) { tabPicker }
+        }
         if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
         // How saving is going stays up here, in sight wherever the note is scrolled to. Words, not a
         // button: no capsule behind them.
@@ -353,27 +371,18 @@ struct MeetingView: View {
             .help("Show this meeting’s folder in Finder")
     }
 
-    /// Summary, Transcript, My notes and Draft for Sharing, above the meeting they switch: pinned, so
-    /// they're in reach wherever the note is scrolled to, and lined up with its text. Each segment is
-    /// as wide as its label, so the draft's tab is added without the others moving.
-    private var tabBar: some View {
-        HStack {
-            Picker("Tab", selection: Binding(get: { tab }, set: { switchTab($0) })) {
-                Text("Summary").tag(MeetingTab.summary).help("⌘1")
-                Text("Transcript").tag(MeetingTab.transcript).help("⌘2")
-                Text("My notes").tag(MeetingTab.notes).help("⌘3")
-                if showsDraftTab { Text("Draft for Sharing").tag(MeetingTab.draft).help("⌘4") }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            Spacer()
+    /// Summary, Transcript, My notes and Draft (for sharing), in the toolbar over the meeting.
+    private var tabPicker: some View {
+        Picker("Tab", selection: Binding(get: { tab }, set: { switchTab($0) })) {
+            Text("Summary").tag(MeetingTab.summary).help("⌘1")
+            Text("Transcript").tag(MeetingTab.transcript).help("⌘2")
+            Text("My notes").tag(MeetingTab.notes).help("⌘3")
+            // Short: the toolbar gives each tab the width of the widest.
+            if showsDraftTab { Text("Draft").tag(MeetingTab.draft).help("Draft for sharing (⌘4)") }
         }
-        .padding(.horizontal, 40)
-        .padding(.top, 14)
-        .padding(.bottom, 6)
-        .frame(maxWidth: 760, alignment: .leading)
-        .frame(maxWidth: .infinity)
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
     }
 
     /// Rendered or Markdown: how the note below is shown. It sits at the top right of the note, beside its title.
@@ -441,11 +450,12 @@ struct MeetingView: View {
     }
 
     private func content(_ files: [FileKey: String]) -> some View {
-        let found = finding && tab == .transcript && !markdown ? matches(in: rows) : []
+        // Find marks its words on any tab as it's read; on the transcript it also steps through the lines.
+        let stepping = tab == .transcript
+        let found = finding && stepping && !markdown ? matches(in: rows) : []
         return VStack(spacing: 0) {
-            tabBar
-            if finding && tab == .transcript && !markdown {
-                findBar(found)
+            if finding && !markdown {
+                findBar(found, stepping: stepping)
                 Divider()
             }
             scrolling(files, rows: rows, found: found)
@@ -666,7 +676,7 @@ struct MeetingView: View {
         let text = files[.draft] ?? ""
         return Group {
             if !text.trimmed.isEmpty {
-                MarkdownView(markdown: text, fontSize: 14 * scale)
+                MarkdownView(markdown: text, fontSize: 14 * scale, marks: findWords)
             } else if !model.jobs.drafting.contains(path) && model.jobs.draftErrors[path] == nil {
                 Text("No draft for sharing in this meeting.").foregroundStyle(.secondary)
             }
@@ -686,7 +696,7 @@ struct MeetingView: View {
             } else if summary.trimmed.isEmpty {
                 Text("No summary for this meeting.").foregroundStyle(.secondary)
             } else {
-                MarkdownView(markdown: summary, fontSize: 14 * scale)
+                MarkdownView(markdown: summary, fontSize: 14 * scale, marks: findWords)
             }
         }
     }
@@ -707,7 +717,7 @@ struct MeetingView: View {
                             changeTodos(shown: toggleTodo(todoText, line: t.line)) { try model.library.toggleTodo(path, line: t.line, text: t.text) }
                         }
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(t.text).strikethrough(t.done).foregroundStyle(t.done ? .secondary : .primary).textSelection(.enabled)
+                            Text(marked(t.text)).strikethrough(t.done).foregroundStyle(t.done ? .secondary : .primary).textSelection(.enabled)
                             let detail = [t.owner.isEmpty ? nil : ownerLabel(t.owner, model.config.myName), t.due.isEmpty ? nil : "due \(t.due)"].compactMap { $0 }
                             if !detail.isEmpty { Text(detail.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary) }
                         }
@@ -782,25 +792,31 @@ struct MeetingView: View {
         var text: String
     }
 
-    /// The rows that have what's being looked for.
+    /// The words being looked for, while Find is open.
+    private var findWords: [String] { finding ? searchWords(query) : [] }
+
+    /// The rows that have every word being looked for, as search finds a meeting.
     private func matches(in rows: [Row]) -> [Int] {
-        let wanted = query.trimmed
-        guard !wanted.isEmpty else { return [] }
-        return rows.indices.filter { rows[$0].text.range(of: wanted, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+        let words = searchWords(query)
+        guard !words.isEmpty else { return [] }
+        return rows.indices.filter { i in words.allSatisfy { rows[i].text.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil } }
     }
 
-    private func findBar(_ found: [Int]) -> some View {
+    private func findBar(_ found: [Int], stepping: Bool) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Find in transcript", text: $query)
+            TextField(stepping ? "Find in transcript" : "Find", text: $query)
                 .textFieldStyle(.plain)
                 .focused($findFocused)
                 .onSubmit { step(1, found) }
                 .onChange(of: query) { match = 0 }
-            Text(query.trimmed.isEmpty ? "" : found.isEmpty ? "Not found" : "\(min(match, found.count - 1) + 1) of \(found.count)")
-                .font(.callout).foregroundStyle(.secondary).monospacedDigit()
-            Button { step(-1, found) } label: { Image(systemName: "chevron.up") }.disabled(found.isEmpty).help("Previous").accessibilityLabel("Previous match")
-            Button { step(1, found) } label: { Image(systemName: "chevron.down") }.disabled(found.isEmpty).help("Next (Return)").accessibilityLabel("Next match")
+            // Stepping through matches is the transcript's; elsewhere the words are only marked.
+            if stepping {
+                Text(query.trimmed.isEmpty ? "" : found.isEmpty ? "Not found" : "\(min(match, found.count - 1) + 1) of \(found.count)")
+                    .font(.callout).foregroundStyle(.secondary).monospacedDigit()
+                Button { step(-1, found) } label: { Image(systemName: "chevron.up") }.disabled(found.isEmpty).help("Previous").accessibilityLabel("Previous match")
+                Button { step(1, found) } label: { Image(systemName: "chevron.down") }.disabled(found.isEmpty).help("Next (Return)").accessibilityLabel("Next match")
+            }
             Button("Done") { endFind() }.help("Close (Esc)")
         }
         .buttonStyle(.borderless)
@@ -826,22 +842,7 @@ struct MeetingView: View {
     }
 
     /// The text with what's being looked for marked.
-    private func marked(_ text: String) -> AttributedString {
-        var out = AttributedString(text)
-        let wanted = query.trimmed
-        guard finding, !wanted.isEmpty else { return out }
-        var from = text.startIndex
-        while let range = text.range(of: wanted, options: [.caseInsensitive, .diacriticInsensitive], range: from..<text.endIndex) {
-            if let lower = AttributedString.Index(range.lowerBound, within: out), let upper = AttributedString.Index(range.upperBound, within: out) {
-                // The system's own find highlight, with the dark text it's made for: in a dark window
-                // the usual white text on a see-through yellow couldn't be read.
-                out[lower..<upper].backgroundColor = Color(nsColor: .findHighlightColor)
-                out[lower..<upper].foregroundColor = .black
-            }
-            from = range.upperBound
-        }
-        return out
-    }
+    private func marked(_ text: String) -> AttributedString { markingFound(text, findWords) }
 
     private func transcript(_ rows: [Row], current: Int?) -> some View {
         LazyVStack(alignment: .leading, spacing: 2) {
@@ -888,7 +889,7 @@ struct MeetingView: View {
             ForEach(Array(notes.enumerated()), id: \.offset) { _, n in
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Chip(text: n.stamp ?? "Prep", style: n.stamp == nil ? .prep : .normal)
-                    Text(n.text).font(.system(size: 13 * scale)).textSelection(.enabled)
+                    Text(marked(n.text)).font(.system(size: 13 * scale)).textSelection(.enabled)
                 }
             }
             if notes.isEmpty {
