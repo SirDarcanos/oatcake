@@ -132,8 +132,10 @@ seconds after it was launched if it hasn't started; time spent on macOS's permis
 isn't counted), says so the same two ways, and keeps and processes whatever was recorded. A
 recorder that's stopped part-way still leaves where each track starts, so the two stay lined up;
 when it couldn't, Who's who says your lines may be out of step with the call's. Stop asks
-first, and so does quitting Oatcake while a call is being recorded, analysed or summarised, or
-meetings are being imported.
+first, and so does quitting Oatcake while a call is being recorded, analysed or summarised, a draft
+for sharing or an answer is being written, or meetings are being imported. Quitting also asks when
+it would lose something you've typed: notes for a call that couldn't be recorded, edits that
+couldn't be saved, or names in Who's who.
 
 ### Live transcript
 
@@ -201,7 +203,8 @@ the lines it said most of); known voices are recognised from saved voiceprints; 
 suggested from the conversation by the summary model, quoting the words that gave it away (not when
 After a call is set to save the transcript only: see
 [Saving without Who's who](#saving-without-whos-who)). The recording waits under
-Needs review with its step (1–5), and the Dock icon's badge counts the recordings waiting there. A
+Needs review with its step (1–5), and the Dock icon's badge counts the recordings waiting there.
+When one is ready for Who's who and Oatcake isn't in front, a notification says so. A
 failure shows the reason, with **Try again** and **Discard…**; **Discard…** is in the toolbar while
 it's processing and on Who's who as well, and in the menu you get by Control-clicking the
 recording in the sidebar. A recording whose Who's who can't be opened says why, with **Try again**
@@ -269,7 +272,10 @@ she/her/hers it writes is changed to they/them/their afterwards, with the verb a
 Tabs, in the toolbar over the meeting: Summary (with the meeting's to-dos at the top), Transcript
 and My notes (⌘1–⌘3), and Draft (⌘4) in a meeting that has a [draft for sharing](#draft-for-sharing), each
 Rendered or as editable Markdown from the switch at the top right of the note (saved as you type;
-Summary shows `todo.md` and `summary.md`). Everything else that can be done to the meeting is in
+Summary shows `todo.md` and `summary.md`). If the file changes while you type (its summary
+arrives, or it's edited in another app), Oatcake doesn't save over it: it shows the file as it is
+now and keeps what you typed beside it, as `summary (your version).md` and so on, and says so.
+Everything else that can be done to the meeting is in
 the **⋯** menu at the right of the toolbar. **Copy** puts the tab you're on (the summary with its
 to-dos, the transcript, or your notes) on the clipboard under the meeting's title and date,
 formatted for Google Docs, Pages or mail and as Markdown for anything that only takes plain text,

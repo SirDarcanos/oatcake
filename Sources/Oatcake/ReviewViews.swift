@@ -152,7 +152,12 @@ struct ReviewView: View {
     /// What's been set so far lives with the app, so leaving this screen and coming back keeps it.
     private var draft: ReviewDraft {
         get { model.jobs.reviewDrafts[rec.id] ?? ReviewDraft(title: rec.title, folder: rec.folder ?? "", voices: [:]) }
-        nonmutating set { model.jobs.reviewDrafts[rec.id] = newValue }
+        nonmutating set {
+            // Anything changed here is what quitting would lose.
+            var changed = newValue
+            changed.edited = draft.edited || newValue != draft
+            model.jobs.reviewDrafts[rec.id] = changed
+        }
     }
     private var voices: [String: Voice] {
         get { draft.voices }
@@ -182,7 +187,11 @@ struct ReviewView: View {
             }
         }
         .onAppear(perform: load)
-        .onDisappear { player.stop() }
+        .onDisappear {
+            player.stop()
+            // Kept while this showed it, so the cards didn't go blank after Save.
+            if saved { model.jobs.reviewDrafts.removeValue(forKey: rec.id) }
+        }
     }
 
     /// Its analysis couldn't be read (damaged, or cut short): it can be analysed again, or discarded.
@@ -221,8 +230,9 @@ struct ReviewView: View {
             analysis = a
             people = knownPeople()
             if model.jobs.reviewDrafts[rec.id] == nil {
-                draft = ReviewDraft(title: rec.title, folder: rec.folder ?? "",
-                                    voices: Dictionary(uniqueKeysWithValues: a.speakers.map { ($0.id, Voice(name: $0.suggestion?.name ?? "")) }))
+                // As it opens, with nothing changed yet: not through `draft`, which would count it as an edit.
+                model.jobs.reviewDrafts[rec.id] = ReviewDraft(title: rec.title, folder: rec.folder ?? "",
+                                                              voices: Dictionary(uniqueKeysWithValues: a.speakers.map { ($0.id, Voice(name: $0.suggestion?.name ?? "")) }))
             }
         } catch {
             self.error = error.localizedDescription
@@ -547,14 +557,11 @@ struct ReviewView: View {
             player.stop()
             model.refresh()
             model.toast(rechecking ? "Meeting updated" : "Saved to \(folderPath(folder))")
-            Task {
-                // The tree reloads in the background; open the meeting once it's there, unless you've moved on.
-                for _ in 0..<40 where model.library.tree?.find(path) == nil {
-                    try? await Task.sleep(for: .milliseconds(50))
-                }
-                // On its summary, whichever tab you last read another meeting on: that's where the summary arrives.
-                if model.selection == .job(rec.id) { model.openMeeting(path, jump: Jump(tab: rechecking ? .transcript : .summary)) }
-            }
+            // On to the meeting now, as saving by itself does: it shows as soon as the folder has been read
+            // again, however long that takes. On its summary, whichever tab you last read another meeting
+            // on: that's where the summary arrives.
+            model.folder = parentOf(path)
+            model.selection = .meeting(path, jump: Jump(tab: rechecking ? .transcript : .summary))
         } catch {
             self.error = error.localizedDescription
         }

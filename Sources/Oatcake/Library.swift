@@ -12,8 +12,8 @@ final class Library {
     var app = AppServices()
     /// A folder or meeting now lives somewhere else: whatever knew it by its old path follows it.
     var whenMoved: @MainActor (_ from: String, _ to: String) -> Void = { _, _ in }
-    /// Meetings have gone to the Trash: what was kept for them elsewhere can go too.
-    var whenTrashed: @MainActor () -> Void = {}
+    /// Meetings (or folders) have gone to the Trash, by their paths: what was kept for them elsewhere can go too.
+    var whenTrashed: @MainActor (_ paths: [String]) -> Void = { _ in }
     private var config: Config { app.config() }
     private func toast(_ text: String, isError: Bool = false) { app.toast(text, isError) }
     private func refresh() { app.refresh() }
@@ -93,11 +93,11 @@ final class Library {
     /// Moves meetings or folders to the Trash. One that can't be moved stops the rest, and the toast
     /// says how many went before it and why.
     func trash(_ nodes: [TreeNode]) {
+        var moved = 0
         defer {
-            whenTrashed()
+            whenTrashed(nodes.prefix(moved).map(\.path))
             refresh()
         }
-        var moved = 0
         do {
             for node in nodes {
                 try meetings.trash(node.path)
@@ -133,10 +133,6 @@ final class Library {
     }
 
     func readMeeting(_ path: String) throws -> MeetingFiles { try meetings.read(path) }
-
-    func writeMeetingFile(_ path: String, _ file: MeetingFile, _ content: String) throws {
-        try meetings.write(path, file, content)
-    }
 
     /// Ticks or unticks a to-do in todo.md as it is now, not as a view last read it: a tick never
     /// writes back over to-dos that have arrived since (the summary's, say). `text` is the to-do's

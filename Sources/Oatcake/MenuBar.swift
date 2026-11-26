@@ -126,6 +126,10 @@ enum MenuBarHelper {
         }
         // The time until the next call counts down without Oatcake having to say so.
         Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in MainActor.assumeIsolated { item.refresh() } }
+        // Once AppKit has put in its own handler for a quit, which this one replaces.
+        NotificationCenter.default.addObserver(forName: NSApplication.didFinishLaunchingNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { item.passOnQuits() }
+        }
         app.run()
         exit(0)
     }
@@ -238,6 +242,16 @@ final class StatusItem: NSObject, NSMenuDelegate {
     }
     // Oatcake may have something to ask before it quits (a call being recorded, say): its question needs to be in front.
     @objc private func quit() { bringOatcakeForward(); send(.quit) }
+
+    /// A quit sent to Oatcake by its bundle ID (install.sh's `tell application id … to quit`) can come
+    /// here, as the helper has the same ID: it's passed on to Oatcake, as Quit Oatcake is, rather than
+    /// ending the helper, which Oatcake would only start again.
+    func passOnQuits() {
+        NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(quitEvent(_:withReply:)),
+                                                     forEventClass: AEEventClass(kCoreEventClass), andEventID: AEEventID(kAEQuitApplication))
+    }
+
+    @objc private func quitEvent(_ event: NSAppleEventDescriptor, withReply reply: NSAppleEventDescriptor) { quit() }
 
     /// The click was on the helper's menu, so it's the helper macOS will let bring an app forward:
     /// it passes that on to Oatcake, which then shows its window.
