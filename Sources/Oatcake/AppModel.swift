@@ -83,8 +83,14 @@ final class AppModel {
     let jobs: Jobs
     let downloads: ModelDownloads
     let calendar: CalendarController
-    /// Bumped by ⌘F: the open meeting shows Find.
-    var findRequest = 0
+    /// A command from a menu for the open meeting (Find, a tab, Copy…), which acts on it.
+    var meetingRequest: MeetingRequest?
+    /// What the open meeting last said it can do, for the menus outside it. See `meetingInView`.
+    var meetingShowing: OpenMeeting?
+    /// Bumped by Edit › Ask About Your Meetings: the Ask field takes the keyboard.
+    var askRequest = 0
+    /// Rename… for a meeting, from any of its menus: the window asks for the new title.
+    var renaming: TreeNode?
     /// Search (⌥⌘F, or its button over the meeting list) is open over the window.
     var searching = false
     /// File › New Folder: the sidebar asks for the new top-level folder's name. It waits here until the
@@ -125,8 +131,9 @@ final class AppModel {
     /// A read of the Meetings folder is under way, and another has been asked for since it began.
     private var refreshing = false
     private var refreshWanted = false
-    var openMainWindow: (() -> Void)?
-    var openSettingsWindow: (() -> Void)?
+    // Set by the menus as they're built; nothing on screen shows them.
+    @ObservationIgnored var openMainWindow: (() -> Void)?
+    @ObservationIgnored var openSettingsWindow: (() -> Void)?
 
     init() {
         let (config, problem) = Config.loadWithProblem()
@@ -383,6 +390,18 @@ final class AppModel {
         searching = true
     }
 
+    /// What the open meeting said it can do, while it's still the one open.
+    var meetingInView: OpenMeeting? {
+        guard case .meeting(let path, _) = selection, meetingShowing?.path == path else { return nil }
+        return meetingShowing
+    }
+
+    /// Asks the open meeting to do something chosen from a menu outside it.
+    func request(_ command: MeetingCommand) {
+        showWindow()
+        meetingRequest = MeetingRequest(command: command)
+    }
+
     func openFolder(_ path: String) {
         folder = path
         if let first = listedIn(library.tree?.find(path)).first {
@@ -544,11 +563,12 @@ final class AppModel {
 
     private var mainWindowIsUp: Bool { NSApp.windows.contains { $0.identifier?.rawValue == "main" && $0.isVisible } }
 
-    /// Menu bar › Stop Recording…: asks first, as the window's Stop does, and the question is asked in
-    /// the window, which comes forward. A window that was closed has to be there before anything can
-    /// be asked in it, so the question waits for it. If no window comes, the recording is stopped:
-    /// that's what was chosen, and it mustn't carry on with you thinking it had ended.
-    private func stopFromMenuBar() {
+    /// Stop Recording…, in the menu bar item or the Recording menu: asks first, as the window's Stop
+    /// does, and the question is asked in the window, which comes forward. A window that was closed
+    /// has to be there before anything can be asked in it, so the question waits for it. If no window
+    /// comes, the recording is stopped: that's what was chosen, and it mustn't carry on with you
+    /// thinking it had ended.
+    func stopFromMenuBar() {
         let wasUp = mainWindowIsUp
         showWindow()
         if wasUp { return recording.confirmStop() }

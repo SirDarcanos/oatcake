@@ -4,16 +4,12 @@ import SwiftUI
 /// The middle column: the selected folder's meetings, newest first (every meeting for the top level).
 struct MeetingListView: View {
     @Environment(AppModel.self) private var model
-    /// Passed in rather than read here: inside the split view, this column doesn't always see the
-    /// model change by itself.
-    let folder: TreeNode?
-    @ViewState private var renaming: TreeNode?
     /// The meetings selected with ⌘- or ⇧-click. One selected meeting is the open one, so this only
     /// matters when there are several.
     @ViewState private var picked: Set<String> = []
-    @ViewState private var draft = ""
 
     var body: some View {
+        let folder = model.library.tree?.find(model.folder) ?? model.library.tree
         // The top level lists every meeting, each labelled with the folder it's in.
         let everything = folder?.path.isEmpty ?? true
         let rows = listedIn(folder)
@@ -50,11 +46,10 @@ struct MeetingListView: View {
                 .contextMenu(forSelectionType: String.self) { paths in
                     let nodes = rows.filter { paths.contains($0.path) }
                     if nodes.count == 1, let m = nodes.first {
-                        Button("Rename…") { draft = meetingTitle(m); renaming = m }
-                        Button("Show in Finder") { model.library.reveal(m.path) }
-                        Divider()
-                        Button("Move to Trash") { model.library.trash([m]) }
+                        // The same as the meeting's own ⋯ menu.
+                        MeetingMenuItems(model: model, node: m)
                     } else if nodes.count > 1 {
+                        MoveMenu(model: model, paths: nodes.map(\.path), title: "Move \(nodes.count) Meetings To")
                         Button("Show in Finder") { model.library.reveal(nodes.map(\.path)) }
                         Divider()
                         Button("Move \(nodes.count) Meetings to Trash") { model.trash(nodes) }
@@ -81,13 +76,6 @@ struct MeetingListView: View {
         }
         // A meeting opened from elsewhere (the sidebar, a search, a reminder) ends a selection of several.
         .onChange(of: selectedPath) { picked = [] }
-        .alert("Rename meeting", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-            TextField("Title", text: $draft)
-            Button("Rename") { if let node = renaming { model.library.retitle(node.path, to: draft) } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Changes the meeting’s title and its folder’s name.")
-        }
     }
 
     private var selectedPath: String? {

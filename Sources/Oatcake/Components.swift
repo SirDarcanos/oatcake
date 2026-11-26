@@ -155,7 +155,7 @@ extension View {
 func sidePanelWidth(in paneWidth: CGFloat) -> CGFloat { min(340, max(220, paneWidth - 380)) }
 
 /// The toolbar over a screen that has nothing of its own up there (Home, New recording): a space, so
-/// the search field stays over the meeting list rather than sliding along to the window's end.
+/// the search button stays over the meeting list rather than sliding along to the window's end.
 struct EmptyPaneToolbar: ToolbarContent {
     var body: some ToolbarContent {
         if #available(macOS 26, *) { ToolbarSpacer(.flexible) }

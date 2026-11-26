@@ -72,7 +72,10 @@ struct SidebarView: View {
                     }
                     // A one-off call with no folder of its own is saved at the top level. It's listed here
                     // under its call's title, after the folders, to open or to drag into one.
-                    ForEach(tree.meetings, id: \.path) { m in topLevelRow(m).tag(SidebarItem.meeting(m.path)) }
+                    ForEach(tree.meetings, id: \.path) { m in
+                        topLevelRow(m).tag(SidebarItem.meeting(m.path))
+                            .contextMenu { MeetingMenuItems(model: model, node: m) }
+                    }
                     if tree.children.isEmpty { Text("No folders yet.").foregroundStyle(.secondary).font(.callout) }
                 }
             } header: {
@@ -90,6 +93,12 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        // The folder tree from the keyboard, as in Finder: → opens a folder, ← closes it (or goes up
+        // to the folder it's in), Return renames, and ⌘⌫ (File › Move to Trash) moves it to the Trash.
+        .onKeyPress(.rightArrow) { showFolders(true) }
+        .onKeyPress(.leftArrow) { showFolders(false) }
+        .onKeyPress(.return) { renameSelected() }
+        .focusedValue(\.trashMeetings, trashSelected)
         .safeAreaInset(edge: .top) {
             Button { model.newRecording() } label: {
                 // During a call it goes back to that call, so it says so.
@@ -120,7 +129,7 @@ struct SidebarView: View {
         }
         .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $draft)
-            Button("Rename") { if let node = renaming { model.library.rename(node.path, to: draft) } }
+            Button("Rename") { if let node = renaming { model.library.rename(node.path, to: draft) } }.disabled(draft.trimmed.isEmpty)
             Button("Cancel", role: .cancel) {}
         }
         .alert("New Folder", isPresented: Binding(get: { newFolderIn != nil }, set: { if !$0 { newFolderIn = nil } })) {
@@ -129,6 +138,7 @@ struct SidebarView: View {
                 guard let parent = newFolderIn, !draft.trimmed.isEmpty else { return }
                 if model.library.createFolder(in: parent, named: draft) != nil, !parent.isEmpty { open.insert(parent) }
             }
+            .disabled(draft.trimmed.isEmpty)
             Button("Cancel", role: .cancel) {}
         } message: {
             if let parent = newFolderIn, !parent.isEmpty { Text("Inside \(folderPath(parent))") }
@@ -184,6 +194,46 @@ struct SidebarView: View {
         guard !items.isEmpty else { return false }
         model.library.move(items.map(\.path), into: target)
         return true
+    }
+
+    // MARK: Keys
+
+    /// The folder or top-level meeting highlighted in the sidebar.
+    private var selectedNode: TreeNode? {
+        switch selectionBinding.wrappedValue {
+        case .folder(let path) where !path.isEmpty, .meeting(let path): model.library.tree?.find(path)
+        default: nil
+        }
+    }
+
+    private func showFolders(_ show: Bool) -> KeyPress.Result {
+        guard let node = selectedNode, node.kind == .folder else { return .ignored }
+        if show {
+            guard !node.subfolders.isEmpty else { return .ignored }
+            open.insert(node.path)
+        } else if open.contains(node.path) {
+            open.remove(node.path)
+        } else {
+            model.openFolder(parentOf(node.path))
+        }
+        return .handled
+    }
+
+    private func renameSelected() -> KeyPress.Result {
+        guard let node = selectedNode else { return .ignored }
+        if node.kind == .meeting {
+            model.renaming = node
+        } else {
+            draft = node.name
+            renaming = node
+        }
+        return .handled
+    }
+
+    /// File › Move to Trash for what's highlighted: a folder asks first if it holds meetings.
+    private var trashSelected: (() -> Void)? {
+        guard let node = selectedNode else { return nil }
+        return node.kind == .folder ? { model.library.trashFolder(node) } : { model.trash([node]) }
     }
 
     // MARK: Rows

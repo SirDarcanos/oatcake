@@ -26,6 +26,8 @@ struct NewRecordingView: View {
     @ViewState private var previous: (path: String, date: Date?, todo: String)?
     @ViewState private var ticked = Set<Int>()
     @ViewState private var ready = false
+    private enum Field { case title, prep }
+    @FocusState private var focus: Field?
 
     var body: some View {
         ScrollView {
@@ -48,6 +50,8 @@ struct NewRecordingView: View {
                         .tint(.red)
                         .controlSize(.large)
                         .disabled(starting)
+                        // Return starts the recording, except in the prep notes, where it adds the point typed.
+                        .keyboardShortcut(focus == .prep ? nil : .defaultAction)
                         if let link = event?.callLink, let url = URL(string: link) {
                             Button { NSWorkspace.shared.open(url) } label: { Label("Join the call", systemImage: "video") }
                                 .controlSize(.large)
@@ -75,7 +79,10 @@ struct NewRecordingView: View {
             .frame(maxWidth: .infinity)
         }
         .task {
-            if !ready { setUp() }
+            if !ready {
+                setUp()
+                focus = .title
+            }
             await refreshDevices()
         }
         .task(id: candidateKey) { await loadPrevious() }
@@ -149,7 +156,7 @@ struct NewRecordingView: View {
                 TextField("Leave blank to use “\(folderName.isEmpty ? (folder == newFolder ? "the new folder’s name" : "Untitled meeting") : folderName)”", text: $title)
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 360)
-                    .onSubmit(start)
+                    .focused($focus, equals: .title)
             }
             let templates = model.config.summaryTemplates.filter { model.config.summaryTemplate(named: $0.name) != nil }
             if !templates.isEmpty {
@@ -303,6 +310,7 @@ struct NewRecordingView: View {
                 TextField("An agenda point or question, then Return. Or paste a list.", text: $prepDraft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1...8)
+                    .focused($focus, equals: .prep)
                     .onSubmit { addPrep(prepDraft) }
                     .onChange(of: prepDraft) { if prepDraft.contains(where: \.isNewline) { addPrep(prepDraft) } }
             }

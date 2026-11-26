@@ -59,12 +59,8 @@ struct AskBar: View {
         .padding(.horizontal, 24)
         .padding(.bottom, 18)
         .onChange(of: focused) { if focused, !chat.turns.isEmpty { chat.open = true } }
-        .onKeyPress(.escape) {
-            guard chat.open else { return .ignored }
-            chat.open = false
-            focused = false
-            return .handled
-        }
+        // Edit › Ask About Your Meetings (⌘L).
+        .onChange(of: model.askRequest) { focused = true }
     }
 
     private func submit(_ text: String? = nil) {
@@ -80,7 +76,14 @@ struct AskBar: View {
                 Text("Ask about your meetings").font(.headline)
                 Spacer()
                 Button("New chat") { chat.newChat(); focused = true }.disabled(chat.running != nil)
-                Button("Hide") { chat.open = false }.help("Hide (Esc)")
+                // Escape hides it wherever the keyboard is, not only from its field. Not while search is
+                // over the window: Escape is search's then.
+                Button("Hide") {
+                    chat.open = false
+                    focused = false
+                }
+                .help("Hide (Esc)")
+                .keyboardShortcut(model.searching ? nil : .cancelAction)
             }
             .buttonStyle(.borderless)
             .padding(.horizontal, 16)

@@ -77,6 +77,8 @@ struct MeetingView: View {
     @ViewState private var query = ""
     @ViewState private var match = 0
     @FocusState private var findFocused: Bool
+    /// This view, as the menus outside it know it.
+    @ViewState private var viewID = UUID()
     @AppStorage(TextScale.key) private var textScale = 1.0
 
     /// View › Bigger Text and Smaller Text: how big the note's own text is drawn.
@@ -121,25 +123,14 @@ struct MeetingView: View {
             load()
         }
         .onChange(of: model.library.diskVersion) { load() }
-        // ⌘F: Find, on the transcript.
-        .onChange(of: model.findRequest) {
-            flush()
-            markdown = false
-            Remembered.markdown = false
-            switchTab(.transcript)
-            finding = true
-            findFocused = true
-        }
+        // The menu bar's Meeting menu, Find and View's tabs, and the other menus with this meeting's commands.
+        .onChange(of: model.meetingRequest) { if let request = model.meetingRequest { perform(request.command) } }
+        .onChange(of: menuState, initial: true) { model.meetingShowing = menuState }
         .onDisappear {
+            if model.meetingShowing?.view == viewID { model.meetingShowing = nil }
             flush()
             // Said while you're here; it isn't kept.
             model.jobs.todoProblems.removeValue(forKey: path)
-        }
-        .background {
-            // ⌘1–⌘3 switch tabs, and ⌘4 to the draft for sharing in a meeting that has one.
-            ForEach(Array(tabs.enumerated()), id: \.offset) { i, t in
-                Button("") { switchTab(t) }.keyboardShortcut(KeyEquivalent(Character("\(i + 1)")), modifiers: .command).hidden()
-            }
         }
     }
 
@@ -299,80 +290,53 @@ struct MeetingView: View {
             }
             .menuIndicator(.hidden)
             .accessibilityLabel("More")
-            .help("Regenerate, draft for sharing, rename speakers, copy, share or show in Finder")
+            .help("Draft for sharing, regenerate, rename speakers, copy, share, rename, move, show in Finder or move to the Trash")
         }
     }
 
-    /// The meeting's menu: writing it again first, then taking it elsewhere.
-    @ViewBuilder private var actions: some View {
-        let hasSummary = !(files?[.summary] ?? "").trimmed.isEmpty
-        if tab == .summary || tab == .draft, hasSummary {
-            Button {
-                // Edits to the summary, to-dos or draft are saved first: the draft is written from them.
+    /// The meeting's menu: the same commands as the Meeting menu and its right-click menus.
+    private var actions: some View {
+        MeetingMenuItems(model: model, node: node, local: (menuState, perform))
+    }
+
+    /// What this meeting can do just now, for the menus outside it.
+    private var menuState: OpenMeeting {
+        OpenMeeting(view: viewID, path: path, tab: tab, tabs: tabs, hasSummary: !(files?[.summary] ?? "").trimmed.isEmpty,
+                    hasTranscript: !(files?[.transcript] ?? "").trimmed.isEmpty, canRenameSpeakers: canRenameSpeakers,
+                    template: meta.template, canFindNext: finding && tab == .transcript && !markdown, shareText: shareText)
+    }
+
+    /// A command from this meeting's menu, or one outside it.
+    private func perform(_ command: MeetingCommand) {
+        switch command {
+        case .tab(let t):
+            if tabs.contains(t) { switchTab(t) }
+        case .find:
+            // On the tab showing, as it's laid out: the Markdown editors mark nothing.
+            if markdown {
                 flush()
-                guard pending.isEmpty else { return }
-                askingForDraft = true
-            } label: { Label("Draft for Sharing…", systemImage: "square.and.pencil") }
-                .disabled(model.jobs.summarising.contains(path) || model.jobs.drafting.contains(path))
-                .help(model.config.todosEnabled ? "Write this meeting’s summary and to-dos again for other people to read"
-                      : "Write this meeting’s summary again for other people to read")
-        }
-        if tab == .summary, hasSummary {
-            let busy = model.jobs.summarising.contains(path) || (files?[.transcript] ?? "").trimmed.isEmpty
-            if templates.isEmpty {
-                Button { regenerate(.summary) } label: { Label("Regenerate Summary", systemImage: "arrow.clockwise") }
-                    .disabled(busy)
-                    .help("Write the summary again with the current instructions in Settings")
-            } else {
-                // Ticked: what this meeting's summary is written with now.
-                let current = model.config.summaryTemplate(named: meta.template)?.name
-                Menu {
-                    Toggle("Default", isOn: Binding(get: { current == nil }, set: { _ in regenerate(.summary, template: .picked(nil)) }))
-                    Divider()
-                    ForEach(templates, id: \.name) { t in
-                        Toggle(t.name, isOn: Binding(get: { current == t.name }, set: { _ in regenerate(.summary, template: .picked(t.name)) }))
-                    }
-                } label: { Label("Regenerate Summary", systemImage: "arrow.clockwise") }
-                    .disabled(busy)
-                    .help("Write the summary again, with a template if you pick one")
+                markdown = false
+                Remembered.markdown = false
             }
-            if model.config.todosEnabled {
-                Button { regenerate(.todos) } label: { Label("Regenerate To-dos", systemImage: "checklist") }
-                    .disabled(busy)
-                    .help("Write the to-dos again with the current instructions in Settings")
-            }
+            finding = true
+            findFocused = true
+        case .findNext, .findPrevious:
+            step(command == .findNext ? 1 : -1, matches(in: rows))
+        case .draftForSharing:
+            // Edits to the summary, to-dos or draft are saved first: the draft is written from them.
+            flush()
+            guard pending.isEmpty else { return }
+            askingForDraft = true
+        case .regenerate(let part, let template):
+            regenerate(part, template: template)
+        case .renameSpeakers:
+            // A failed save keeps its text pending; renaming then would have it written back over the new names.
+            flush()
+            guard pending.isEmpty else { return }
+            renamingSpeakers = true
+        case .copy:
+            copy(tab.contents(todos: model.config.todosEnabled))
         }
-        if canRenameSpeakers {
-            Button {
-                // A failed save keeps its text pending; renaming then would have it written back over the new names.
-                flush()
-                guard pending.isEmpty else { return }
-                renamingSpeakers = true
-            } label: { Label("Rename Speakers…", systemImage: "person.2") }
-                .disabled(model.jobs.summarising.contains(path))
-                .help(model.config.todosEnabled ? "Change who’s who in this meeting: the names in its transcript, summary and to-dos"
-                      : "Change who’s who in this meeting: the names in its transcript and summary")
-        }
-        Divider()
-        let what = switch tab {
-        case .summary: model.config.todosEnabled ? "summary and to-dos" : "summary"
-        case .transcript: "transcript"
-        case .notes: "notes"
-        case .draft: "draft for sharing"
-        }
-        let tabName = switch tab {
-        case .summary: "Summary"
-        case .transcript: "Transcript"
-        case .notes: "Notes"
-        case .draft: "Draft"
-        }
-        Button { copy(what) } label: { Label("Copy \(tabName)", systemImage: "doc.on.doc") }
-            .help("Copy the \(what), formatted (as Markdown where only plain text can go)")
-        ShareLink(item: shareText, subject: Text(meetingTitle(node))) { Label("Share", systemImage: "square.and.arrow.up") }
-            .help("Send the \(what) with Mail, Messages or another app")
-        Divider()
-        Button { model.library.reveal(path) } label: { Label("Show in Finder", systemImage: "arrow.up.forward.square") }
-            .help("Show this meeting’s folder in Finder")
     }
 
     /// Summary, Transcript, My notes and Draft (for sharing), in the toolbar over the meeting.
@@ -746,11 +710,6 @@ struct MeetingView: View {
         }
     }
 
-    /// The summary templates a meeting can be regenerated with: named, and with instructions.
-    private var templates: [SummaryTemplate] {
-        model.config.summaryTemplates.filter { model.config.summaryTemplate(named: $0.name) != nil }
-    }
-
     private func regenerate(_ part: SummaryPart, template: SummaryTemplateChoice = .meetings) {
         // Save edits before asking for a replacement; a failed save must not discard pending text.
         flush()
@@ -818,19 +777,18 @@ struct MeetingView: View {
             if stepping {
                 Text(query.trimmed.isEmpty ? "" : found.isEmpty ? "Not found" : "\(min(match, found.count - 1) + 1) of \(found.count)")
                     .font(.callout).foregroundStyle(.secondary).monospacedDigit()
-                Button { step(-1, found) } label: { Image(systemName: "chevron.up") }.disabled(found.isEmpty).help("Previous").accessibilityLabel("Previous match")
-                Button { step(1, found) } label: { Image(systemName: "chevron.down") }.disabled(found.isEmpty).help("Next (Return)").accessibilityLabel("Next match")
+                Button { step(-1, found) } label: { Image(systemName: "chevron.up") }.disabled(found.isEmpty).help("Previous (⇧⌘G)").accessibilityLabel("Previous match")
+                Button { step(1, found) } label: { Image(systemName: "chevron.down") }.disabled(found.isEmpty).help("Next (Return or ⌘G)").accessibilityLabel("Next match")
             }
+            // Escape closes it wherever the keyboard is, not only from its field. Not while Ask is open
+            // over it (Escape closes that first) or search is: Escape is theirs then.
             Button("Done") { endFind() }.help("Close (Esc)")
+                .keyboardShortcut(model.ask.open || model.searching ? nil : .cancelAction)
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(.bar)
-        .onKeyPress(.escape) {
-            endFind()
-            return .handled
-        }
     }
 
     private func step(_ by: Int, _ found: [Int]) {

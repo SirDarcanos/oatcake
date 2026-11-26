@@ -101,7 +101,7 @@ struct LiveView: View {
                 Button { model.recording.confirmStop() } label: { Label("Stop", systemImage: "stop.fill").labelStyle(.titleAndIcon) }
                     .tint(.red)
                     .buttonStyle(.borderedProminent)
-                    .help("Stop recording")
+                    .help("Stop recording (⇧⌘R)")
             }
         }
     }
