@@ -252,7 +252,14 @@ struct MeetingView: View {
     /// something to say, and one menu with everything that can be done to it. (.navigation would
     /// put the tabs over the meeting list.)
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .automatic) { tabPicker }
+        // The tabs are a new toolbar item when the draft's tab comes or goes. Changed in place, the
+        // item kept the width of three when Draft for Sharing… added the fourth as its sheet closed,
+        // and the four were squeezed into it until the draft was written.
+        if showsDraftTab {
+            ToolbarItem(placement: .automatic) { tabPicker }
+        } else {
+            ToolbarItem(placement: .automatic) { tabPicker }
+        }
         if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
         // How saving is going stays up here, in sight wherever the note is scrolled to. Words, not a
         // button: no capsule behind them.

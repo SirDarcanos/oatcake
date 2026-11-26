@@ -223,12 +223,12 @@ struct ContentView: View {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 520)
         } content: {
-            MeetingListView(folder: model.library.tree?.find(model.folder) ?? model.library.tree, root: model.library.tree,
-                            query: model.searchText)
+            MeetingListView(folder: model.library.tree?.find(model.folder) ?? model.library.tree)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 300, max: 560)
         } detail: {
             DetailView()
         }
+        .overlay { if model.searching { SearchOverlay(root: model.library.tree) } }
         .overlay(alignment: .bottom) {
             // Only one that says something went wrong takes clicks (to dismiss it).
             if let text = model.toastText { ToastView(text: text, isError: model.toastIsError) { model.dismissToast() }.allowsHitTesting(model.toastIsError) }

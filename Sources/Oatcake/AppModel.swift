@@ -65,12 +65,10 @@ final class AppModel {
     let jobs: Jobs
     let downloads: ModelDownloads
     let calendar: CalendarController
-    /// Bumped by ⌘F and ⌥⌘F: the open meeting shows Find, the toolbar's search field takes the keyboard.
+    /// Bumped by ⌘F: the open meeting shows Find.
     var findRequest = 0
-    var searchRequest = 0
-    /// What's typed in the toolbar's search field. While there's something, the meeting list shows
-    /// the meetings it finds, wherever they are.
-    var searchText = ""
+    /// Search (⌥⌘F, or its button over the meeting list) is open over the window.
+    var searching = false
     /// File › New Folder: the sidebar asks for the new top-level folder's name. It waits here until the
     /// sidebar takes it, which is after the window has opened if it was closed.
     var wantsNewFolder = false
@@ -258,10 +256,10 @@ final class AppModel {
         selection = .meeting(path, jump: jump)
     }
 
-    /// ⌥⌘F: the toolbar's search field. The meeting list beside whatever is open shows what it finds.
+    /// ⌥⌘F: search, over whatever is open.
     func searchMeetings() {
         showWindow()
-        DispatchQueue.main.async { self.searchRequest += 1 }
+        searching = true
     }
 
     func openFolder(_ path: String) {

@@ -56,8 +56,8 @@ your own, on your Mac or your network, instead.
 The window is laid out as Mail's is, in three columns: the sidebar, the meetings in the selected
 folder, and the meeting itself (or whichever other screen is open: Home, To-dos, New recording, a
 call being recorded, Who's who). One toolbar runs across the top: over the meeting list, the
-folder's name, how many meetings it has, and search; over the right-hand pane, that screen's own
-controls, what it is at the left and what can be done at the right. **View › Hide Sidebar** (⌃⌘S), or the button beside the window's
+folder's name, how many meetings it has, and the search button; over the right-hand pane, that
+screen's own controls, what it is at the left and what can be done at the right. **View › Hide Sidebar** (⌃⌘S), or the button beside the window's
 buttons, hides the sidebar.
 
 The sidebar has a recording in progress, Home, To-dos, Upcoming, Needs review, folders, and any
@@ -73,10 +73,11 @@ button to start a new recording or return to the one in progress. When to-dos ar
 also shows up to five open items, earliest due first, with their assignees and due dates. Add or
 tick off to-dos on Home, or choose **View all to-dos** to manage the full list.
 
-⌘N starts a new recording, ⌥⌘F searches every meeting from the search field over the meeting list (its
-title, folder, summary, to-dos, notes and transcript; the meeting list shows what it finds, and a
-meeting found by its text shows the line with the words and opens there), and ⌘F finds words in
-the transcript you're reading. ⇧⌘N makes a
+⌘N starts a new recording, and ⌥⌘F (or the search button over the meeting list) opens search over
+the window. It finds meetings by their title, folder, summary, to-dos, notes and transcript as you
+type, newest first; one found by its text shows the line with the words. ↑ and ↓ choose a meeting,
+Return or a click opens it there, and Escape closes search. ⌘F finds words in the transcript
+you're reading. ⇧⌘N makes a
 folder and ⌘R refreshes the calendar; all of these are in the File and Edit menus. View › Bigger
 Text (⌘+), Smaller Text (⌘-) and Actual Size (⌘0) change the size of what you read and type:
 summaries, transcripts, notes and answers.
