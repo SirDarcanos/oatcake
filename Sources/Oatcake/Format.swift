@@ -179,6 +179,16 @@ private func hueFor(_ name: String, remember: Bool) -> Double {
     return hues[index]
 }
 
+/// Claims a colour for someone seen for the first time, as hueFor does, from outside a view's body:
+/// drawing only reads. Avatars already drawn are told, in case two new names were drawn in the same
+/// free colour and the second has just been given another.
+func rememberColor(_ name: String) {
+    let known = (UserDefaults.standard.dictionary(forKey: colorsKey) as? [String: Int])?[firstNameKey(name)].map(hues.indices.contains) ?? false
+    guard !known, chosenColor(name) == nil, !name.trimmed.isEmpty, name.range(of: notAPerson, options: .regularExpression) == nil else { return }
+    _ = hueFor(name, remember: true)
+    UserDefaults.standard.set(UserDefaults.standard.integer(forKey: colorsChangedKey) + 1, forKey: colorsChangedKey)
+}
+
 /**
  * Colours for the names on a Who's who screen, where nothing is claimed until the meeting is saved:
  * someone seen before keeps their colour, and each new name takes the next free one, in the order

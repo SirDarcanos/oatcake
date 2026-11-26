@@ -58,12 +58,14 @@ struct Avatar: View {
 
     var body: some View {
         let _ = colorsChanged
-        let p = person(name, remember: remember)
+        let p = person(name, remember: false)
         Text(p.initial)
             .font(.system(size: size * 0.42, weight: .semibold))
             .foregroundStyle(.white)
             .frame(width: size, height: size)
             .background(Circle().fill(color ?? p.color))
+            // Their colour is claimed once the avatar is on screen, not while it's being drawn.
+            .task(id: name) { if remember { rememberColor(name) } }
     }
 }
 
