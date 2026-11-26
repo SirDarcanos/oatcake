@@ -28,6 +28,13 @@ releases, downloaded once into `.build/llama` and checked against its SHA-256. A
 from `swift build` has no llama.cpp beside it; point `OATCAKE_LLAMA_DIR` at a folder that holds
 `llama-server` and its libraries (`build/Oatcake.app/Contents/Resources/llama` will do).
 
+macOS draws an app the way apps built with its SDK look: one that says it was built before
+macOS 26 gets no Liquid Glass. Swift 6.4's default build system records the deployment target
+(15.0) as the SDK, so a copy run straight from `swift build` looks like a macOS 15 app.
+`Scripts/bundle.sh` records the SDK it built with (`xcrun --show-sdk-version`), so its copy looks
+the way a release does; releases are built with Xcode 27.2 and its macOS 27.2 SDK. Check what a
+program says with `vtool -show-build`.
+
 With only the command line tools, SwiftUI's `@State` macro isn't available (its plugin ships with
 Xcode), so views use the `State` property wrapper through the `ViewState` alias.
 

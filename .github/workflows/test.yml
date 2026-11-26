@@ -16,7 +16,11 @@ concurrency:
 
 jobs:
   test:
-    runs-on: macos-26
+    # Built with Xcode 27.2 and its macOS 27.2 SDK, which decides how macOS draws the app (see
+    # Scripts/bundle.sh). The xcode-27 image is GitHub's preview of macOS 27 with Xcode 27.
+    runs-on: xcode-27
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,6 +42,17 @@ jobs:
             exit 1
           fi
           wait "$tests"
+
+      # The app as Scripts/bundle.sh packages it, signed ad-hoc (there are no secrets here), and
+      # recording the SDK it was built with: that decides how macOS draws it.
+      - name: Package the app
+        run: |
+          Scripts/bundle.sh debug
+          sdk="$(vtool -show-build build/Oatcake.app/Contents/MacOS/Oatcake | awk '$1 == "sdk" { print $2; exit }')"
+          if [ "$sdk" != "$(xcrun --sdk macosx --show-sdk-version)" ]; then
+            echo "::error::The app records SDK $sdk, not the one it was built with."
+            exit 1
+          fi
 
       - name: Check the scripts parse
         run: |

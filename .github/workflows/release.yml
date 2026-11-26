@@ -21,7 +21,11 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-26
+    # Built with Xcode 27.2 and its macOS 27.2 SDK, which decides how macOS draws the app (see
+    # Scripts/bundle.sh). The xcode-27 image is GitHub's preview of macOS 27 with Xcode 27.
+    runs-on: xcode-27
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     # A release takes about seven minutes. Anything much longer is stuck.
     timeout-minutes: 30
     environment: release

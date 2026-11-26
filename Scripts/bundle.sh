@@ -42,6 +42,29 @@ mkdir -p "$RECORDER/Contents/MacOS"
 cp "$BIN/OatcakeRecorder" "$RECORDER/Contents/MacOS/oatcake-recorder"
 sed "s/VERSION/$VERSION/g" Resources/OatcakeRecorder-Info.plist > "$RECORDER/Contents/Info.plist"
 
+# The SDK a program was built against is written into it, and macOS draws the app as that SDK's
+# apps look: one that says it was built before macOS 26 gets no Liquid Glass. Swift 6.4's default
+# build system writes the deployment target there (15.0) instead of the SDK, so each program is
+# given the version of the SDK this Mac builds with. (Built and packaged on the same Mac: the
+# release workflow builds, then runs this with OATCAKE_BIN, on one runner.)
+SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
+for program in "$APP/Contents/MacOS/Oatcake" "$RECORDER/Contents/MacOS/oatcake-recorder"; do
+    minos="$(vtool -show-build "$program" | awk '$1 == "minos" { print $2; exit }')"
+    if [[ -z "$minos" ]]; then
+        echo "error: vtool found no macOS build version in $program." >&2
+        exit 1
+    fi
+    # vtool warns that the signature is now invalid (it's signed below): only a failure is shown.
+    if ! out="$(vtool -set-build-version macos "$minos" "$SDK_VERSION" -replace -output "$program" "$program" 2>&1)"; then
+        echo "error: vtool couldn't rewrite $program: $out" >&2
+        exit 1
+    fi
+    if [[ "$(vtool -show-build "$program" | awk '$1 == "sdk" { print $2; exit }')" != "$SDK_VERSION" ]]; then
+        echo "error: couldn't record SDK $SDK_VERSION in $program." >&2
+        exit 1
+    fi
+done
+
 # llama.cpp's server and the libraries it loads: one fixed build from llama.cpp's own releases,
 # checked against its SHA-256 before anything is taken from it. To move to a newer build, change the
 # tag and the checksum together (shasum -a 256 on the archive), and measure before shipping.
@@ -127,4 +150,4 @@ sign_for_this_version() { # <bundle> <entitlements>
 sign_for_this_version "$RECORDER" Resources/OatcakeRecorder.entitlements
 sign_for_this_version "$APP" Resources/Oatcake.entitlements
 codesign --verify --deep --strict "$APP"
-echo "Built $APP $VERSION, signed $([[ "$IDENTITY" == "-" ]] && echo ad-hoc || echo "with \"$IDENTITY\"")"
+echo "Built $APP $VERSION against the macOS $SDK_VERSION SDK, signed $([[ "$IDENTITY" == "-" ]] && echo ad-hoc || echo "with \"$IDENTITY\"")"
