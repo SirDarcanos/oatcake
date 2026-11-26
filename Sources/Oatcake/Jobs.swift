@@ -128,19 +128,21 @@ final class Jobs {
     func analyse(_ id: String) {
         guard let rec = Recordings.get(id), !analysing.contains(id) else { return }
         analysing.insert(id)
-        progress[id] = JobProgress(stage: progress[id]?.stage, waiting: helperBusy)
+        progress[id] = JobProgress(stage: progress[id]?.stage)
         analyses[id] = Task {
             let outcome = await runHelper(rec)
             await finish(rec, outcome)
         }
     }
 
-    /// Waits for the helper before this one to finish.
-    private func helperTurn() async {
+    /// Waits for the helper before this one to finish, saying so in the meantime. Decided here rather
+    /// than when the job is made: several started in one go are only queued as each reaches this.
+    private func helperTurn(_ id: String) async {
         guard helperBusy else {
             helperBusy = true
             return
         }
+        progress[id]?.waiting = true
         await withCheckedContinuation { helperQueue.append($0) }
     }
 
@@ -151,7 +153,7 @@ final class Jobs {
     /// Runs the analysis helper, when its turn comes, and says how it went.
     private func runHelper(_ rec: Recording) async -> AnalysisProgress? {
         let id = rec.id
-        await helperTurn()
+        await helperTurn(id)
         defer { helperDone() }
         // Discarded while it waited.
         guard Recordings.get(id) != nil, !Task.isCancelled else { return nil }
