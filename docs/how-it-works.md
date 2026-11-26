@@ -62,12 +62,14 @@ buttons, hides the sidebar.
 
 The sidebar has a recording in progress, Home, To-dos, Upcoming, Needs review, folders, and any
 meetings at the top level. A one-off call with no folder of its own is saved at the top level;
-drag it onto a folder to file it. Clicking the Meetings heading lists every meeting, and an empty
-folder offers **Record here**. Drag the divider to resize the meeting list; it keeps that width
+drag it onto a folder to file it. **All meetings**, at the top of the Meetings section, lists every
+meeting, whatever folder it's in. A folder lists only its own meetings, and says so when they're all
+in the folders inside it; an empty folder offers **Record here**. Drag the divider to resize the meeting list; it keeps that width
 when you switch screens. Settings (⌘, or the menu bar item) is its own window, in panes; changes
 apply as you make them (see [Settings](settings.md)).
 
-Oatcake opens on **Home**, or on a recording that was still going when it was last closed. Home
+Oatcake opens where it was when it was last closed: Home, To-dos or the meeting that was open (on
+the tab last chosen), with the folder that was listed; or on a recording that was still going. Home
 shows upcoming calls (the one on now or next has **Join the call** and **Start recording**) and a
 button to start a new recording or return to the one in progress. When to-dos are enabled, Home
 also shows up to five open items, earliest due first, with their assignees and due dates. Add or
@@ -75,13 +77,20 @@ tick off to-dos on Home, or choose **View all to-dos** to manage the full list.
 
 ⌘N starts a new recording, and ⌥⌘F (or the search button over the meeting list) opens search over
 the window. It finds meetings by their title, folder, summary, to-dos, notes and transcript as you
-type, newest first, with the words marked; one found by its text shows the line with them. ↑ and
+type, newest first, with the words marked; one found by its text shows the line with them. It says
+**Searching…** until every meeting's text has been looked through, then how many it found. ↑ and
 ↓ choose a meeting, Return or a click opens it on the tab where the words are, with them in Find and
-marked, and Escape closes search. ⌘F finds words in the transcript you're reading: lines with every
-word, one after another. ⇧⌘N makes a
-folder and ⌘R refreshes the calendar; all of these are in the File and Edit menus. View › Bigger
-Text (⌘+), Smaller Text (⌘-) and Actual Size (⌘0) change the size of what you read and type:
-summaries, transcripts, notes and answers.
+marked, and Escape or a click outside closes search. Search keeps its words and results: open it
+again and ↓ goes on to the next. ⌘F finds words on the tab you're reading, marked wherever they are;
+on the transcript, ⌘G and ⇧⌘G step through the lines with every word. After following a link (a
+to-do's, a citation in Ask, a search result), ⌘[ goes back to where you were and ⌘] forward again.
+
+Everything is in the menus: File (New Folder, Refresh Calendars, Move to Trash), Edit (Find, Search
+Meetings, Ask About Your Meetings), View (the meeting's tabs, and Bigger Text, Smaller Text and
+Actual Size for what you read and type), Go (Back, Forward, Home, To-dos, All Meetings), Meeting
+(everything in the open meeting's **⋯** menu), Recording (New Recording, Stop Recording…, Join Call,
+Show Live Notes) and Help, which opens these pages. [Keyboard shortcuts](keyboard-shortcuts.md)
+lists the keys.
 
 By default, closing the window keeps Oatcake running in the background, checking for calls and
 sending reminders. It stops appearing as a running app in the Dock and stays in the menu bar.
@@ -253,7 +262,10 @@ Tabs, in the toolbar over the meeting: Summary (with the meeting's to-dos at the
 and My notes (⌘1–⌘3), and Draft (⌘4) in a meeting that has a [draft for sharing](#draft-for-sharing), each
 Rendered or as editable Markdown from the switch at the top right of the note (saved as you type;
 Summary shows `todo.md` and `summary.md`). Everything else that can be done to the meeting is in
-the **⋯** menu at the right of the toolbar. **Copy** puts the tab you're on (the summary with its
+the **⋯** menu at the right of the toolbar, and the same commands are in the Meeting menu and the
+meeting's right-click menu in the list. Those for the tab you're on (**Copy**, **Regenerate
+Summary**…) are greyed out on a tab they don't apply to, and in the right-click menu of a meeting
+that isn't open. **Copy** puts the tab you're on (the summary with its
 to-dos, the transcript, or your notes) on the clipboard under the meeting's title and date,
 formatted for Google Docs, Pages or mail and as Markdown for anything that only takes plain text,
 and **Share** sends the same text with Mail, Messages or another app.
@@ -262,7 +274,8 @@ and **Share** sends the same text with Mail, Messages or another app.
 
 If a meeting has saved audio, a player sits below its title, with the recording's length. Use the
 slider or click a time in the rendered transcript to jump to that point in the recording, before or
-after pressing play. If playback is paused, it
+after pressing play. Space plays and pauses while no text field has the keyboard, and ⌥← and ⌥→ go
+back and on 15 seconds. If playback is paused, it
 stays paused at the new time. Playback stops when you leave the meeting. For calls recorded in
 Oatcake, turn on [Keep call audio after saving](settings.md#storage) to make audio available for
 future meetings.
@@ -306,14 +319,19 @@ your tasks somewhere else, turn off [Collect to-dos](settings.md#general) in Set
 
 ### Organising meetings
 
-Organise meetings by dragging them onto folders; ⌘-click or ⇧-click selects several, and they all
-move. Right-click a meeting for **Rename…**, **Show in Finder** or **Move to Trash**, or several for
-**Show in Finder** or **Move to Trash** (⌘⌫ in the File menu does the same); **Show in Finder** is in the meeting's **⋯** menu too. Renaming
-a meeting changes its title (in `meeting.json`) and its folder's name, which keeps its date.
-Folders can hold folders. Click the arrow next to a folder's name to show or hide its subfolders.
-Right-click a folder for **New Folder Inside…**, **Rename…**, **Show in Finder** or **Move to
-Trash** (which asks first if it holds meetings). Finder and the app stay in step. The middle
-column's width drags, like the sidebar's.
+Organise meetings by dragging them onto folders, or with **Move To** in a meeting's menus, which
+lists every folder; ⌘-click or ⇧-click selects several, and they all move. Right-click a meeting for
+the same commands as its **⋯** menu, among them **Rename…**, **Move To**, **Show in Finder** and
+**Move to Trash**; right-click several for **Move To**, **Show in Finder** or **Move to Trash**.
+⌘⌫ (File › Move to Trash) moves the meetings selected in the list to the Trash and opens the next
+one, as in Mail, and ⌘Z puts back what was just moved. Renaming a meeting changes its title (in
+`meeting.json`) and its folder's name, which keeps its date. Dragged out of Oatcake, a meeting is
+its folder (into Finder or a mail, say), or its summary where only text goes.
+Folders can hold folders. Click the arrow next to a folder's name, or press → and ←, to show or hide
+its subfolders. Right-click a folder for **New Folder Inside…**, **Rename…** (or press Return),
+**Show in Finder** or **Move to Trash** (or ⌘⌫, which asks first if it holds meetings). Finder and
+the app stay in step: a folder or meeting that goes from Finder while it's open gives way to the
+nearest folder that's still there. The middle column's width drags, like the sidebar's.
 
 ### Rename Speakers
 

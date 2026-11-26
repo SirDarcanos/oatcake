@@ -110,11 +110,16 @@ Everything Oatcake does today, with a link to where each is described. Planned w
   [Listening to the recording](how-it-works.md#listening-to-the-recording)
 - **Copy** and **Share**, formatted for documents and mail and as Markdown.
   [Reading and editing](how-it-works.md#reading-and-editing)
-- Folders within folders, meetings dragged between them, several at a time; rename, Show in
-  Finder and Move to Trash. [Organising meetings](how-it-works.md#organising-meetings)
-- Search across every meeting, and find in the transcript you're reading.
-  [The window](how-it-works.md#the-window)
+- Folders within folders, meetings dragged or moved between them, several at a time; rename, Show
+  in Finder, Move to Trash and Undo to put back. A meeting dragged out of Oatcake is its folder, or
+  its summary as text. [Organising meetings](how-it-works.md#organising-meetings)
+- Search across every meeting, with its words and results kept for the next look, and find on the
+  tab you're reading. [The window](how-it-works.md#the-window)
 - Bigger and smaller text. [The window](how-it-works.md#the-window)
+- Every command in the menu bar, with keys for what's done on every call, and Back and Forward
+  after following a link. [Keyboard shortcuts](keyboard-shortcuts.md)
+- Oatcake opens on the folder, meeting and tab it was on when it was last closed.
+  [The window](how-it-works.md#the-window)
 - The call's audio kept with the meeting, if you choose. [Storage](settings.md#storage)
 
 ## Ask
