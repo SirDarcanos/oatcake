@@ -16,7 +16,8 @@
   commands or reach the network through Oatcake. The port is given up for a moment before
   llama.cpp takes it, so once something answers there Oatcake checks that llama.cpp is still
   running (one that couldn't take the port stops at once) before sending it anything. A model
-  server of your own has to be at a local address (see [Language model](models.md#language-model)).
+  server of your own has to be at a local address, and a redirect from it isn't followed (see
+  [Language model](models.md#language-model)).
 - What's said on a call ends up in front of the model, so its replies are treated as text from a
   stranger: a suggested name is only offered if it was said in the call, to-dos and Ask's first
   step are held to a fixed shape, and links are handled as above.

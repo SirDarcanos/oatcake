@@ -286,6 +286,24 @@ import Testing
         #expect(throws: OatcakeError.self) { try ModelServer.checkSealed(replaced.app) }
     }
 
+    /// A model server of your own that answers with a redirect isn't followed: the transcript would
+    /// go to an address that was never checked to be local.
+    @Test func redirectsAreNotFollowed() async throws {
+        let elsewhere = try await StandIn.model { _ in "OK" }
+        let redirecting = try await StandIn { request in
+            StandIn.Response(status: 307, headers: ["Location": elsewhere.address + request.path])
+        }
+        do {
+            _ = try await LocalChat(baseUrl: redirecting.address + "/v1", model: "stand-in").complete([ChatMessage("user", "The transcript")])
+            Issue.record("followed the redirect")
+        } catch {
+            #expect(error.localizedDescription.hasPrefix("The model at \(redirecting.address)/v1 returned 307"))
+        }
+        // Nor is one from Oatcake's own server's /health.
+        #expect(await !LocalChat(baseUrl: redirecting.address + "/v1", model: "qwen3-8b", key: "made-up", qwen: true).isReady())
+        #expect(elsewhere.requests.isEmpty && redirecting.requests.count == 2)
+    }
+
     /// Check it works in Settings › Models. A server of your own whose model reasons first can spend
     /// the check's few tokens on that: it answered, so the check passes. Anything else still fails.
     @Test func checkModelPassesAModelStillReasoning() async throws {

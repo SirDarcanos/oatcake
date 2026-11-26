@@ -61,6 +61,7 @@ Summaries, to-dos, name suggestions and Ask's answers come from one model, run o
   server) is summarised in parts, which are then joined.
 - **A model of your own.** Any server with the same chat API on this Mac or your network (Ollama,
   LM Studio, your own llama.cpp). Oatcake only talks to a local address, and sends no key. It
+  doesn't follow a redirect from that address to another (the redirect is reported as an error). It
   sends none of Qwen's sampling settings either: the server's own apply, as they suit its model.
   Each request still says how long the reply may be and, where one is needed, the JSON shape.
 

@@ -32,6 +32,18 @@ public func isLocalEndpoint(_ address: String) -> Bool {
     return host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local") || !host.contains(".")
 }
 
+/// Requests to a model's server don't follow redirects: one would send the transcript (and the key
+/// to Oatcake's own server) to wherever it named, an address that was never checked to be local. A
+/// redirect comes back as the server's answer, and so as an error.
+let modelSession = URLSession(configuration: .ephemeral, delegate: NoRedirects(), delegateQueue: nil)
+
+final class NoRedirects: NSObject, URLSessionTaskDelegate, Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
+}
+
 /// One turn of a conversation with the model.
 public struct ChatMessage: Sendable, Equatable {
     public var role: String
@@ -94,7 +106,7 @@ public struct LocalChat: Sendable {
         guard let url = URL(string: root + "/health") else { return false }
         var request = URLRequest(url: url, timeoutInterval: 2)
         request.httpMethod = "GET"
-        guard let (_, response) = try? await URLSession.shared.data(for: request) else { return false }
+        guard let (_, response) = try? await modelSession.data(for: request) else { return false }
         return (response as? HTTPURLResponse)?.statusCode == 200
     }
 
@@ -145,7 +157,7 @@ public struct LocalChat: Sendable {
             sent = Data(String(decoding: sent, as: UTF8.self).replacingOccurrences(of: "\"\(placeholder)\"", with: schemaAsWritten).utf8)
         }
         request.httpBody = sent
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await modelSession.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             let said = String(decoding: data, as: UTF8.self)
