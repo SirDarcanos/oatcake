@@ -405,7 +405,7 @@ private struct UpdateNotice: View {
                     ProgressView().controlSize(.small)
                 } else if u.blocked != nil {
                     // Opens Settings on its Updates pane.
-                    SettingsPaneLink(pane: "updates", title: "Details")
+                    SettingsPaneLink(pane: .updates, title: "Details")
                 } else {
                     // Asked first: it quits Oatcake, and whatever is half done in a window goes with it.
                     Button("Update…") { confirming = true }.buttonStyle(.borderedProminent)

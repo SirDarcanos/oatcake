@@ -277,11 +277,16 @@ enum TextScale {
     static func clamped(_ scale: Double) -> Double { min(steps.last!, max(steps.first!, scale)) }
 }
 
-/// Opens Settings on one of its panes ("summaries", "updates"…), however it's pressed: a click, the
-/// keyboard or VoiceOver.
+/// Settings' panes, as Settings is opened on them and remembers the last one shown.
+enum SettingsPane: String {
+    case general, calendar, people, models, summaries, storage, updates
+    static let key = "settingsPane"
+}
+
+/// Opens Settings on one of its panes, however it's pressed: a click, the keyboard or VoiceOver.
 struct SettingsPaneLink: View {
     @Environment(\.openSettings) private var openSettings
-    let pane: String
+    let pane: SettingsPane
     let title: String
 
     var body: some View {
@@ -290,8 +295,8 @@ struct SettingsPaneLink: View {
 }
 
 /// The one place that says which pane Settings opens on.
-@MainActor func showSettingsPane(_ pane: String, _ open: OpenSettingsAction) {
-    UserDefaults.standard.set(pane, forKey: "settingsPane")
+@MainActor func showSettingsPane(_ pane: SettingsPane, _ open: OpenSettingsAction) {
+    UserDefaults.standard.set(pane.rawValue, forKey: SettingsPane.key)
     open()
 }
 

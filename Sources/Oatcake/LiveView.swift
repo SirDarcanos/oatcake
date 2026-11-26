@@ -139,8 +139,8 @@ struct LiveView: View {
         if let downloading = model.downloads.modelDownloadStatus {
             HStack(spacing: 6) {
                 Text("\(downloading). It writes the summary once the call is over.")
-                SettingsLink { Text("Settings") }.buttonStyle(.link)
-                    .simultaneousGesture(TapGesture().onEnded { UserDefaults.standard.set("models", forKey: "settingsPane") })
+                // On Models, however it's pressed: a click, the keyboard or VoiceOver.
+                SettingsPaneLink(pane: .models, title: "Settings").buttonStyle(.link)
             }
             .font(.callout).foregroundStyle(.secondary).padding(.top, 14)
         }
