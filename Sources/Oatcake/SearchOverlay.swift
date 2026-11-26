@@ -1,41 +1,55 @@
 import OatcakeCore
 import SwiftUI
 
+/// Search's words, what they last found and the result chosen, kept in the model while search is
+/// closed: opening it again after opening a result brings them back, to try the next one.
+struct SearchState {
+    var query = ""
+    /// What the last look through every meeting's text found, and the words it was for.
+    var found: (query: String, hits: [SearchHit])?
+    /// The result Return opens, by its path: the first when nil.
+    var chosen: String?
+}
+
 /// Search, over the window (⌥⌘F, or the button over the meeting list): the meetings with every word
 /// typed in their title, folder, summary, to-dos, notes or transcript, newest first, as you type.
 /// ↑ and ↓ choose one, Return or a click opens it where the words are, and Escape or a click
 /// outside closes it.
 struct SearchOverlay: View {
     @Environment(AppModel.self) private var model
-    /// The whole Meetings folder. Passed in, as the meeting list's folder is.
-    let root: TreeNode?
-    @ViewState private var query = ""
-    /// What the last search of every meeting's text found, and the words it was for.
-    @ViewState private var found: (query: String, hits: [SearchHit])?
-    /// The result Return opens: the first, then whichever ↑, ↓ or the pointer picks.
-    @ViewState private var chosen = 0
+    /// The results shown, and what each was found by, worked out when the words or what they found
+    /// change rather than each time the panel is drawn.
+    @ViewState private var rows: [TreeNode] = []
+    @ViewState private var hits: [String: SearchHit] = [:]
+    /// Where the pointer was last seen: only a pointer that moves picks a result.
+    @ViewState private var pointer = NSEvent.mouseLocation
     @ViewState private var listHeight: CGFloat = 0
 
+    private var root: TreeNode? { model.library.tree }
+    private var search: String { model.search.query.trimmed }
+    /// Every meeting's text has been looked through for these words.
+    private var done: Bool { model.search.found?.query == search }
+    /// Where the chosen result is in the list: the first, unless another is chosen and still there.
+    private var chosen: Int { rows.firstIndex { $0.path == model.search.chosen } ?? 0 }
+
     var body: some View {
-        let search = query.trimmed
-        let rows = results(search)
-        let hits = found?.query == search ? Dictionary((found?.hits ?? []).map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a }) : [:]
         ZStack(alignment: .top) {
-            Color.black.opacity(0.1)
+            // Dark enough that what's behind reads as behind; a click on it closes search.
+            Color.black.opacity(0.3)
                 .contentShape(Rectangle())
                 .onTapGesture { close() }
                 .accessibilityHidden(true)
             VStack(spacing: 0) {
-                field(rows, hits: hits)
+                field
                 if !search.isEmpty {
                     Divider()
-                    if rows.isEmpty {
+                    if !rows.isEmpty {
+                        list
+                    } else if done {
                         Text("No meetings match “\(search)”.")
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 18)
-                    } else {
-                        list(rows, hits: hits)
                     }
                 }
             }
@@ -43,25 +57,34 @@ struct SearchOverlay: View {
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.separator) }
             .shadow(color: .black.opacity(0.25), radius: 30, y: 12)
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isModal)
             .padding(.top, 60)
         }
         .onExitCommand { close() }
-        .onChange(of: search) { chosen = 0 }
+        .onChange(of: search) { model.search.chosen = nil }
+        .onChange(of: search, initial: true) { showResults() }
         // Searched again when the words change, and when a meeting does.
         .task(id: "\(model.library.diskVersion) \(search)") { await searchText(search) }
     }
 
-    private func field(_ rows: [TreeNode], hits: [String: SearchHit]) -> some View {
-        HStack(spacing: 10) {
+    private var field: some View {
+        @Bindable var model = model
+        return HStack(spacing: 10) {
             Image(systemName: "magnifyingglass").font(.title3).foregroundStyle(.secondary).accessibilityHidden(true)
-            KeyedTextField(text: $query, placeholder: "Search meetings",
+            KeyedTextField(text: $model.search.query, placeholder: "Search meetings",
                            font: .systemFont(ofSize: NSFont.preferredFont(forTextStyle: .title3).pointSize),
-                           onMove: { chosen = min(max(chosen + $0, 0), max(rows.count - 1, 0)) },
-                           onReturn: { if rows.indices.contains(chosen) { open(rows[chosen], hit: hits[rows[chosen].path]) } },
+                           onMove: move,
+                           onReturn: { if rows.indices.contains(chosen) { open(rows[chosen]) } },
                            onEscape: { close() })
                 .accessibilityLabel("Search meetings")
-            if !query.isEmpty {
-                Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+            if !search.isEmpty {
+                // Until every meeting's text has been looked through, the results are those found by title or folder.
+                Text(done ? "\(rows.count) meeting\(rows.count == 1 ? "" : "s")" : "Searching…")
+                    .font(.callout).foregroundStyle(.secondary).monospacedDigit()
+            }
+            if !model.search.query.isEmpty {
+                Button { model.search.query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
                     .buttonStyle(.plain).help("Clear the search").accessibilityLabel("Clear the search")
             }
         }
@@ -70,24 +93,31 @@ struct SearchOverlay: View {
     }
 
     /// As tall as the results, up to 420 points, then scrolling.
-    private func list(_ rows: [TreeNode], hits: [String: SearchHit]) -> some View {
+    private var list: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 2) {
-                    let words = searchWords(query)
+                    let words = searchWords(search)
+                    let chosen = chosen
                     ForEach(Array(rows.enumerated()), id: \.element.path) { i, m in
-                        row(m, hit: hits[m.path], words: words, chosen: i == chosen)
-                            .id(i)
-                            .contentShape(Rectangle())
-                            .onTapGesture { open(m, hit: hits[m.path]) }
-                            .onHover { if $0 { chosen = i } }
+                        Button { open(m) } label: { row(m, hit: hits[m.path], words: words, chosen: i == chosen) }
+                            .buttonStyle(.plain)
+                            .accessibilityAddTraits(i == chosen ? .isSelected : [])
+                            .id(m.path)
+                            .onContinuousHover { phase in
+                                // A list scrolled by ↑ and ↓ moves rows under a pointer at rest: that doesn't pick one.
+                                guard case .active = phase, NSEvent.mouseLocation != pointer else { return }
+                                pointer = NSEvent.mouseLocation
+                                model.search.chosen = m.path
+                            }
                     }
                 }
                 .padding(6)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
             }
             .frame(height: min(max(listHeight, 1), 420))
-            .onChange(of: chosen) { proxy.scrollTo(chosen) }
+            .onChange(of: model.search.chosen) { if let path = model.search.chosen { proxy.scrollTo(path) } }
+            .onAppear { if let path = model.search.chosen { proxy.scrollTo(path) } }
         }
     }
 
@@ -113,44 +143,59 @@ struct SearchOverlay: View {
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(chosen ? Color.accentColor : .clear))
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
+        .contentShape(Rectangle())
+    }
+
+    /// ↑ or ↓: the result before or after the one chosen.
+    private func move(_ by: Int) {
+        guard !rows.isEmpty else { return }
+        model.search.chosen = rows[min(max(chosen + by, 0), rows.count - 1)].path
     }
 
     /// What a meeting is found by, besides its text.
     private func label(_ m: TreeNode) -> String { "\(meetingTitle(m)) \(folderPath(parentOf(m.path)))" }
 
-    /// Until every meeting's text has been looked through (a moment after you stop typing), the
-    /// meetings with the words in their title or folder.
-    private func results(_ search: String) -> [TreeNode] {
-        guard !search.isEmpty else { return [] }
-        if let found, found.query == search { return found.hits.compactMap { root?.find($0.path) } }
-        let words = searchWords(search)
-        return listedIn(root).filter { m in words.allSatisfy { label(m).localizedStandardContains($0) } }
+    /// The results for the words: what every meeting's text was found to have, once it's been looked
+    /// through (a moment after you stop typing), and until then the meetings with the words in their
+    /// title or folder.
+    private func showResults() {
+        if let found = model.search.found, found.query == search {
+            rows = found.hits.compactMap { root?.find($0.path) }
+            hits = Dictionary(found.hits.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
+        } else {
+            rows = search.isEmpty ? [] : listedIn(root).filter { hasEveryWord(of: search, in: label($0)) }
+            hits = [:]
+        }
     }
 
-    /// Looks through every meeting's text, off the main thread. Each file is read once and kept until it changes.
+    /// Looks through every meeting's text, off the main thread. Each file is read once and kept until
+    /// it changes. Words typed since, or search closing, stop a look that's under way.
     private func searchText(_ search: String) async {
-        guard !search.isEmpty else { return found = nil }
+        guard !search.isEmpty else { return }
         try? await Task.sleep(for: .milliseconds(150))
         guard !Task.isCancelled else { return }
         let all = listedIn(root).map { (path: $0.path, label: label($0)) }
         let meetings = model.library.meetings, todos = model.config.todosEnabled
-        let hits = await Task.detached { meetings.search(search, in: all, todos: todos) }.value
-        if !Task.isCancelled { found = (search, hits) }
+        let looking = Task.detached { meetings.search(search, in: all, todos: todos) }
+        let hits = await withTaskCancellationHandler { await looking.value } onCancel: { looking.cancel() }
+        guard !Task.isCancelled else { return }
+        model.search.found = (search, hits)
+        showResults()
     }
 
     /// Opens a meeting, in the list of its folder. One found by its text opens where the words are,
-    /// with them in Find and marked, as Mail marks a search's words in a message it opens.
-    private func open(_ m: TreeNode, hit: SearchHit?) {
+    /// with them in Find and marked, as Mail marks a search's words in a message it opens. Search
+    /// keeps its words and results, and this one chosen, for when it's opened again.
+    private func open(_ m: TreeNode) {
+        model.search.chosen = m.path
         close()
-        guard let file = hit?.file else { return model.openMeeting(m.path) }
+        guard let file = hits[m.path]?.file else { return model.openMeeting(m.path) }
         let tab: MeetingTab = file == .transcript ? .transcript : file == .notes ? .notes : .summary
         // Find gets the words found in the text, not those that were only in the title or folder:
         // it looks for lines with all of them, and wouldn't find one.
-        let words = searchWords(query)
-        let inText = words.filter { !label(m).localizedStandardContains($0) }
-        model.openMeeting(m.path, jump: Jump(tab: tab, stamp: hit?.stamp, words: inText.isEmpty ? words : inText))
+        let words = searchWords(search)
+        let inText = words.filter { !hasEveryWord(of: $0, in: label(m)) }
+        model.openMeeting(m.path, jump: Jump(tab: tab, stamp: hits[m.path]?.stamp, words: inText.isEmpty ? words : inText))
     }
 
     private func close() { model.searching = false }

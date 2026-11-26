@@ -93,6 +93,8 @@ final class AppModel {
     var renaming: TreeNode?
     /// Search (⌥⌘F, or its button over the meeting list) is open over the window.
     var searching = false
+    /// Search's words and what they found, kept while it's closed: opening it again brings them back.
+    var search = SearchState()
     /// File › New Folder: the sidebar asks for the new top-level folder's name. It waits here until the
     /// sidebar takes it, which is after the window has opened if it was closed.
     var wantsNewFolder = false

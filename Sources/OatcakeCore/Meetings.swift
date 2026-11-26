@@ -175,7 +175,8 @@ public final class Meetings: @unchecked Sendable {
         guard !words.isEmpty else { return [] }
         let order: [MeetingFile] = todos ? [.summary, .todo, .notes, .transcript] : [.summary, .notes, .transcript]
         return meetings.compactMap { meeting in
-            guard let dir = try? resolveInside(root, meeting.path) else { return nil }
+            // Words typed since: what's found from here on would be thrown away.
+            guard !Task.isCancelled, let dir = try? resolveInside(root, meeting.path) else { return nil }
             let label = foldedForSearch(meeting.label)
             let files = order.map { ($0, searchable(dir.appendingPathComponent($0.rawValue))) }
             guard words.allSatisfy({ w in label.contains(w) || files.contains { $0.1.folded.contains(w) } }) else { return nil }
@@ -509,6 +510,13 @@ func plainLine(_ line: String) -> String {
 /// Text with case and accents folded away, so a search for "cafe" finds "Café".
 func foldedForSearch(_ text: String) -> String {
     text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+}
+
+/// Whether `text` has every word of `query`, folded as `Meetings.search` folds them: how search
+/// matches a meeting's title and folder before every meeting's text has been looked through.
+public func hasEveryWord(of query: String, in text: String) -> Bool {
+    let folded = foldedForSearch(text)
+    return foldedForSearch(query).split(whereSeparator: \.isWhitespace).allSatisfy { folded.contains($0) }
 }
 
 /// The time a transcript line starts with: "**[12:34] Jane:** …".

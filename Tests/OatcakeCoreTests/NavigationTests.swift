@@ -65,6 +65,13 @@ import Testing
         #expect(history.goForward(from: "home", where: there) == "now")
     }
 
+    @Test func searchMatchesTitlesAsItMatchesText() {
+        #expect(hasEveryWord(of: "cafe LUMIERE", in: "Café Lumière · Team › Leads"))
+        #expect(hasEveryWord(of: "leads team", in: "Café Lumière · Team › Leads"))
+        #expect(!hasEveryWord(of: "leads budget", in: "Café Lumière · Team › Leads"))
+        #expect(hasEveryWord(of: "   ", in: "Anything"))
+    }
+
     @Test func aMeetingMovedToTheTrashCanBePutBack() throws {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-putback-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: tmp) }

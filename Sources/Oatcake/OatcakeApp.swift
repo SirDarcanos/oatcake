@@ -324,7 +324,9 @@ struct ContentView: View {
         } detail: {
             DetailView()
         }
-        .overlay { if model.searching { SearchOverlay(root: model.library.tree) } }
+        // Search is modal: while it's open, the window behind it can't be worked through accessibility either.
+        .accessibilityHidden(model.searching)
+        .overlay { if model.searching { SearchOverlay() } }
         .overlay(alignment: .bottom) {
             // Only one that says something went wrong takes clicks (to dismiss it).
             if let text = model.toastText { ToastView(text: text, isError: model.toastIsError) { model.dismissToast() }.allowsHitTesting(model.toastIsError) }

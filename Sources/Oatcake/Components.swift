@@ -325,8 +325,9 @@ func markingFound(_ text: AttributedString, _ words: [String]) -> AttributedStri
 
 func markingFound(_ text: String, _ words: [String]) -> AttributedString { markingFound(AttributedString(text), words) }
 
-/// A text field that leaves ↑, ↓, Return and Escape to the view around it, and takes the keyboard
-/// when it appears. In a SwiftUI TextField the field editor gets those keys first.
+/// A text field that leaves ↑, ↓, Return and Escape to the view around it, takes the keyboard when it
+/// appears, and gives it back to what had it when it goes. In a SwiftUI TextField the field editor
+/// gets those keys first.
 struct KeyedTextField: NSViewRepresentable {
     @Binding var text: String
     var placeholder: String
@@ -336,12 +337,26 @@ struct KeyedTextField: NSViewRepresentable {
     var onEscape: () -> Void = {}
 
     final class Field: NSTextField {
+        /// What had the keyboard before this field took it.
+        private weak var before: NSResponder?
+
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             DispatchQueue.main.async { [weak self] in
                 guard let self, let window = self.window else { return }
+                // Another field being typed in has the field editor as the responder: that field is what had it.
+                let had = window.firstResponder
+                if let editor = had as? NSText, editor.isFieldEditor { before = editor.delegate as? NSResponder } else { before = had }
                 window.makeFirstResponder(self)
             }
+        }
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            // Going: the keyboard goes back, unless what had it has gone too (a meeting closed by opening another).
+            if newWindow == nil, let window, let before, before === window || (before as? NSView)?.window === window {
+                window.makeFirstResponder(before)
+            }
+            super.viewWillMove(toWindow: newWindow)
         }
     }
 
@@ -368,7 +383,7 @@ struct KeyedTextField: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
-    final class Coordinator: NSObject, NSTextFieldDelegate {
+    @MainActor final class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: KeyedTextField
         init(parent: KeyedTextField) { self.parent = parent }
 
