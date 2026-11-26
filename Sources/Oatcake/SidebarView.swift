@@ -200,7 +200,15 @@ struct SidebarView: View {
             }
             // Only the list itself chooses here, by the arrow keys or a click, either of which leaves
             // it with the keyboard. ⌘N, the menus and the meeting list don't come this way.
-            if model.listShown != listShown { model.sidebarKeepsKeyboard = true }
+            if model.listShown != listShown {
+                model.sidebarKeepsKeyboard = true
+                // Only for this switch: a sidebar squeezed out of a narrow window doesn't appear to take it,
+                // and one made later (from the menus, ⌘N) mustn't take the keyboard from the screen.
+                Task { @MainActor [model] in
+                    try? await Task.sleep(for: .seconds(1))
+                    model.sidebarKeepsKeyboard = false
+                }
+            }
         }
     }
 
