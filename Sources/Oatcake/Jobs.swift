@@ -31,6 +31,8 @@ struct ReviewDraft: Equatable {
     /// Where the meeting will be saved, relative to the Meetings folder.
     var folder: String
     var voices: [String: Voice]
+    /// Changed on the screen since it was opened or saved: quitting would lose it.
+    var edited = false
 }
 
 @MainActor @Observable
@@ -61,7 +63,10 @@ final class Jobs {
     private var staleSummaries = Set<UUID>()
     /// Jobs regenerating a meeting's to-dos that are followed by its summary: a voice was left out meanwhile.
     private var summaryAgain = Set<UUID>()
+    /// By recording. One that's been saved is kept until its screen is left, which still shows it.
     var reviewDrafts: [String: ReviewDraft] = [:]
+    /// Names typed (or anything else set) in Who's who that haven't been saved.
+    var hasNamesTyped: Bool { reviewDrafts.values.contains(where: \.edited) }
     /// Meetings whose to-dos couldn't be read from the model's reply, and why, by path.
     var todoProblems: [String: String] = [:]
     /// Meetings whose draft for sharing is being written now, and why the last attempt failed, by path.
@@ -204,7 +209,7 @@ final class Jobs {
                 summaryAgain.formUnion(writing)
             }
         }
-        reviewDrafts.removeValue(forKey: rec.id)
+        reviewDrafts[rec.id]?.edited = false
         tidySavedRecordings()
         return saved
     }
@@ -262,7 +267,7 @@ final class Jobs {
     /// Saves a reviewed recording as a meeting and starts writing its summary. Returns the meeting's path.
     func saveRecording(_ rec: Recording, decisions: [String: Decision], folder: String, title: String) throws -> String {
         let path = try saveMeeting(config, rec, decisions: decisions, folder: folder, title: title)
-        reviewDrafts.removeValue(forKey: rec.id)
+        reviewDrafts[rec.id]?.edited = false
         writeSummary(path)
         tidySavedRecordings()
         return path
