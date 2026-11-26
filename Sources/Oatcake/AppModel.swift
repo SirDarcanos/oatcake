@@ -206,7 +206,7 @@ final class AppModel {
         recording.menuBar.openEvent = { [weak self] event in self?.openEvent(event) }
         recording.updateMenuBar()
         updater.start(autoCheck: { [weak self] in self?.config.updateCheck ?? false },
-                      busy: { [weak self] in self?.busyReason })
+                      busy: { [weak self] in self?.whyUpdateWaits() })
     }
 
     // MARK: - Meetings folder
@@ -485,9 +485,10 @@ final class AppModel {
     /// recorded, but isn't being analysed until that read finds it).
     var hasWorkInFlight: Bool { refreshing || busyReason != nil || downloads.isDownloading }
 
-    /// What quitting now would interrupt, as a question to ask first; nil when it would interrupt
-    /// nothing. (The updater's own quit never gets here with one: it checks `busyReason`, which
-    /// covers the same things, just before it quits.)
+    /// What quitting now would interrupt or lose, as a question to ask first; nil when it would do
+    /// neither. Edits waiting to be saved are written before this is asked (saveEdits), so only those
+    /// that couldn't be are counted. (The updater's own quit never gets here with one: it checks
+    /// `whyUpdateWaits`, which covers the rest, just before it quits.)
     var quitQuestion: (title: String, text: String, ok: String)? {
         if let live = recording.live, recording.recorderFailure == nil {
             return ("Stop recording and quit?",
@@ -504,13 +505,36 @@ final class AppModel {
             doing.append("writing a summary")
             after.append("A summary that isn’t finished can be written later, with Write summary in its meeting.")
         }
+        if !jobs.drafting.isEmpty {
+            doing.append("writing a draft for sharing")
+            after.append("A draft that isn’t finished can be written later, with Draft for Sharing… in its meeting.")
+        }
+        if ask.running != nil {
+            doing.append("answering a question")
+            after.append("You can ask it again the next time you open Oatcake.")
+        }
         if let importing = library.importing {
             doing.append("importing from \(importing)")
             after.append("Importing again carries on with the meetings that didn’t come in.")
         }
-        guard !doing.isEmpty else { return nil }
-        let what = doing.count > 1 ? doing.dropLast().joined(separator: ", ") + " and " + doing.last! : doing[0]
-        return ("Quit Oatcake?", "Oatcake is \(what). \(after.joined(separator: " "))", "Quit")
+        // Typed, and kept nowhere that outlasts Oatcake.
+        var lost: [String] = []
+        if let title = notesOfCallNotRecorded { lost.append("the notes you’ve typed for “\(title)”, a call that wasn’t recorded") }
+        if edits.hasFailed { lost.append("edits that couldn’t be saved") }
+        // Not while an update is under way: it said so before it started, and its quit isn't asked again.
+        if updater.installing == nil, jobs.hasNamesTyped { lost.append("the names you’ve typed in Who’s who") }
+        guard !doing.isEmpty || !lost.isEmpty else { return nil }
+        func listed(_ items: [String]) -> String { items.count > 1 ? items.dropLast().joined(separator: ", ") + " and " + items.last! : items[0] }
+        let text = [doing.isEmpty ? nil : "Oatcake is \(listed(doing)).", lost.isEmpty ? nil : "Quitting loses \(listed(lost))."].compactMap { $0 } + after
+        return ("Quit Oatcake?", text.joined(separator: " "), "Quit")
+    }
+
+    /// The title of the call on the live screen that couldn't be recorded, when notes have been typed
+    /// for it: quitting deletes it, notes and all, as Close does.
+    private var notesOfCallNotRecorded: String? {
+        guard let live = recording.live, recording.recorderFailure != nil,
+              recording.liveNotes[live.id]?.contains(where: { !$0.text.trimmed.isEmpty }) == true else { return nil }
+        return live.title
     }
 
     /// Why an update has to wait, if it does.
@@ -518,7 +542,22 @@ final class AppModel {
         if recording.isRecording { return "Oatcake is recording a call. Install the update after you stop." }
         if jobs.isAnalysingAny { return "Oatcake is analysing a call. Install the update when it's done." }
         if !jobs.summarising.isEmpty { return "Oatcake is writing a summary. Try again in a moment." }
+        if !jobs.drafting.isEmpty { return "Oatcake is writing a draft for sharing. Try again in a moment." }
+        if ask.running != nil { return "Oatcake is answering a question. Try again in a moment." }
         if library.importing != nil { return "Oatcake is importing meetings. Install the update when it's done." }
         return nil
+    }
+
+    /// The updater asks this as it starts and again just before it quits. Edits waiting to be saved are
+    /// written first. Any that can't be, and notes typed for a call that wasn't recorded, would be lost,
+    /// so they're reasons to wait too: unlike `busyReason`, they don't end by themselves, so closing the
+    /// window doesn't wait for them (quitting asks instead).
+    private func whyUpdateWaits() -> String? {
+        saveEdits()
+        if edits.hasFailed { return "Oatcake couldn’t save some edits to a meeting. Choose Try again in the meeting, then install the update." }
+        if let title = notesOfCallNotRecorded {
+            return "Installing the update would delete the notes you’ve typed for “\(title)”, a call that wasn’t recorded. Copy them somewhere else and close the call first."
+        }
+        return busyReason
     }
 }

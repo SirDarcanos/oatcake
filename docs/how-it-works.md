@@ -126,8 +126,10 @@ that cuts out room noise is silent whenever you aren't talking); the call's scre
 so for as long as the mic is silent. If the recorder stops or never starts (no permission, a full
 disk), Oatcake notices (within a couple of seconds once it stops, or after 15 seconds of not
 starting), says so the same two ways, and keeps and processes whatever was recorded. Stop asks
-first, and so does quitting Oatcake while a call is being recorded, analysed or summarised, or
-meetings are being imported.
+first, and so does quitting Oatcake while a call is being recorded, analysed or summarised, a draft
+for sharing or an answer is being written, or meetings are being imported. Quitting also asks when
+it would lose something you've typed: notes for a call that couldn't be recorded, edits that
+couldn't be saved, or names in Who's who.
 
 ### Live transcript
 

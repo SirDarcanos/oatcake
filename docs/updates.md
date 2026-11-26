@@ -5,8 +5,10 @@ Updates can turn that off, and has **Check Now**; a development copy only checks
 A new release shows in the sidebar above Settings; **Update…** asks, then downloads it, checks
 it, and quits and reopens Oatcake on the new version. Settings › Updates shows what's new in it,
 with its own **Install and Relaunch**. It won't start while a call is being recorded or
-analysed, a summary is being written or meetings are being imported: it says so, and you try
-again afterwards. Nothing is installed until you click.
+analysed, a summary, a draft for sharing or an answer is being written, or meetings are being
+imported, nor while it would lose edits that couldn't be saved or notes typed for a call that
+couldn't be recorded: it says so, and you try again afterwards. Edits waiting to be saved are
+saved first. Nothing is installed until you click.
 
 Each release carries `latest.json`, a manifest naming the version and its zip (address,
 SHA-256, size), signed with Oatcake's Ed25519 release key. Oatcake checks that signature

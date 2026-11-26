@@ -139,6 +139,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Quitting asks first when it would end a recording or interrupt work that's under way.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         MainActor.assumeIsolated {
+            // Typing from the last moments is written first, so the question knows what couldn't be.
+            model.saveEdits()
             guard let question = model.quitQuestion else { return .terminateNow }
             let alert = NSAlert()
             alert.messageText = question.title
@@ -157,7 +159,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        MainActor.assumeIsolated { model.recording.stopAllRecorders() }
+        MainActor.assumeIsolated {
+            model.saveEdits()
+            model.recording.stopAllRecorders()
+        }
     }
 
     /// Reminders show even while Oatcake is in front.
