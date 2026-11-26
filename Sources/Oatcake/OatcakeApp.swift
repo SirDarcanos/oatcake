@@ -346,18 +346,25 @@ struct ContentView: View {
         // has a three-column one while the list shows and a two-column one otherwise. (The list and the
         // meeting split inside a two-column one's right-hand pane would share out every change in the
         // window's width, and couldn't be told the list's width.)
+        //
+        // Both split views save their columns' frames under the one name, so each would find the
+        // other's there. A split view with another number of columns was seen to discard them, but
+        // nothing promises it, so they're removed before either split view is made (at launch, and
+        // each time the list comes or goes) and each column starts at the width KeepsWidth kept.
+        let _ = UserDefaults.standard.removeObject(forKey: savedColumnFrames)
+        let sidebarWidth = KeepsWidth(key: "sidebarWidth", range: 200...520, ideal: 260, shown: sidebarShown)
         Group {
             if listShown {
                 NavigationSplitView(columnVisibility: sidebar(hiddenAs: .doubleColumn)) {
-                    SidebarView().keepsWidth("sidebarWidth", min: 200, ideal: 260, max: 520)
+                    SidebarView().modifier(sidebarWidth)
                 } content: {
-                    MeetingListView().keepsWidth("meetingListWidth", min: 220, ideal: 300, max: 560)
+                    MeetingListView().modifier(KeepsWidth(key: "meetingListWidth", range: 220...560, ideal: 300))
                 } detail: {
                     DetailView()
                 }
             } else {
                 NavigationSplitView(columnVisibility: sidebar(hiddenAs: .detailOnly)) {
-                    SidebarView().keepsWidth("sidebarWidth", min: 200, ideal: 260, max: 520)
+                    SidebarView().modifier(sidebarWidth)
                 } detail: {
                     DetailView()
                 }
@@ -406,15 +413,31 @@ struct ContentView: View {
     }
 }
 
-private extension View {
-    /// A column that starts at the width it last had. The window's split view remembers its columns'
-    /// widths only while it has as many columns as when they were saved, and it's made again each time
-    /// the meeting list comes or goes.
-    func keepsWidth(_ key: String, min: CGFloat, ideal: CGFloat, max: CGFloat) -> some View {
+/// Where SwiftUI saves the main window's split view columns: the window's id, then the kind of split
+/// view. The two-column and the three-column split views share it.
+private let savedColumnFrames = "NSSplitView Subview Frames main, SidebarNavigationSplitView"
+
+/// A column that starts at the width it last had, in place of the split view's own saved frames
+/// (see ContentView). A width is kept once it has held for half a second while the column shows and
+/// is one it can be dragged to: not one passed through as the sidebar slides away, or as the split
+/// view is first laid out. The column's width has to be the last modifier: under the others, the
+/// split view ignored it and opened the sidebar at 144 points, narrower than its minimum.
+private struct KeepsWidth: ViewModifier {
+    let key: String
+    let range: ClosedRange<CGFloat>
+    let ideal: CGFloat
+    var shown = true
+    @ViewState private var width: CGFloat = 0
+
+    func body(content: Content) -> some View {
         let saved = CGFloat(UserDefaults.standard.double(forKey: key))
-        return navigationSplitViewColumnWidth(min: min, ideal: saved >= min ? Swift.min(saved, max) : ideal, max: max)
-            // Nothing narrower than the column can be is kept: a hidden sidebar is no width at all.
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { if $0 >= min { UserDefaults.standard.set(Double($0), forKey: key) } }
+        content
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            .task(id: [width, shown ? 1 : 0]) {
+                guard shown, range.contains(width), (try? await Task.sleep(for: .milliseconds(500))) != nil else { return }
+                UserDefaults.standard.set(Double(width), forKey: key)
+            }
+            .navigationSplitViewColumnWidth(min: range.lowerBound, ideal: range.contains(saved) ? saved : ideal, max: range.upperBound)
     }
 }
 
