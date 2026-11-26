@@ -43,6 +43,17 @@ jobs:
           fi
           wait "$tests"
 
+      # The app as Scripts/bundle.sh packages it, signed ad-hoc (there are no secrets here), and
+      # recording the SDK it was built with: that decides how macOS draws it.
+      - name: Package the app
+        run: |
+          Scripts/bundle.sh debug
+          sdk="$(vtool -show-build build/Oatcake.app/Contents/MacOS/Oatcake | awk '$1 == "sdk" { print $2; exit }')"
+          if [ "$sdk" != "$(xcrun --sdk macosx --show-sdk-version)" ]; then
+            echo "::error::The app records SDK $sdk, not the one it was built with."
+            exit 1
+          fi
+
       - name: Check the scripts parse
         run: |
           sh -n install.sh

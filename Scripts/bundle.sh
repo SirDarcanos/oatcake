@@ -50,8 +50,15 @@ sed "s/VERSION/$VERSION/g" Resources/OatcakeRecorder-Info.plist > "$RECORDER/Con
 SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
 for program in "$APP/Contents/MacOS/Oatcake" "$RECORDER/Contents/MacOS/oatcake-recorder"; do
     minos="$(vtool -show-build "$program" | awk '$1 == "minos" { print $2; exit }')"
-    # vtool warns that the signature is now invalid: it's signed below.
-    vtool -set-build-version macos "$minos" "$SDK_VERSION" -replace -output "$program" "$program" 2>/dev/null
+    if [[ -z "$minos" ]]; then
+        echo "error: vtool found no macOS build version in $program." >&2
+        exit 1
+    fi
+    # vtool warns that the signature is now invalid (it's signed below): only a failure is shown.
+    if ! out="$(vtool -set-build-version macos "$minos" "$SDK_VERSION" -replace -output "$program" "$program" 2>&1)"; then
+        echo "error: vtool couldn't rewrite $program: $out" >&2
+        exit 1
+    fi
     if [[ "$(vtool -show-build "$program" | awk '$1 == "sdk" { print $2; exit }')" != "$SDK_VERSION" ]]; then
         echo "error: couldn't record SDK $SDK_VERSION in $program." >&2
         exit 1
