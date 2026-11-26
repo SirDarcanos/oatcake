@@ -3,7 +3,7 @@ import SwiftUI
 
 extension MeetingView {
     /// A to-do's due date as the To-dos page writes it, in the Mac's region; todo.md's own words when
-    /// they aren't a date ("end of the week").
+    /// they aren't a date ("ASAP").
     private func dueText(_ due: String) -> String {
         let when = parseISO(meta.startedAt) ?? meetingDate(node)
         return dueDate(due, meetingDate: when).map { shortDay($0) } ?? due
