@@ -43,6 +43,13 @@ struct RenameSpeakersSheet: View {
                     }
                 }
             }
+            // Said before Rename, as the fields are filled in: the transcript can't tell them apart again.
+            ForEach(speakersMerged(speakers.map(\.name), by: changes), id: \.name) { merge in
+                let names = merge.speakers.map { "“\($0)”" }
+                Text("\(names.dropLast().joined(separator: ", ")) and \(names.last ?? "") become one speaker, “\(merge.name)”, for good.")
+                    .foregroundStyle(Color.amber)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)

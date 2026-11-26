@@ -4,7 +4,7 @@ Oatcake looks for a new release 20 seconds after it opens and then once a day (S
 Updates can turn that off, and has **Check Now**; a development copy only checks when asked).
 A new release shows in the sidebar above Settings; **Update…** asks, then downloads it, checks
 it, and quits and reopens Oatcake on the new version. Settings › Updates shows what's new in it,
-with its own **Install and Relaunch**. It won't start while a call is being recorded or
+with its own **Install and relaunch…**, which asks the same question. It won't start while a call is being recorded or
 analysed, a summary is being written or meetings are being imported: it says so, and you try
 again afterwards. Nothing is installed until you click.
 

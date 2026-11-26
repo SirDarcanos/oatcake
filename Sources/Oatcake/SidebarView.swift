@@ -407,20 +407,27 @@ private struct UpdateNotice: View {
                     // Opens Settings on its Updates pane.
                     SettingsPaneLink(pane: "updates", title: "Details")
                 } else {
-                    // Asked first: it quits Oatcake, and whatever is half done in a window goes with it.
                     Button("Update…") { confirming = true }.buttonStyle(.borderedProminent)
-                        .alert("Install Oatcake \(available.version)?", isPresented: $confirming) {
-                            Button("Install and Relaunch") { Task { await u.install() } }
-                            Button("Cancel", role: .cancel) {}
-                        } message: {
-                            Text("Oatcake downloads it, quits and reopens on the new version. A Who’s who you haven’t saved yet keeps its recording, but not the names you’ve typed.")
-                        }
+                        .installQuestion(available.version, isPresented: $confirming) { Task { await u.install() } }
                 }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .overlay(alignment: .top) { Divider() }
             .background(.bar)
+        }
+    }
+}
+
+extension View {
+    /// Asked before an update is installed, from the sidebar or Settings: it quits Oatcake, and
+    /// whatever is half done in a window goes with it.
+    func installQuestion(_ version: String, isPresented: Binding<Bool>, install: @escaping () -> Void) -> some View {
+        alert("Install Oatcake \(version)?", isPresented: isPresented) {
+            Button("Install and relaunch", action: install)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Oatcake downloads it, quits and reopens on the new version. A Who’s who you haven’t saved yet keeps its recording, but not the names you’ve typed.")
         }
     }
 }

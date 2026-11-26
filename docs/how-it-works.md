@@ -126,8 +126,8 @@ that cuts out room noise is silent whenever you aren't talking); the call's scre
 so for as long as the mic is silent. If the recorder stops or never starts (no permission, a full
 disk), Oatcake notices (within a couple of seconds once it stops, or after 15 seconds of not
 starting), says so the same two ways, and keeps and processes whatever was recorded. Stop asks
-first, and so does quitting Oatcake while a call is being recorded, analysed or summarised, or
-meetings are being imported.
+first (Return stops), and so does quitting Oatcake while a call is being recorded, analysed or summarised, or
+meetings are being imported. A question asked while another is on screen waits for that one to be answered.
 
 ### Live transcript
 
@@ -221,7 +221,8 @@ it, and **Update meeting** writes its transcript and `meeting.json` again in pla
 names where the old ones were in its summary and to-dos (as whole words: each "Voice N" stands for
 one voice, so it's an exact swap wherever the model wrote it that way), and leaves your notes and
 its title as they are. Name them while the summary is still being written and it's written again
-from the named transcript. **Keep as is** keeps the names it has. If a call can't be saved by
+from the named transcript. **Keep these names…** keeps the names it has, once you've confirmed
+that its voice clips are deleted. If a call can't be saved by
 itself, it waits here as usual.
 
 ## 4. Save
@@ -308,7 +309,7 @@ your tasks somewhere else, turn off [Collect to-dos](settings.md#general) in Set
 
 Organise meetings by dragging them onto folders; ⌘-click or ⇧-click selects several, and they all
 move. Right-click a meeting for **Rename…**, **Show in Finder** or **Move to Trash**, or several for
-**Show in Finder** or **Move to Trash** (⌘⌫ in the File menu does the same); **Show in Finder** is in the meeting's **⋯** menu too. Renaming
+**Show in Finder** or **Move to Trash**, which asks first for several (⌘⌫ in the File menu does the same); **Show in Finder** is in the meeting's **⋯** menu too. Renaming
 a meeting changes its title (in `meeting.json`) and its folder's name, which keeps its date.
 Folders can hold folders. Click the arrow next to a folder's name to show or hide its subfolders.
 Right-click a folder for **New Folder Inside…**, **Rename…**, **Show in Finder** or **Move to
@@ -322,7 +323,8 @@ or
 names a "Voice 2": it lists the transcript's speakers, each with their first words, and a field for
 another name. Only that meeting changes: the transcript's labels (never what was said), the names
 in its summary and to-dos, and its people in `meeting.json`. Two names can swap, and giving two
-speakers one name makes them one; "Several people" stays as it is. The fingerprint saved from that
+speakers one name makes them one, which the sheet says before you choose Rename, since it can't be
+undone; "Several people" stays as it is. The fingerprint saved from that
 call goes with the name, so the next call isn't recognised as the wrong person too. It stays only
 when the new name is the old one spelt out ("John" → "John Smith") and the voice clearly matches
 their other calls (Settings › People renames a person everywhere). A meeting saved without checking

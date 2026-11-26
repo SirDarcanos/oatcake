@@ -54,7 +54,7 @@
   notes. With **Keep call audio after saving** on, the audio goes into the meeting's own folder as
   `audio.m4a` first, so it's in one place and goes to the Trash with the meeting. A meeting saved
   without checking who's who (After a call) keeps its analysis and voice clips there, but not the
-  call's full tracks, until its voices are named, you choose Keep as is, or the meeting itself
+  call's full tracks, until its voices are named, you choose Keep these names, or the meeting itself
   goes (to the Trash, or deleted in Finder; that's noticed at launch and after the next save).
 - Recording one call at a time is enforced by the app. If Oatcake crashes mid-call, the recorder
   carries on for up to ten minutes; opening Oatcake again in that time picks the recording up,

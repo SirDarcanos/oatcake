@@ -128,7 +128,7 @@ their chosen colour with them, and so does merging them into someone who hasn't 
   server's setting, so match it to the server. Empty means 32,768, and Oatcake needs at least
   16,384. **Download Now** fetches the
   chosen model straight away rather than at your first call, **Stop** stops a download, **Remove…**
-  deletes it (or **Remove Partial Download**), and **Test** asks it for one word. A model on a
+  deletes it (or **Remove partial download…**), each asking first, and **Test** asks it for one word. A model on a
   server of your own that reasons first can still be reasoning when the test's room for that word
   runs out: it answered, so that's a pass too. See [Language model](models.md#language-model).
 
@@ -211,7 +211,7 @@ intended folder there.
 
 ## Updates
 
-- **Check Now**, and what's new in a release that's waiting, with **Install and Relaunch** (or the
+- **Check Now**, and what's new in a release that's waiting, with **Install and relaunch…**, which asks first as the sidebar's **Update…** does (or the
   install line to copy, for a copy that can't update itself).
 - **Check for updates automatically** (on to start with): once a day. Nothing is installed until
   you choose to. See [Updates](updates.md).

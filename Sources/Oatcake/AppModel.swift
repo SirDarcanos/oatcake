@@ -30,13 +30,16 @@ struct Jump: Equatable {
 /// `draft` is shown only in meetings with a draft for sharing (or one on its way).
 enum MeetingTab: String, CaseIterable { case summary, transcript, notes, draft }
 
-/// "Stop recording?" and the like: a question with a destructive answer.
+/// "Discard this recording?" and the like: a question asked before an action. `destructive`: the
+/// answer deletes or replaces something, so its button is red and Return doesn't press it; otherwise
+/// (Stop recording) it's the default button.
 struct Confirmation: Identifiable {
     let id = UUID()
     var title: String
     var text: String
     var ok: String
     var cancel: String
+    var destructive = true
     var action: () async throws -> Void
 }
 
@@ -46,7 +49,7 @@ struct Confirmation: Identifiable {
 struct AppServices {
     var config: @MainActor () -> Config = { Config.defaults() }
     var toast: @MainActor (_ text: String, _ isError: Bool) -> Void = { _, _ in }
-    /// Asks a question with a destructive answer.
+    /// Asks a question before an action.
     var confirm: @MainActor (Confirmation) -> Void = { _ in }
     /// Takes a question back if it's still the one being asked: what it asked about has been settled another way.
     var withdraw: @MainActor (Confirmation.ID) -> Void = { _ in }
@@ -77,7 +80,10 @@ final class AppModel {
     var selection: Selection?
     /// The folder the middle column lists.
     var folder = ""
-    var confirmation: Confirmation?
+    /// The question on screen. One asked while it's up waits its turn: put in its place, the alert's
+    /// buttons would answer a question it didn't show.
+    private(set) var confirmation: Confirmation?
+    private var waitingQuestions: [Confirmation] = []
     var toastText: String?
     /// The toast showing says something went wrong: it stays longer, and goes when it's clicked.
     var toastIsError = false
@@ -111,8 +117,8 @@ final class AppModel {
     private func wire() {
         let app = AppServices(config: { [unowned self] in self.config },
                               toast: { [unowned self] text, isError in self.toast(text, isError: isError) },
-                              confirm: { [unowned self] in self.confirmation = $0 },
-                              withdraw: { [unowned self] id in if self.confirmation?.id == id { self.confirmation = nil } },
+                              confirm: { [unowned self] in self.confirm($0) },
+                              withdraw: { [unowned self] in self.endConfirmation($0) },
                               refresh: { [unowned self] in self.refresh() },
                               showWindow: { [unowned self] in self.showWindow() },
                               selection: { [unowned self] in self.selection },
@@ -301,6 +307,23 @@ final class AppModel {
         if isError, let window = NSApp.mainWindow ?? NSApp.keyWindow {
             NSAccessibility.post(element: window, notification: .announcementRequested,
                                  userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+        }
+    }
+
+    func confirm(_ question: Confirmation) {
+        if confirmation == nil { confirmation = question } else { waitingQuestions.append(question) }
+    }
+
+    /// A question has been answered, or taken back because what it asked about was settled another
+    /// way. The next one waiting is asked a moment later, once the alert has gone.
+    func endConfirmation(_ id: Confirmation.ID) {
+        waitingQuestions.removeAll { $0.id == id }
+        guard confirmation?.id == id else { return }
+        confirmation = nil
+        guard !waitingQuestions.isEmpty else { return }
+        Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            if confirmation == nil, !waitingQuestions.isEmpty { confirmation = waitingQuestions.removeFirst() }
         }
     }
 

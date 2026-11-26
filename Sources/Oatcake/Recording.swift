@@ -383,7 +383,7 @@ final class RecordingController {
         ask(Confirmation(
             title: "Stop recording?",
             text: "Oatcake will transcribe the call and ask you to check who’s who. You can’t add more to this recording afterwards.",
-            ok: "Stop recording", cancel: "Keep recording") { [self] in await stopLive() })
+            ok: "Stop recording", cancel: "Keep recording", destructive: false) { [self] in await stopLive() })
     }
 
     /// A question about the call being recorded. If the recording ends some other way while it's

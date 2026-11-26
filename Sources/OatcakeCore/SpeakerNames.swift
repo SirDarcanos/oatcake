@@ -39,6 +39,27 @@ public func meetingSpeakers(_ transcript: String) -> [MeetingSpeaker] {
     return order.compactMap { found[$0] }
 }
 
+/// The renames that change anything: a blank new name, or the old one again, leaves that speaker as
+/// they are, and "Several people" is never renamed or given to anyone.
+private func effective(_ renames: [String: String]) -> [String: String] {
+    renames.mapValues(\.trimmed).filter { old, new in !new.isEmpty && old != new && old != severalPeople && new != severalPeople }
+}
+
+/**
+ * The speakers a rename makes one, under the name they'll share, in the order they speak: a name
+ * given to someone else already in the meeting, or to two of them. Names swapped aren't a merge.
+ * Rename speakers… says so before it's done, because the transcript can't tell them apart again.
+ */
+public func speakersMerged(_ speakers: [String], by renames: [String: String]) -> [(name: String, speakers: [String])] {
+    let changes = effective(renames)
+    var groups: [(name: String, speakers: [String])] = []
+    for speaker in speakers {
+        let name = changes[speaker] ?? speaker
+        if let i = groups.firstIndex(where: { $0.name == name }) { groups[i].speakers.append(speaker) } else { groups.append((name, [speaker])) }
+    }
+    return groups.filter { $0.speakers.count > 1 }
+}
+
 extension Meetings {
     /**
      * Rename speakers…: gives a saved meeting's speakers other names (old name → new), in that
@@ -51,9 +72,7 @@ extension Meetings {
      * next call isn't recognised as the wrong person too. Other meetings aren't touched.
      */
     public func renameSpeakers(_ rel: String, _ renames: [String: String], me: String, voiceprints: URL = Paths.voiceprints) throws {
-        let changes = renames.mapValues(\.trimmed).filter { old, new in
-            !new.isEmpty && old != new && old != severalPeople && new != severalPeople
-        }
+        let changes = effective(renames)
         guard !changes.isEmpty else { return }
         guard !rel.isEmpty else { throw OatcakeError("That isn't a meeting") }
         let files = try read(rel)

@@ -423,7 +423,7 @@ struct MeetingView: View {
         model.toast("Copied the \(what)")
     }
 
-    /// A meeting saved without checking who's who has Name voices… instead, until Keep as is.
+    /// A meeting saved without checking who's who has Name voices… instead, until Keep these names.
     private var canRenameSpeakers: Bool {
         guard !speakers.isEmpty else { return false }
         guard let id = meta.recording else { return true }
@@ -568,8 +568,11 @@ struct MeetingView: View {
                     flush()
                     model.selection = .job(id)
                 }
-                Button("Keep as is") { model.jobs.keepAsIs(id) }
-                    .help("Keep these names. The recording’s voice clips are deleted, so its voices can’t be named later.")
+                Button("Keep these names…") {
+                    model.confirm(Confirmation(title: "Keep these names?",
+                                               text: "The recording’s voice clips are deleted for good, so its voices can’t be named later. The meeting stays as it is.",
+                                               ok: "Keep these names", cancel: "Cancel") { model.jobs.keepAsIs(id) })
+                }
             }
             .padding(.top, 6)
         }

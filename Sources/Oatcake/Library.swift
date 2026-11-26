@@ -90,9 +90,16 @@ final class Library {
         return made
     }
 
-    /// Moves meetings or folders to the Trash. One that can't be moved stops the rest, and the toast
-    /// says how many went before it and why.
+    /// Moves meetings or folders to the Trash. Several at once ask first, as a folder with meetings in it does.
     func trash(_ nodes: [TreeNode]) {
+        guard nodes.count > 1 else { return moveToTrash(nodes) }
+        app.confirm(Confirmation(title: "Move \(nodes.count) meetings to the Trash?",
+                                 text: "You can put them back from the Trash in Finder.",
+                                 ok: "Move to Trash", cancel: "Cancel") { [self] in moveToTrash(nodes) })
+    }
+
+    /// One that can't be moved stops the rest, and the toast says how many went before it and why.
+    private func moveToTrash(_ nodes: [TreeNode]) {
         defer {
             whenTrashed()
             refresh()
@@ -118,10 +125,10 @@ final class Library {
     /// A folder's Move to Trash. One with meetings in it asks first: it takes them all with it.
     func trashFolder(_ node: TreeNode) {
         let count = node.allMeetings.count
-        guard count > 0 else { return trash([node]) }
+        guard count > 0 else { return moveToTrash([node]) }
         app.confirm(Confirmation(title: "Move “\(node.name)” to the Trash?",
                                     text: "It holds \(count == 1 ? "1 meeting, which goes" : "\(count) meetings, which go") with it. You can put \(count == 1 ? "it" : "them") back from the Trash in Finder.",
-                                    ok: "Move to Trash", cancel: "Cancel") { [self] in trash([node]) })
+                                    ok: "Move to Trash", cancel: "Cancel") { [self] in moveToTrash([node]) })
     }
 
     func reveal(_ path: String) { reveal([path]) }

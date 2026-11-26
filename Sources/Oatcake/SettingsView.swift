@@ -720,8 +720,14 @@ private struct ModelRow: View {
                 HStack {
                     // A download that was stopped, or failed, leaves what it had fetched: gigabytes that only this removes.
                     if LocalModels.hasPartialDownload(chosen) {
-                        Button("Remove Partial Download") { model.downloads.removeModel(chosen) }
+                        Button("Remove partial download…") { removing = true }
                             .help("Deletes the part of \(chosen.title) that has been downloaded so far")
+                            .alert("Remove the part of \(chosen.title) downloaded so far?", isPresented: $removing) {
+                                Button("Remove", role: .destructive) { model.downloads.removeModel(chosen) }
+                                Button("Cancel", role: .cancel) {}
+                            } message: {
+                                Text("Its download starts again from the beginning the next time it’s needed.")
+                            }
                     }
                     Button(error == nil ? "Download Now" : "Try Again") { model.downloads.downloadModel(chosen) }
                 }
@@ -915,6 +921,7 @@ private struct PeopleSection: View {
 private struct UpdatesSection: View {
     @Environment(AppModel.self) private var model
     @ViewState private var copied = false
+    @ViewState private var confirming = false
 
     var body: some View {
         let u = model.updater
@@ -950,8 +957,9 @@ private struct UpdatesSection: View {
                         }
                     } else {
                         HStack {
-                            Button(u.installing ?? "Install and Relaunch") { Task { await u.install() } }
+                            Button(u.installing ?? "Install and relaunch…") { confirming = true }
                                 .buttonStyle(.borderedProminent).disabled(u.installing != nil)
+                                .installQuestion(available.version, isPresented: $confirming) { Task { await u.install() } }
                             Text("\(Int((Double(available.size) / 1e6).rounded())) MB download. Oatcake quits and reopens.").font(.callout).foregroundStyle(.secondary)
                         }
                     }

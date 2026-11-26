@@ -52,7 +52,7 @@ struct MeetingListView: View {
                     } else if nodes.count > 1 {
                         Button("Show in Finder") { model.library.reveal(nodes.map(\.path)) }
                         Divider()
-                        Button("Move \(nodes.count) Meetings to Trash") { model.library.trash(nodes) }
+                        Button("Move \(nodes.count) Meetings to Trash…") { model.library.trash(nodes) }
                     }
                 }
                 // File › Move to Trash (⌘⌫, as in Finder) acts on the selection while the list has the keyboard.
