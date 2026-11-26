@@ -78,8 +78,9 @@ struct SearchOverlay: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 2) {
+                    let words = query.trimmed.split(separator: " ").map(String.init)
                     ForEach(Array(rows.enumerated()), id: \.element.path) { i, m in
-                        row(m, hit: hits[m.path], chosen: i == chosen)
+                        row(m, hit: hits[m.path], words: words, chosen: i == chosen)
                             .id(i)
                             .contentShape(Rectangle())
                             .onTapGesture { open(m, hit: hits[m.path]) }
@@ -94,20 +95,20 @@ struct SearchOverlay: View {
         }
     }
 
-    private func row(_ m: TreeNode, hit: SearchHit?, chosen: Bool) -> some View {
+    private func row(_ m: TreeNode, hit: SearchHit?, words: [String], chosen: Bool) -> some View {
         let parent = parentOf(m.path)
         let secondary = chosen ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary)
         return VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(meetingTitle(m)).fontWeight(.semibold).lineLimit(1)
+                Text(marked(meetingTitle(m), words)).fontWeight(.semibold).lineLimit(1)
                 Spacer(minLength: 8)
                 if let date = meetingDate(m) { Text(compactDate(date)).foregroundStyle(secondary).monospacedDigit() }
             }
-            if !parent.isEmpty { Text(folderPath(parent)).font(.callout).foregroundStyle(secondary).lineLimit(1) }
+            if !parent.isEmpty { Text(marked(folderPath(parent), words)).font(.callout).foregroundStyle(secondary).lineLimit(1) }
             if let hit, let file = hit.file, !hit.line.isEmpty {
                 // Found in the meeting's text: the line that has the words, and where it is.
                 let place = [MeetingFile.summary: "Summary", .todo: "To-dos", .notes: "My notes", .transcript: "Transcript"][file] ?? ""
-                (Text("\(place) · ").fontWeight(.medium) + Text(hit.line))
+                (Text("\(place) · ").fontWeight(.medium) + Text(marked(hit.line, words)))
                     .font(.callout).foregroundStyle(secondary).lineLimit(2)
             }
         }
@@ -118,6 +119,21 @@ struct SearchOverlay: View {
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(chosen ? Color.accentColor : .clear))
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
+    }
+
+    /// The text with each of the words searched for marked wherever it appears, as Find marks what it
+    /// finds: dark on yellow, which reads on a chosen row's blue too.
+    private func marked(_ text: String, _ words: [String]) -> AttributedString {
+        var out = AttributedString(text)
+        for word in words where !word.isEmpty {
+            var from = out.startIndex
+            while from < out.endIndex, let found = out[from...].range(of: word, options: [.caseInsensitive, .diacriticInsensitive]) {
+                out[found].backgroundColor = .yellow
+                out[found].foregroundColor = .black
+                from = found.upperBound
+            }
+        }
+        return out
     }
 
     /// What a meeting is found by, besides its text.
