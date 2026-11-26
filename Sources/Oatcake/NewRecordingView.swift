@@ -53,7 +53,9 @@ struct NewRecordingView: View {
                                 .controlSize(.large)
                                 .help("Opens \(callApp(link) ?? "the call")")
                         }
-                        Button("Cancel") { model.openFolder(model.folder) }.controlSize(.large).buttonStyle(.borderless)
+                        // Escape too. Back to where you were before.
+                        Button("Cancel") { model.cancelNewRecording() }.controlSize(.large).buttonStyle(.borderless)
+                            .keyboardShortcut(.cancelAction)
                     }
                     VStack(alignment: .leading, spacing: 3) {
                         // Said before it happens: the first recording brings a download of several gigabytes with it.

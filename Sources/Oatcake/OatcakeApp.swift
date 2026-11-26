@@ -271,8 +271,9 @@ struct DetailView: View {
                 }
             case .todos:
                 if model.config.todosEnabled { TodosView() } else { blank }
-            case .new(let event, let key):
-                NewRecordingView(event: event).id(key)
+            case .new(let event):
+                // Made again only for another event: choosing the same one again keeps what's been typed.
+                NewRecordingView(event: event).id(event?.id)
                     .toolbar { EmptyPaneToolbar() }
             case .live:
                 if let rec = model.recording.live { LiveView(rec: rec) } else { blank }

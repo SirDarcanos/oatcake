@@ -38,6 +38,14 @@ struct SidebarView: View {
             }
             Section {
                 if let tree = model.library.tree {
+                    // Every meeting, whatever folder it's in; highlighted while the list shows them.
+                    HStack {
+                        Label("All meetings", systemImage: "tray.full")
+                        Spacer()
+                        let count = tree.allMeetings.count
+                        if count > 0 { Text("\(count)").foregroundStyle(.secondary).monospacedDigit() }
+                    }
+                    .tag(SidebarItem.folder(""))
                     ForEach(visibleFolders(tree), id: \.node.path) { item in
                         FolderRow(node: item.node, depth: item.depth, open: $open, renaming: $renaming, draft: $draft,
                                   newFolderIn: $newFolderIn, dropTarget: $dropTarget)

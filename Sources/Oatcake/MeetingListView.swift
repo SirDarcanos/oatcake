@@ -23,8 +23,14 @@ struct MeetingListView: View {
         Group {
             if rows.isEmpty {
                 VStack(spacing: 10) {
-                    Text(everything ? "No meetings yet." : "No meetings in this folder yet.")
+                    // A folder lists only its own meetings: one whose meetings are all in the folders inside it says so.
+                    let inside = folder?.allMeetings.count ?? 0
+                    Text(everything ? "No meetings yet."
+                         : inside == 1 ? "This folder’s one meeting is in a folder inside it."
+                         : inside > 1 ? "This folder’s \(inside) meetings are in the folders inside it."
+                         : "No meetings in this folder yet.")
                         .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                     Button { model.newRecording() } label: { Label(everything ? "New recording" : "Record here", systemImage: "circle.fill") }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -1,9 +1,13 @@
 import OatcakeCore
 import SwiftUI
 
-/// Remembered across meetings, so you can step through meetings on the same tab and view.
+/// Remembered across meetings, so you can step through meetings on the same tab and view. The tab
+/// is kept from one launch to the next too.
 @MainActor private enum Remembered {
-    static var tab = MeetingTab.summary
+    static var tab: MeetingTab {
+        get { MeetingTab.last }
+        set { MeetingTab.last = newValue }
+    }
     static var markdown = false
 }
 
