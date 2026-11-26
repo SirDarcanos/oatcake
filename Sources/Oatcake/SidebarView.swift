@@ -78,7 +78,7 @@ struct SidebarView: View {
             .buttonStyle(.bordered)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .help("New recording (⌘N)")
+            .help(model.recording.live != nil ? "Return to the recording (⌘N)" : "New recording (⌘N)")
         }
         // Settings is in the Oatcake menu (⌘,) and the menu bar item, as other Mac apps keep it.
         .safeAreaInset(edge: .bottom, spacing: 0) { UpdateNotice() }

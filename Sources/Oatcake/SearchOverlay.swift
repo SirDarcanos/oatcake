@@ -125,7 +125,7 @@ struct SearchOverlay: View {
     private func results(_ search: String) -> [TreeNode] {
         guard !search.isEmpty else { return [] }
         if let found, found.query == search { return found.hits.compactMap { root?.find($0.path) } }
-        let words = search.split(separator: " ").map(String.init)
+        let words = searchWords(search)
         return listedIn(root).filter { m in words.allSatisfy { label(m).localizedStandardContains($0) } }
     }
 
@@ -146,7 +146,11 @@ struct SearchOverlay: View {
         close()
         guard let file = hit?.file else { return model.openMeeting(m.path) }
         let tab: MeetingTab = file == .transcript ? .transcript : file == .notes ? .notes : .summary
-        model.openMeeting(m.path, jump: Jump(tab: tab, stamp: hit?.stamp, words: searchWords(query)))
+        // Find gets the words found in the text, not those that were only in the title or folder:
+        // it looks for lines with all of them, and wouldn't find one.
+        let words = searchWords(query)
+        let inText = words.filter { !label(m).localizedStandardContains($0) }
+        model.openMeeting(m.path, jump: Jump(tab: tab, stamp: hit?.stamp, words: inText.isEmpty ? words : inText))
     }
 
     private func close() { model.searching = false }

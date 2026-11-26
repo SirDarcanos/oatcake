@@ -105,10 +105,13 @@ struct MeetingView: View {
         .onAppear {
             if let jump {
                 tab = jump.tab
-                // Opened from search: its words in Find, marked wherever they are in the meeting.
+                // Opened from search: its words in Find, marked wherever they are in the meeting. Read
+                // as laid out, as ⌘F does: the Markdown editors mark nothing.
                 if !jump.words.isEmpty {
                     query = jump.words.joined(separator: " ")
                     finding = true
+                    markdown = false
+                    Remembered.markdown = false
                 }
             }
             load()
