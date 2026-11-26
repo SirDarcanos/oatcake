@@ -76,10 +76,11 @@ folder and ⌘R refreshes the calendar; all of these are in the File and Edit me
 Text (⌘+), Smaller Text (⌘-) and Actual Size (⌘0) change the size of what you read and type:
 summaries, transcripts, notes and answers.
 
-Closing the window quits Oatcake, unless a call is being recorded or the menu bar is showing your
-next call: then it stays in the menu bar. Work that's still going (a call being analysed, a summary
-being written, an import, a model downloading) keeps it open until it's done, and then it quits.
-The Dock icon brings the window back.
+By default, closing the window keeps Oatcake running in the background, checking for calls and
+sending reminders. It stops appearing as a running app in the Dock and stays in the menu bar.
+Choose **Open Oatcake** there to bring back the window and Dock icon. Turn off **Run in the
+background** in Settings › General to quit when the last window closes, once any recording or work
+has finished. **Quit Oatcake** (⌘Q) stops Oatcake and its call checks regardless of this setting.
 
 ## 1. Record
 
@@ -156,10 +157,11 @@ switches in Settings › General.
 ### The menu bar
 
 While a call is being recorded the menu bar shows its running time, with **Stop Recording…**
-(which asks first) in its menu. Otherwise, with a calendar connected, it shows the time until your
-next call (Settings › Calendar › Show my next call in the menu bar), and its menu lists up to six calls
-coming up today and tomorrow (click one for its New recording screen), **New Recording…**, **Open
-Oatcake** and **Quit Oatcake**. The menu bar item is drawn by a third helper, `Oatcake
+(which asks first) in its menu. When not recording, the Oatcake icon is there if **Run in the
+background** is on or calendar details are shown. **Show my next call in the menu bar** in Settings
+› Calendar adds the time until your next call and lists up to six calls today and tomorrow (click
+one to open its New recording screen). The menu offers **Open Oatcake** and **Quit Oatcake**,
+and **New Recording…** when not recording. The menu bar item is drawn by a third helper, `Oatcake
 --menu-bar`, a menu-bar-only app: macOS doesn't show a Dock app's menu bar menu while another app
 is in full screen.
 

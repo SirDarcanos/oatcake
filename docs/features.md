@@ -26,6 +26,8 @@ Everything Oatcake does today, with a link to where each is described. Planned w
   screen and as notifications; what was recorded is kept. [Record](how-it-works.md#1-record)
 - An offer to record when a calling app starts using the microphone, and an automatic stop when
   the call ends, with **Keep recording**. [Calls are noticed](how-it-works.md#calls-are-noticed)
+- An option to keep call notices working after you close the window. Reopen or quit Oatcake from
+  its menu bar icon. [The menu bar](how-it-works.md#the-menu-bar)
 - The running time and **Stop Recording…** in the menu bar, including over full-screen apps.
   [The menu bar](how-it-works.md#the-menu-bar)
 - A recording carries on if Oatcake crashes, and is picked up if it opens again within ten minutes.

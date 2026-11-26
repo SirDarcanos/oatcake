@@ -410,6 +410,8 @@ final class AppModel {
     }
 
     func showWindow() {
+        // Restore the Dock icon and app menus when coming back from menu-bar-only mode.
+        if NSApp.activationPolicy() == .accessory { NSApp.setActivationPolicy(.regular) }
         NSApp.activate()
         if let window = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" && $0.isVisible }) {
             if window.isMiniaturized { window.deminiaturize(nil) }
@@ -449,8 +451,10 @@ final class AppModel {
 
     // MARK: - Status
 
-    /// Work that closing the window shouldn't end: anything an update waits for, and a model on its way down.
-    var hasWorkInFlight: Bool { busyReason != nil || downloads.isDownloading }
+    /// Work that closing the window shouldn't end: anything an update waits for, a model on its way
+    /// down, and a read of the recordings under way (a call that has just stopped is no longer being
+    /// recorded, but isn't being analysed until that read finds it).
+    var hasWorkInFlight: Bool { refreshing || busyReason != nil || downloads.isDownloading }
 
     /// What quitting now would interrupt, as a question to ask first; nil when it would interrupt
     /// nothing. (The updater's own quit never gets here with one: it checks `busyReason`, which
