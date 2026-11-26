@@ -52,6 +52,8 @@ struct AppServices {
     var withdraw: @MainActor (Confirmation.ID) -> Void = { _ in }
     /// Something on disk has changed: read the Meetings folder and the recordings again.
     var refresh: @MainActor () -> Void = {}
+    /// The same, returning once what was read is in place.
+    var refreshed: @MainActor () async -> Void = {}
     var showWindow: @MainActor () -> Void = {}
     var selection: @MainActor () -> Selection? = { nil }
     var select: @MainActor (Selection?) -> Void = { _ in }
@@ -78,6 +80,9 @@ final class AppModel {
     /// The folder the middle column lists.
     var folder = ""
     var confirmation: Confirmation?
+    /// Markdown typed in meetings and not written yet, kept here rather than by the meeting's view so
+    /// that quitting and updating can write it too (saveEdits).
+    var edits = MeetingEdits()
     var toastText: String?
     /// The toast showing says something went wrong: it stays longer, and goes when it's clicked.
     var toastIsError = false
@@ -92,6 +97,8 @@ final class AppModel {
     /// A read of the Meetings folder is under way, and another has been asked for since it began.
     private var refreshing = false
     private var refreshWanted = false
+    /// Waiting for a read that starts after they asked (refreshed()).
+    private var waitingForRead: [CheckedContinuation<Void, Never>] = []
     var openMainWindow: (() -> Void)?
     var openSettingsWindow: (() -> Void)?
 
@@ -114,6 +121,7 @@ final class AppModel {
                               confirm: { [unowned self] in self.confirmation = $0 },
                               withdraw: { [unowned self] id in if self.confirmation?.id == id { self.confirmation = nil } },
                               refresh: { [unowned self] in self.refresh() },
+                              refreshed: { [unowned self] in await self.refreshed() },
                               showWindow: { [unowned self] in self.showWindow() },
                               selection: { [unowned self] in self.selection },
                               select: { [unowned self] in self.selection = $0 },
@@ -213,6 +221,9 @@ final class AppModel {
         }
         refreshing = true
         let meetings = library.meetings
+        // This read sees everything those waiting asked for; anyone asking from now on waits for the next.
+        let waiting = waitingForRead
+        waitingForRead = []
         Task {
             let (tree, pending, unchecked, todos) = await Task.detached {
                 // The folder is walked once: the to-dos are read from the tree just built.
@@ -222,6 +233,7 @@ final class AppModel {
             }.value
             refreshing = false
             defer {
+                for continuation in waiting { continuation.resume() }
                 if refreshWanted {
                     refreshWanted = false
                     refresh()
@@ -243,6 +255,26 @@ final class AppModel {
             jobs.startWaiting()
             jobs.updateBadge()
         }
+    }
+
+    /// Reads the Meetings folder and the recordings again, and returns once what's read is in place.
+    func refreshed() async {
+        await withCheckedContinuation { continuation in
+            waitingForRead.append(continuation)
+            refresh()
+        }
+    }
+
+    /// Writes the Markdown edits waiting to be saved, in one meeting or in all. An edit whose file was
+    /// changed meanwhile is put beside it, and that's said; one that can't be written stays waiting.
+    @discardableResult
+    func saveEdits(in meeting: String? = nil) -> [MeetingEdits.Outcome] {
+        let outcomes = edits.save(to: library.meetings, in: meeting)
+        for case .setAside(let key, let name) in outcomes {
+            toast("\(key.file.rawValue) changed while you were typing in it, so Oatcake didn’t save over it. What you typed is in “\(name)”, beside it in the meeting’s folder.",
+                  isError: true)
+        }
+        return outcomes
     }
 
     func openMeeting(_ path: String, jump: Jump? = nil) {
@@ -278,6 +310,7 @@ final class AppModel {
         let remap = { (p: String) in p == from ? to : p.hasPrefix(from + "/") ? to + p.dropFirst(from.count) : p }
         folder = remap(folder)
         jobs.moved(remap)
+        edits.moved(remap)
         switch selection {
         case .meeting(let p, let jump): selection = .meeting(remap(p), jump: jump)
         case .folder(let p): selection = .folder(remap(p))
@@ -374,6 +407,8 @@ final class AppModel {
         panel.canCreateDirectories = true
         panel.prompt = "Choose"
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        // Into the folder they were typed in, before it's another.
+        saveEdits()
         config.outputDir = url.path
         config.mcpApprovedRoot = config.mcpEnabled ? try? MCPServer.RootIdentity.approve(config.meetingsRoot) : nil
         persistSettings(movingLibrary: true)

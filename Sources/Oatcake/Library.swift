@@ -134,10 +134,6 @@ final class Library {
 
     func readMeeting(_ path: String) throws -> MeetingFiles { try meetings.read(path) }
 
-    func writeMeetingFile(_ path: String, _ file: MeetingFile, _ content: String) throws {
-        try meetings.write(path, file, content)
-    }
-
     /// Ticks or unticks a to-do in todo.md as it is now, not as a view last read it: a tick never
     /// writes back over to-dos that have arrived since (the summary's, say). `text` is the to-do's
     /// task, which finds it if its line has moved. "" is the Meetings folder's own list.

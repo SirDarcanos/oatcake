@@ -345,11 +345,13 @@ final class Jobs {
             } catch {
                 summaryErrors[summaryJobs[job] ?? path] = error.localizedDescription
             }
+            // Its summary and to-dos open for typing again only once the meeting has been read again
+            // with what was written: until then they'd show what was there before, to be typed over.
+            await app.refreshed()
             let meeting = summaryJobs[job] ?? path
             summarising.remove(meeting)
             summaryJobs.removeValue(forKey: job)
             if summaryAgain.remove(job) != nil { writeSummary(meeting, only: .summary) }
-            refresh()
         }
     }
 

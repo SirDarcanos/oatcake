@@ -252,7 +252,10 @@ she/her/hers it writes is changed to they/them/their afterwards, with the verb a
 Tabs, in the toolbar over the meeting: Summary (with the meeting's to-dos at the top), Transcript
 and My notes (⌘1–⌘3), and Draft (⌘4) in a meeting that has a [draft for sharing](#draft-for-sharing), each
 Rendered or as editable Markdown from the switch at the top right of the note (saved as you type;
-Summary shows `todo.md` and `summary.md`). Everything else that can be done to the meeting is in
+Summary shows `todo.md` and `summary.md`). If the file changes while you type (its summary
+arrives, or it's edited in another app), Oatcake doesn't save over it: it shows the file as it is
+now and keeps what you typed beside it, as `summary (your version).md` and so on, and says so.
+Everything else that can be done to the meeting is in
 the **⋯** menu at the right of the toolbar. **Copy** puts the tab you're on (the summary with its
 to-dos, the transcript, or your notes) on the clipboard under the meeting's title and date,
 formatted for Google Docs, Pages or mail and as Markdown for anything that only takes plain text,
