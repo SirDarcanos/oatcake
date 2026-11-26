@@ -506,7 +506,7 @@ struct MeetingView: View {
                 }
                 Button("Keep these names…") {
                     model.confirm(Confirmation(title: "Keep these names?",
-                                               text: "The recording’s voice clips are deleted for good, so its voices can’t be named later. The meeting stays as it is.",
+                                               text: "This meeting’s voice clips are deleted for good, so its voices can’t be named later. The meeting stays as it is.",
                                                ok: "Keep these names", cancel: "Cancel") { model.jobs.keepAsIs(id) })
                 }
             }

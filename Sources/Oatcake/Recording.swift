@@ -370,12 +370,12 @@ final class RecordingController {
             liveEnded(rec, watching: watching)
             if finished {
                 Reminders.say("Recording stopped", status.error ?? "Recording stopped by itself. Oatcake is transcribing what was recorded of “\(rec.title)”.", id: "recorder-stopped")
-                toast("The recording stopped")
+                toast("Recording stopped")
             } else {
                 Reminders.say("Recording stopped unexpectedly",
                               "Recording stopped part-way through “\(rec.title)”. What was recorded is being transcribed. Start recording again to carry on with the call.",
                               id: "recorder-stopped")
-                toast("The recording stopped unexpectedly")
+                toast("Recording stopped unexpectedly")
             }
             return
         }
@@ -431,7 +431,7 @@ final class RecordingController {
     func confirmStop() {
         ask(Confirmation(
             title: "Stop recording?",
-            text: "Oatcake will transcribe the call and ask you to check who’s who. You can’t add more to this recording afterwards.",
+            text: "Oatcake will transcribe the call and ask you to check who’s who. You can’t record more of this call afterwards.",
             ok: "Stop recording", cancel: "Keep recording", destructive: false) { [self] in await stopLive() })
     }
 
@@ -482,7 +482,7 @@ final class RecordingController {
             Task { do { try await cancel() } catch { toast(error.localizedDescription, isError: true) } }
             return
         }
-        ask(Confirmation(title: "Cancel this recording?",
+        ask(Confirmation(title: "Cancel recording?",
                                     text: "Nothing has been recorded yet. The notes you’ve typed for it will be deleted.",
                                     ok: "Cancel recording", cancel: "Keep waiting", action: cancel))
     }

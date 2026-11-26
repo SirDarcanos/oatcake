@@ -46,7 +46,7 @@ struct Place: Equatable {
     var folder: String
 }
 
-/// "Discard this recording?" and the like: a question asked before an action. `destructive`: the
+/// "Discard this call?" and the like: a question asked before an action. `destructive`: the
 /// answer deletes or replaces something, so its button is red and Return doesn't press it; otherwise
 /// (Stop recording) it's the default button.
 struct Confirmation: Identifiable {
@@ -696,7 +696,7 @@ final class AppModel {
     var quitQuestion: (title: String, text: String, ok: String)? {
         if let live = recording.live, recording.recorderFailure == nil {
             return ("Stop recording and quit?",
-                    "Oatcake is recording “\(live.title)”. Quitting stops the recording. What’s been recorded so far is transcribed the next time you open Oatcake.",
+                    "Oatcake is recording “\(live.title)”. Quitting stops recording. What’s been recorded so far is transcribed the next time you open Oatcake.",
                     "Stop recording and quit")
         }
         var doing: [String] = []

@@ -167,7 +167,7 @@ private struct RecordingItems: View {
             if case .new(let event?) = model.selection { return event.callLink.flatMap(URL.init(string:)) }
             return nil
         }()
-        Button("New Recording") { model.newRecording() }.keyboardShortcut("n")
+        Button("Record a Call…") { model.newRecording() }.keyboardShortcut("n")
         Button("Stop Recording…") { model.stopFromMenuBar() }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(!canStop)
         Divider()
         Button("Join Call") { if let call { NSWorkspace.shared.open(call) } }.disabled(call == nil)
@@ -438,7 +438,7 @@ struct DetailView: View {
             case .new(let event):
                 // Made again only for another event: choosing the same one again keeps what's been typed.
                 NewRecordingView(event: event).id(event?.id)
-                    .navigationTitle("New recording")
+                    .navigationTitle("Record a call")
             case .live:
                 if let rec = model.recording.live { LiveView(rec: rec).navigationTitle(rec.title) } else { blank }
             case .job(let id):
@@ -475,7 +475,7 @@ struct DetailView: View {
             if let folder, newestIn(folder, 1).isEmpty {
                 VStack(spacing: 14) {
                     PageTitle(text: everything ? "All meetings" : baseName(folder.path))
-                    Button { model.newRecording() } label: { Label(everything ? "New recording" : "Record here", systemImage: "circle.fill") }
+                    Button { model.newRecording() } label: { Label(everything ? "Record a call" : "Record here", systemImage: "circle.fill") }
                 }
             } else if folder != nil {
                 Text("Select a meeting").foregroundStyle(.secondary)

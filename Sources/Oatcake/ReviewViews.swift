@@ -11,8 +11,8 @@ func recordingMeta(_ rec: Recording) -> String {
 /// The failure in plain words; the raw message stays behind "Details".
 private func explain(_ failure: AnalysisFailure?) -> String {
     switch failure {
-    case .unreadableRecording: "Its recording details couldn’t be read. The files may be damaged or incomplete. Trying again won’t fix this. Discard the recording to clear it."
-    case .missingAudio: "Some of its audio files are missing. Trying again won’t fix this. Discard the recording to clear it."
+    case .unreadableRecording: "Its recording details couldn’t be read. The files may be damaged or incomplete. Trying again won’t fix this. Discard this call to clear it."
+    case .missingAudio: "Some of its audio files are missing. Trying again won’t fix this. Discard this call to clear it."
     case .speechModels: "The speech models couldn’t be loaded. Check your internet connection, then try again."
     case .helperStopped: "Transcribing stopped unexpectedly. Try again."
     case .other, nil: "Oatcake couldn’t finish transcribing this call. Its audio is safe. Try again; if it fails twice, Details says what went wrong."
@@ -27,7 +27,7 @@ struct ProcessingView: View {
     var body: some View {
         let progress = model.jobs.progress[rec.id]
         let stage = progress?.stage
-        let step = progress?.waiting == true ? "Waiting for another recording to be transcribed" : stage?.title ?? "Starting"
+        let step = progress?.waiting == true ? "Waiting for another call to be transcribed" : stage?.title ?? "Starting"
         let n = stage?.number ?? 1
         let within = progress?.fraction ?? (stage?.isStep == true ? 0.5 : 0.1)
         // The first recording on a Mac fetches the speech models before anything can be transcribed.

@@ -61,13 +61,13 @@ Settings, with **Open notification settings**.
   and start time appear on more than one feed, it gets one row with all its dots and one reminder.
   With no calendars connected, Home offers **Connect calendar** and the sidebar hides Upcoming.
 
-  **New recording** shows the matching calendars’ names and dots above Attendees. When you save
+  **Record a call** shows the matching calendars’ names and dots above Attendees. When you save
   the meeting, the dots appear in the meeting list. The meeting file keeps only
   local calendar IDs, not names or addresses. The dots reflect your current colours and disappear
   if you remove a calendar. Older meetings without calendar information don’t get a dot.
 
   On Home, **Join the call** opens the call link without recording. Clicking an event, on Home or in
-  the sidebar, opens New recording for it, named after it, in the folder with the same name
+  the sidebar, opens Record a call for it, named after it, in the folder with the same name
   or path ("John & Jane 1:1" finds "John & Jane 1-1", "Product – Weekly sync" finds "Product ›
   Weekly sync"), or offering a new folder for a recurring event with none. **Join the call** opens
   its Meet, Zoom or Teams link (only links on those services' own domains count, so a look-alike
@@ -79,7 +79,7 @@ Settings, with **Open notification settings**.
   starts recording it (in the folder named like the event; a new folder for a recurring event
   without one, ":" and "/" becoming "-"), and brings Oatcake forward on the live notes. If the
   event has gone from your calendars since, the button says so and starts nothing. Clicking the
-  notification itself opens New recording for the event. macOS asks once whether Oatcake may send
+  notification itself opens Record a call for the event. macOS asks once whether Oatcake may send
   notifications; the packaged app asks for Alerts, so reminders stay up until dealt with.
 - **Reminder** (while reminders are on): how long before each call it comes, 5 minutes to start
   with. **Add reminder** adds another (5 minutes and 1 minute before, say), and − removes one.
@@ -169,7 +169,7 @@ keeps its lowest level; one on Ollama that can't reason at all is asked again wi
 - **Summary templates:** other summary instructions, each with a name, for the meetings that need a
   different summary (a one-to-one you lead, one with your own lead, a team meeting). **Add
   Template** starts one as a copy of the summary instructions; change its name and instructions in
-  place, or **Delete…** it. Pick one on [New recording](how-it-works.md#1-record) or change it from
+  place, or **Delete…** it. Pick one on [Record a call](how-it-works.md#1-record) or change it from
   [Regenerate Summary](how-it-works.md#regenerate-and-summary-templates). The meeting
   keeps the choice without changing your standard summary instructions.
   A meeting keeps its template by name: once that template is renamed or deleted, the meeting is

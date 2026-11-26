@@ -255,7 +255,7 @@ final class Jobs {
         let config = config
         // Off the main thread: a meeting that has been moved is looked for through the whole Meetings folder.
         guard let path = await Task.detached(operation: { Recordings.meetingPath(rec, meetingsRoot: config.meetingsRoot) }).value else {
-            throw OatcakeError("The meeting saved from this recording couldn’t be found. It may have been deleted.")
+            throw OatcakeError("The meeting saved from this call couldn’t be found. It may have been deleted.")
         }
         // Also before the save: a summary finished while the meeting is written would keep the old names.
         staleSummaries.formUnion(summaryJobs.filter { $0.value == path }.map(\.key))
@@ -318,7 +318,7 @@ final class Jobs {
     }
 
     func discard(_ rec: Recording) {
-        app.confirm(Confirmation(title: "Discard this recording?",
+        app.confirm(Confirmation(title: "Discard this call?",
                                     text: "The audio, transcript and your notes will be deleted. This can’t be undone.",
                                     ok: "Discard", cancel: "Cancel") { [self] in
             // A helper still analysing it would write its transcript and clips back after the folder had gone.
@@ -331,7 +331,7 @@ final class Jobs {
             Reminders.withdrawReadyToCheck(rec.id)
             progress.removeValue(forKey: rec.id)
             app.showFolder()
-            toast("Recording discarded")
+            toast("Call discarded")
             refresh()
         })
     }

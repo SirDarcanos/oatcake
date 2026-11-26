@@ -113,7 +113,7 @@ public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: 
     if let existing {
         outRel = existing
         out = try resolveInside(config.meetingsRoot, existing)
-        guard savedRecording(out) == rec.id else { throw OatcakeError("The meeting saved from this recording couldn’t be found.") }
+        guard savedRecording(out) == rec.id else { throw OatcakeError("The meeting saved from this call couldn’t be found.") }
         let kept = tryJSON(MeetingMeta.self, out.appendingPathComponent("meeting.json"))
         if let keptTitle = kept?.title?.trimmed, !keptTitle.isEmpty { title = keptTitle }
         template = kept?.template

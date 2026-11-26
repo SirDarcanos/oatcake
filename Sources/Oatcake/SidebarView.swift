@@ -105,9 +105,9 @@ struct SidebarView: View {
             Button { model.newRecording() } label: {
                 // During a call it goes back to that call, so it says so.
                 if model.recording.live != nil {
-                    Label("Return to recording", systemImage: "waveform").frame(maxWidth: .infinity)
+                    Label("Return to the call", systemImage: "waveform").frame(maxWidth: .infinity)
                 } else {
-                    Label("New recording", systemImage: "circle.fill")
+                    Label("Record a call", systemImage: "circle.fill")
                         .labelStyle(NewRecordingLabelStyle())
                         .frame(maxWidth: .infinity)
                 }
@@ -116,7 +116,7 @@ struct SidebarView: View {
             .buttonStyle(.bordered)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .help(model.recording.live != nil ? "Return to the recording (⌘N)" : "New recording (⌘N)")
+            .help(model.recording.live != nil ? "Return to the call (⌘N)" : "Record a call (⌘N)")
         }
         // Settings is in the Oatcake menu (⌘,) and the menu bar item, as other Mac apps keep it.
         .safeAreaInset(edge: .bottom, spacing: 0) { UpdateNotice() }
@@ -548,7 +548,7 @@ extension View {
             Button("Install and relaunch", action: install)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Oatcake downloads it, quits and reopens on the new version. A Who’s who you haven’t saved yet keeps its recording, but not the names you’ve typed.")
+            Text("Oatcake downloads it, quits and reopens on the new version. A Who’s who you haven’t saved yet keeps its audio, but not the names you’ve typed.")
         }
     }
 }

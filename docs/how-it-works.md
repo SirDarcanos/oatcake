@@ -55,7 +55,7 @@ your own, on your Mac or your network, instead.
 
 With a folder or **All meetings** chosen, or a meeting open, the window is laid out as Mail's is,
 in three columns: the sidebar, the meetings in that folder, and the meeting itself. The other
-screens (Home, To-dos, New recording, a call being recorded, Who's who) have the rest of the window
+screens (Home, To-dos, Record a call, a call being recorded, Who's who) have the rest of the window
 to themselves beside the sidebar, with their own name as the window's title. One toolbar runs
 across the top: over the meeting list, the folder's name, how many meetings it has, and the search
 button; over the screen on the right, its own controls, what it is at the left and what can be
@@ -77,13 +77,13 @@ until you click it.
 
 Oatcake opens where it was when it was last closed: Home, To-dos or the meeting that was open (on
 the tab last chosen), with the folder that was listed; or on a recording that was still going. Home
-shows upcoming calls, the same rows as the sidebar's Upcoming (click one for New recording,
+shows upcoming calls, the same rows as the sidebar's Upcoming (click one for Record a call,
 right-click to ignore it), with **Join the call** beside the one on now or next. The
-sidebar's **New recording** button is beside it, or **Return to recording** during a call. When to-dos are enabled, Home
+sidebar's **Record a call** button is beside it, or **Return to the call** during a call. When to-dos are enabled, Home
 also shows up to five open items, earliest due first, with their assignees and due dates. Add or
 tick off to-dos on Home, or choose **View all to-dos** to manage the full list.
 
-⌘N starts a new recording, and ⌥⌘F (or the search button over the meeting list) opens search over
+⌘N opens **Record a call**, and ⌥⌘F (or the search button over the meeting list) opens search over
 the window. It finds meetings by their title, folder, summary, to-dos, notes and transcript as you
 type, newest first, with the words marked; one found by its text shows the line with them. It says
 **Searching…** until every meeting's text has been looked through, then how many it found. ↑ and
@@ -96,7 +96,7 @@ to-do's, a citation in Ask, a search result), ⌘[ goes back to where you were a
 Everything is in the menus: File (New Folder, Refresh Calendars, Move to Trash), Edit (Find, Search
 Meetings, Ask About Your Meetings), View (the meeting's tabs, and Bigger Text, Smaller Text and
 Actual Size for what you read and type), Go (Back, Forward, Home, To-dos, All Meetings), Meeting
-(everything in the open meeting's **⋯** menu), Recording (New Recording, Stop Recording…, Join Call,
+(everything in the open meeting's **⋯** menu), Recording (Record a Call…, Stop Recording…, Join Call,
 Show Live Notes) and Help, which opens these pages. [Keyboard shortcuts](keyboard-shortcuts.md)
 lists the keys. Bigger Text (⌘+), Smaller Text (⌘-) and Actual Size (⌘0) change the size of
 summaries, transcripts (the meeting's, the live one and Who's who's), notes, answers, the meeting
@@ -119,7 +119,7 @@ has finished. **Quit Oatcake** (⌘Q) stops Oatcake and its call checks regardle
 
 ## 1. Record
 
-New recording, or click an event under Upcoming. Pick the folder (a calendar event picks the
+**Record a call**, or click an event under Upcoming. Pick the folder (a calendar event picks the
 folder named like it, or the one its earlier meetings are in, or offers a new one for a recurring
 event); leave the title blank to use the folder's name. The screen shows the event's attendees
 and its **Join the call** button, the open to-dos from the latest earlier meeting in that folder
@@ -127,7 +127,7 @@ that has any (ticking one updates its `todo.md`), and takes prep notes, which op
 notes: type them one at a time or paste a list, which becomes a note per line. They're kept for
 that call until it's recorded (for up to 30 days), so you can write them ahead and come back.
 
-If you've set up [summary templates](settings.md#summaries), choose one on **New recording**.
+If you've set up [summary templates](settings.md#summaries), choose one on **Record a call**.
 For a calendar event, Oatcake suggests the template from the latest saved meeting with the same
 title, or **Default** if there isn't a matching template. You can change the choice for this
 recording. Oatcake keeps it with the saved meeting and uses it for the first summary, whether
@@ -210,7 +210,7 @@ While a call is being recorded the menu bar shows its running time, with **Stop 
 (which asks first) in its menu. When not recording, the Oatcake icon is there if **Run in the
 background** is on or calendar details are shown. **Show my next call in the menu bar** in Settings
 › Calendars › Reminders adds the time until your next call and lists up to six calls today and
-tomorrow (click one to open its New recording screen). The menu offers **New Recording…** when not
+tomorrow (click one to open its Record a call screen). The menu offers **Record a Call…** when not
 recording, then
 **Settings** in its own section, then **Open Oatcake** and **Quit Oatcake**. The menu bar item is
 drawn by a third helper, `Oatcake

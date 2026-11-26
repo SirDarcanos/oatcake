@@ -74,7 +74,7 @@ import Testing
         let meeting = tmp.appendingPathComponent("Meeting")
         try fm.createDirectory(at: meeting, withIntermediateDirectories: true)
         let audio = meeting.appendingPathComponent("audio.m4a")
-        #expect(throws: OatcakeError("This recording has no audio to keep.")) { try exportAudio(recording: tmp, to: audio) }
+        #expect(throws: OatcakeError("This call has no audio to keep.")) { try exportAudio(recording: tmp, to: audio) }
 
         try Data(count: 2 * sampleRate).write(to: tmp.appendingPathComponent("mic.pcm"))
         // Nowhere to write it: the meeting's folder has gone.
