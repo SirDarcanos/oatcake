@@ -352,9 +352,9 @@ struct NewRecordingView: View {
 
 private let sameAsMac = ""
 
-/// "Same as Mac (now …)", each microphone, and the saved one if it's gone, marked "(not connected)" when asked.
+/// "Same as Mac" (the hint beside it names the microphone that is), each microphone, and the saved
+/// one if it's gone, marked "(not connected)" when asked.
 func micChoices(_ mic: MicChoice?, _ devices: [InputDevice], markMissing: Bool = true) -> [(value: String, label: String, missing: Bool)] {
-    let current = devices.first(where: \.isDefault) ?? devices.first
     var out: [(String, String, Bool)] = [(sameAsMac, "Same as Mac", false)]
     out += devices.map { ($0.uid, $0.name, false) }
     if let mic, !devices.contains(where: { $0.uid == mic.uid }) { out.append((mic.uid, markMissing ? "\(mic.name) (not connected)" : mic.name, true)) }

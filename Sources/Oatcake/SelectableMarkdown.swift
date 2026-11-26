@@ -207,7 +207,8 @@ private func inlineText(_ text: AttributedString, font: NSFont, color: NSColor =
         if let link = run.link {
             attributes[.link] = link
             // A link to a moment in a transcript looks like the time chips elsewhere: tinted behind, digits even.
-            if link.fragment?.isEmpty == false {
+            // Only Oatcake's own links: a web page's #section isn't a moment.
+            if link.fragment?.isEmpty == false, !["http", "https"].contains(link.scheme?.lowercased() ?? "") {
                 attributes[.backgroundColor] = NSColor.controlAccentColor.withAlphaComponent(0.12)
                 runFont = NSFont.monospacedDigitSystemFont(ofSize: font.pointSize - 1, weight: .medium)
             }

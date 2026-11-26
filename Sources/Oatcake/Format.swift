@@ -226,7 +226,12 @@ func person(_ name: String, remember: Bool = true) -> Person {
     let clean = name.replacingOccurrences(of: "^Voice ", with: "", options: .regularExpression)
     // Two letters for a full name ("JD" for Jane Doe), so people who share a first name, and so a
     // colour, can still be told apart.
-    let words = clean.split(whereSeparator: \.isWhitespace).compactMap { $0.first { $0.isLetter || $0.isNumber } }
+    // Not what's in brackets ("Jane Doe (Acme)") or a suffix ("Jane Doe Jr.").
+    let suffixes: Set<String> = ["jr", "sr", "ii", "iii", "iv"]
+    let words = clean.replacingOccurrences(of: #"\([^)]*\)"#, with: " ", options: .regularExpression)
+        .split(whereSeparator: \.isWhitespace)
+        .filter { !suffixes.contains($0.lowercased().trimmingCharacters(in: .punctuationCharacters)) }
+        .compactMap { $0.first { $0.isLetter || $0.isNumber } }
     let initial = (words.count > 1 ? String([words[0], words[words.count - 1]]) : words.first.map(String.init) ?? "?").uppercased()
     if name.trimmed.isEmpty || name.range(of: notAPerson, options: .regularExpression) != nil {
         return Person(initial: name.hasPrefix("Voice") ? String(clean.prefix(1)) : initial, color: Color(nsColor: .systemGray), isPerson: false)
