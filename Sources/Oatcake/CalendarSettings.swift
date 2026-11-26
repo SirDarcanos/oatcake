@@ -52,7 +52,10 @@ struct ReminderTimesRows: View {
                     .fixedSize()
                     // The last one stays: turning reminders off is the switch above.
                     if minutes.count > 1 {
-                        Button { minutes.remove(at: index) } label: { Image(systemName: "minus.circle") }
+                        Button { minutes.remove(at: index) } label: {
+                            // Drawn at its own size, but 24 points to click, as the app's other small buttons are.
+                            Image(systemName: "minus.circle").frame(width: 24, height: 24).contentShape(Rectangle())
+                        }
                             .buttonStyle(.borderless)
                             .help("Remove this reminder")
                             .accessibilityLabel("Remove the reminder \(Self.label(chosen))")
