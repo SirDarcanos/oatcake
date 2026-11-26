@@ -581,6 +581,13 @@ struct MeetingView: View {
         })
     }
 
+    /// A to-do's due date as the To-dos page writes it, in the Mac's region; todo.md's own words when
+    /// they aren't a date ("end of the week").
+    private func dueText(_ due: String) -> String {
+        let when = parseISO(meta.startedAt) ?? meetingDate(node)
+        return dueDate(due, meetingDate: when).map { shortDay($0) } ?? due
+    }
+
     private var metaLine: String {
         let date = parseISO(meta.startedAt) ?? meetingDate(node)
         let length = parseISO(meta.endedAt).flatMap { end in parseISO(meta.startedAt).map { end.timeIntervalSince($0) } }
@@ -752,7 +759,7 @@ struct MeetingView: View {
                 // No to-dos yet: just the field to add one.
                 if !todos.isEmpty { SectionLabel(text: "To-dos\(open > 0 ? " · \(open) open" : "")") }
                 ForEach(todos, id: \.line) { t in
-                    let detail = [t.owner.isEmpty ? nil : ownerLabel(t.owner, model.config.myName), t.due.isEmpty ? nil : "due \(t.due)"].compactMap { $0 }
+                    let detail = [t.owner.isEmpty ? nil : ownerLabel(t.owner, model.config.myName), t.due.isEmpty ? nil : "due \(dueText(t.due))"].compactMap { $0 }
                     // The time in the call goes on the line under the to-do, after its owner and due date, as on the To-dos page.
                     TodoRow(todo: t, task: marked(t.text), tick: { tick(t) }) {
                         if !detail.isEmpty || !t.stamp.isEmpty {
