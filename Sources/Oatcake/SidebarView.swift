@@ -27,7 +27,7 @@ struct SidebarView: View {
 
     var body: some View {
         List(selection: selectionBinding) {
-            if let live = model.recording.live { liveRow(live).tag(SidebarItem.live) }
+            if let live = model.recording.live { LiveRow(rec: live).tag(SidebarItem.live) }
             Label("Home", systemImage: "house").tag(SidebarItem.home)
             if model.config.todosEnabled { todosRow.tag(SidebarItem.todos) }
             if model.calendar.hasCalendars { upcoming }
@@ -161,28 +161,6 @@ struct SidebarView: View {
     }
 
     // MARK: Rows
-
-    private func liveRow(_ rec: Recording) -> some View {
-        // What's true of it: on its way up, recording, or not recording at all.
-        let state = model.recording.status.state
-        let failed = model.recording.recorderFailure != nil
-        let recording = state == .recording && !failed
-        let label = failed ? "Couldn’t record" : state == .starting ? "Starting…" : recording ? "Recording · \(clock(model.recording.status.elapsed ?? 0))" : "Recording stopped"
-        return HStack(spacing: 9) {
-            if recording {
-                RecDot()
-            } else if failed {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).font(.caption)
-            } else {
-                Circle().fill(.secondary).frame(width: 7, height: 7)
-            }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(rec.title).lineLimit(1)
-                Text(label)
-                    .font(.caption).foregroundStyle(recording || failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary)).monospacedDigit()
-            }
-        }
-    }
 
     private func topLevelRow(_ m: TreeNode) -> some View {
         HStack(spacing: 4) {
@@ -327,6 +305,35 @@ struct NewRecordingLabelStyle: LabelStyle {
         HStack(spacing: 7) {
             configuration.icon.foregroundStyle(.red).font(.system(size: 9))
             configuration.title.fontWeight(.medium)
+        }
+    }
+}
+
+/// The call being recorded. A view of its own, as it reads the recorder's status (twice a second):
+/// the rest of the sidebar isn't drawn again each time.
+private struct LiveRow: View {
+    @Environment(AppModel.self) private var model
+    let rec: Recording
+
+    var body: some View {
+        // What's true of it: on its way up, recording, or not recording at all.
+        let state = model.recording.status.state
+        let failed = model.recording.recorderFailure != nil
+        let recording = state == .recording && !failed
+        let label = failed ? "Couldn’t record" : state == .starting ? "Starting…" : recording ? "Recording · \(clock(model.recording.status.elapsed ?? 0))" : "Recording stopped"
+        return HStack(spacing: 9) {
+            if recording {
+                RecDot()
+            } else if failed {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).font(.caption)
+            } else {
+                Circle().fill(.secondary).frame(width: 7, height: 7)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(rec.title).lineLimit(1)
+                Text(label)
+                    .font(.caption).foregroundStyle(recording || failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary)).monospacedDigit()
+            }
         }
     }
 }

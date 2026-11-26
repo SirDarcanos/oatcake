@@ -10,14 +10,18 @@ import Foundation
 /// One line of the live transcript: what was heard on your microphone, or on the call audio.
 public struct LiveTranscriptLine: Codable, Equatable, Identifiable, Sendable {
     public enum Track: String, Codable, Sendable { case mic, system }
-    public var track: Track
+    public let track: Track
     /// Seconds into the track, which is the time into the call to within a moment.
-    public var start: Double
+    public let start: Double
     public var end: Double
     public var text: String
     /// Who said a line from the call side, when it's known: nil until then.
     public var speaker: String?
-    public var id: String { "\(track.rawValue) \(start)" }
+    /// "mic 12.4". Kept rather than worked out when asked: the live screen asks for every line's
+    /// each time it's drawn. Not written out: it follows from the track and start.
+    public let id: String
+
+    private enum CodingKeys: String, CodingKey { case track, start, end, text, speaker }
 
     public init(track: Track, start: Double, end: Double, text: String, speaker: String? = nil) {
         self.track = track
@@ -25,6 +29,14 @@ public struct LiveTranscriptLine: Codable, Equatable, Identifiable, Sendable {
         self.end = end
         self.text = text
         self.speaker = speaker
+        id = "\(track.rawValue) \(start)"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(track: try c.decode(Track.self, forKey: .track), start: try c.decode(Double.self, forKey: .start),
+                  end: try c.decode(Double.self, forKey: .end), text: try c.decode(String.self, forKey: .text),
+                  speaker: try c.decodeIfPresent(String.self, forKey: .speaker))
     }
 }
 
@@ -164,9 +176,25 @@ func nameLiveVoices(_ voices: [LiveVoice], named: [String: String]) -> [String: 
 /// The lines in the order they were said, without microphone lines that only repeat the call audio
 /// (the other side coming out of your speakers).
 public func liveTranscript(_ lines: [LiveTranscriptLine]) -> [LiveTranscriptLine] {
-    let call = lines.filter { $0.track == .system }.map { Line(speaker: "A", start: $0.start, end: $0.end, text: $0.text) }
+    // In order, so each of your lines is held up only against the call lines around it: worked out
+    // again for every line that arrives, and a long call has thousands.
+    let call = lines.filter { $0.track == .system }.sorted { $0.start < $1.start }.map { Line(speaker: "A", start: $0.start, end: $0.end, text: $0.text) }
+    let longest = call.map { $0.end - $0.start }.max() ?? 0
+    /// The first call line that starts after `time` (or at it, with `including`).
+    func firstStarting(after time: Double, including: Bool = false) -> Int {
+        var low = 0, high = call.count
+        while low < high {
+            let mid = (low + high) / 2
+            if call[mid].start < time || (!including && call[mid].start == time) { low = mid + 1 } else { high = mid }
+        }
+        return low
+    }
     return lines
-        .filter { $0.track == .system || !isEcho(Line(speaker: me, start: $0.start, end: $0.end, text: $0.text), call) }
+        .filter { line in
+            guard line.track == .mic else { return true }
+            let near = call[firstStarting(after: line.start - echoWindow - max(0, longest), including: true)..<firstStarting(after: line.end + echoWindow)]
+            return !isEcho(Line(speaker: me, start: line.start, end: line.end, text: line.text), Array(near))
+        }
         .sorted { $0.start < $1.start }
 }
 

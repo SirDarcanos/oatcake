@@ -323,7 +323,7 @@ func splitBySpeaker(_ u: Utterance, turns: [Turn], letters: [String: String]) ->
     }
 }
 
-private let echoWindow = 6.0
+let echoWindow = 6.0
 
 /// The words in a line, for comparing lines. Chinese and Japanese aren't written with spaces between
 /// words, so each of their characters counts as one: otherwise a whole clause would be a "word", and
