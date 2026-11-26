@@ -202,8 +202,6 @@ struct SidebarView: View {
 
     private func topLevelRow(_ m: TreeNode) -> some View {
         HStack(spacing: 4) {
-            // Where a folder's disclosure arrow is, so the names line up.
-            Color.clear.frame(width: 12, height: 16)
             Label(meetingTitle(m), systemImage: "doc.text").lineLimit(1)
             Spacer()
             if let date = meetingDate(m) { Text("\(shortMonth(date)) \(gregorian.component(.day, from: date))").foregroundStyle(.secondary).monospacedDigit() }
@@ -369,24 +367,26 @@ private struct FolderRow: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Button {
-                if open.contains(node.path) { open.remove(node.path) } else { open.insert(node.path) }
-            } label: {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(open.contains(node.path) ? 90 : 0))
-                    .frame(width: 12, height: 16)
-                    .contentShape(Rectangle())
+            HStack(spacing: 4) {
+                Label(node.name, systemImage: "folder").lineLimit(1)
+                if !node.subfolders.isEmpty {
+                    Button {
+                        if open.contains(node.path) { open.remove(node.path) } else { open.insert(node.path) }
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(open.contains(node.path) ? 90 : 0))
+                            .frame(width: 12, height: 16)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("\(open.contains(node.path) ? "Hide" : "Show") the folders in \(node.name)")
+                    .buttonStyle(.plain)
+                }
             }
-            .accessibilityLabel("\(open.contains(node.path) ? "Hide" : "Show") the folders in \(node.name)")
-            .buttonStyle(.plain)
-            .opacity(node.subfolders.isEmpty ? 0 : 1)
-            .disabled(node.subfolders.isEmpty)
-            Label(node.name, systemImage: "folder").lineLimit(1)
             Spacer()
             let count = node.meetings.count
-            if count > 0 { Text("\(count)").foregroundStyle(.secondary).monospacedDigit() }
+            if count > 0 { Text("\(count)").foregroundStyle(.secondary).monospacedDigit().fixedSize() }
         }
         .padding(.leading, CGFloat(depth) * 14)
         .background(RoundedRectangle(cornerRadius: 5).fill(dropTarget == node.path ? Color.accentColor.opacity(0.25) : .clear).padding(-3))

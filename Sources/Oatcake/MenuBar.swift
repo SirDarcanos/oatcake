@@ -1,6 +1,6 @@
 // The menu bar item. While a call is being recorded it shows the running time, with Stop in its
-// menu (which asks first, in Oatcake's window, as the window's own Stop does). Otherwise, with a calendar connected (and Settings › Calendar's switch on), it shows the time
-// until your next call and lists what's coming up.
+// menu (which asks first, in Oatcake's window, as the window's own Stop does). Otherwise, it
+// shows Oatcake's icon, with the time until your next call if enabled in Settings › Calendar.
 //
 // It's drawn by a helper: Oatcake's own program run a second time (with --menu-bar) as a
 // menu-bar-only app. macOS doesn't draw a Dock app's menu bar menu over another app's full-screen
@@ -47,7 +47,7 @@ final class MenuBarItem {
 
     func hide() {
         stopHelper()
-        // Hidden on purpose, so it can be shown again at once: the wait is for a helper that keeps failing.
+        // Only crashes should delay a restart, not changing a setting.
         lastStart = .distantPast
     }
 
@@ -155,17 +155,20 @@ final class StatusItem: NSObject, NSMenuDelegate {
             item = created
         }
         guard let button = item?.button else { return }
-        let symbol: String, title: String, tip: String
-        var red = false
+        let symbol: String, title: String, tip: String, accessibilityLabel: String
         switch content {
+        case .idle:
+            (symbol, title, tip, accessibilityLabel) = ("oatcake", "", "Oatcake", "Oatcake")
         case .recording(let name, let elapsed):
-            (symbol, title, tip, red) = ("record.circle.fill", elapsed.map { " " + clock($0) } ?? "", "Oatcake is recording “\(name)”", true)
+            (symbol, title, tip, accessibilityLabel) = ("record.circle.fill", elapsed.map { " " + clock($0) } ?? "",
+                                                       "Oatcake is recording “\(name)”", "Oatcake, recording")
         case .upcoming(let events):
             let now = Date()
             let label = nextCallLabel(events, now: now)
             let next = events.first { $0.startDate > now } ?? events.first
-            (symbol, title, tip) = ("oatcake", label.isEmpty ? "" : " " + label,
-                                    next.map { "\($0.title) · \(hhmm($0.startDate))–\(hhmm($0.endDate))" } ?? "Nothing coming up on your calendar")
+            (symbol, title, tip, accessibilityLabel) = ("oatcake", label.isEmpty ? "" : " " + label,
+                                                       next.map { "\($0.title) · \(hhmm($0.startDate))–\(hhmm($0.endDate))" } ?? "Nothing coming up on your calendar",
+                                                       "Oatcake, next call")
         }
         // Set only on a change: this runs twice a second during a recording.
         if button.title != title { button.title = title }
@@ -175,10 +178,10 @@ final class StatusItem: NSObject, NSMenuDelegate {
             let recordingDot = NSImage(systemSymbolName: symbol, accessibilityDescription: "Recording")?
                 .withSymbolConfiguration(.init(paletteColors: [.systemRed]))
             recordingDot?.isTemplate = false
-            button.image = red ? recordingDot : oatcakeGlyph
-            button.setAccessibilityLabel(red ? "Oatcake, recording" : "Oatcake, next call")
+            button.image = symbol == "oatcake" ? oatcakeGlyph : recordingDot
             self.symbol = symbol
         }
+        if button.accessibilityLabel() != accessibilityLabel { button.setAccessibilityLabel(accessibilityLabel) }
     }
 
     /// Shows the same again, for what depends on the time.
@@ -210,6 +213,8 @@ final class StatusItem: NSObject, NSMenuDelegate {
                 add("\(when)   \(event.title)", #selector(openListed(_:)), tag: index)
             }
             menu.addItem(.separator())
+            add("New Recording…", #selector(newRecording))
+        case .idle:
             add("New Recording…", #selector(newRecording))
         case nil:
             break

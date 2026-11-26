@@ -1,7 +1,7 @@
 import OatcakeCore
 import SwiftUI
 
-private let suggestions = [
+private let meetingSuggestions = [
     "What did we decide in this call?",
     "What’s still open from earlier meetings like this one?",
     "Who said they’d follow up, and on what?",
@@ -10,17 +10,31 @@ private let suggestions = [
 /// The floating "ask about your meetings" lozenge; the conversation opens above it.
 struct AskBar: View {
     @Environment(AppModel.self) private var model
-    let path: String
+    let path: String?
     @ViewState private var draft = ""
     @FocusState private var focused: Bool
     @AppStorage(TextScale.key) private var textScale = 1.0
+
+    private var placeholder: String {
+        if !model.ask.turns.isEmpty { return "Ask a follow-up…" }
+        return path == nil ? "Ask about your calls…" : "Ask about this call, or any other…"
+    }
+
+    /// From Home, Ask finds calls by the words in the question, so these name the latest calls.
+    private var homeSuggestions: [String] {
+        let latest = listedIn(model.library.tree).prefix(2).map(meetingTitle)
+        guard let newest = latest.first else { return [] }
+        var questions = ["What did we decide in “\(newest)”?", "Who said they’d follow up after “\(newest)”, and on what?"]
+        if latest.count > 1 { questions.append("What’s still open from “\(latest[1])”?") }
+        return questions
+    }
 
     var body: some View {
         let chat = model.ask
         VStack(spacing: 10) {
             if chat.open { panel(chat) }
             HStack(spacing: 8) {
-                TextField(chat.turns.isEmpty ? "Ask about this call, or any other…" : "Ask a follow-up…", text: $draft)
+                TextField(placeholder, text: $draft)
                     .textFieldStyle(.plain)
                     .focused($focused)
                     .onSubmit { submit() }
@@ -77,7 +91,7 @@ struct AskBar: View {
                         if chat.turns.isEmpty {
                             VStack(alignment: .leading, spacing: 10) {
                                 Text("Ask anything across your meetings. Answers link to the meetings they draw on.").foregroundStyle(.secondary)
-                                ForEach(suggestions, id: \.self) { q in
+                                ForEach(path == nil ? homeSuggestions : meetingSuggestions, id: \.self) { q in
                                     Button(q) { submit(q) }.buttonStyle(.link)
                                 }
                             }

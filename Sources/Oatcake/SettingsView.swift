@@ -51,6 +51,13 @@ struct SettingsView: View {
             }
         }
 
+        Section("App") {
+            Toggle(isOn: bind(\.runInBackground)) {
+                Text("Run in the background")
+                Text("Keeps Oatcake in the menu bar, but not running in the Dock, after you close its last window. Turn this off to quit when the last window closes and any work has finished.")
+            }
+        }
+
         Section("Recording") {
             LabeledContent {
                 MicPicker(devices: devices ?? []).frame(width: 270)

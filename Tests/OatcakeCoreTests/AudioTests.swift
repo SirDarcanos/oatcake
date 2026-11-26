@@ -6,6 +6,65 @@ import Network
 import Testing
 
 @Suite struct AudioTests {
+    @MainActor @Test func savedAudioPlayback() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-player-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("audio.m4a")
+        let player = RecordingPlayback()
+        defer { player.stop() }
+        player.toggle(file)
+        #expect(player.failure == .missingFile && !player.isPlaying && player.duration == 0)
+        try Data("not audio".utf8).write(to: file)
+        player.toggle(file)
+        #expect(player.failure == .unreadableFile && !player.isPlaying && player.duration == 0)
+
+        try FileManager.default.removeItem(at: file)
+        try Data(count: 2 * sampleRate * 5).write(to: dir.appendingPathComponent("mic.pcm"))
+        try exportAudio(recording: dir, to: file)
+        // Opened without playing: its length is there for the transcript's times.
+        let prepared = RecordingPlayback()
+        prepared.prepare(file)
+        #expect(prepared.failure == nil && !prepared.isPlaying && abs(prepared.duration - 5) < 0.25)
+        prepared.seek(to: 3)
+        prepared.toggle(file)
+        #expect(prepared.isPlaying && prepared.elapsed >= 2.85)
+        prepared.stop()
+        player.toggle(file)
+        #expect(player.failure == nil && player.isPlaying && abs(player.duration - 5) < 0.25)
+        player.toggle(file)
+        #expect(!player.isPlaying)
+        player.seek(to: 2)
+        player.refreshPosition()
+        #expect(abs(player.elapsed - 2) < 0.15)
+        player.toggle(file)
+        #expect(player.isPlaying && player.elapsed >= 1.85)
+
+        let line = try #require(parseTranscript("**[00:04] Jane Doe:** Pick up here.").first)
+        player.seek(to: line.at)
+        player.refreshPosition()
+        #expect(player.isPlaying && abs(player.elapsed - 4) < 0.15)
+
+        player.seek(to: player.duration - 0.25)
+        let deadline = ContinuousClock.now + .seconds(4)
+        while player.isPlaying && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        try #require(!player.isPlaying && player.failure == nil)
+        #expect(player.elapsed == player.duration)
+        player.toggle(file)
+        #expect(player.isPlaying && player.elapsed == 0)
+        player.refreshPosition()
+        #expect(player.elapsed < 1)
+
+        player.toggle(file)
+        try FileManager.default.removeItem(at: file)
+        player.toggle(file)
+        #expect(player.failure == .missingFile && !player.isPlaying)
+        player.stop()
+        #expect(player.failure == nil && !player.isPlaying && player.duration == 0 && player.elapsed == 0)
+    }
+
     /// The recorder's raw tracks are read as they were written, whole or from where the last read stopped, and a clip is a proper WAV file.
     @Test func tracksAndClips() throws {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-audio-\(UUID().uuidString)")

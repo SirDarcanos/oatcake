@@ -12,6 +12,9 @@ Notification Settings**.
 
 - **Your name:** labels your microphone track in every transcript, and is who "Mine" means on the
   To-dos page.
+- **Run in the background** (on to start with): closing the last window takes Oatcake out of the
+  Dock and keeps it in the menu bar so it can still check for calls and send reminders. Turn it
+  off to quit when the last window closes, once any recording or work has finished.
 - **Microphone:** "Same as Mac" follows System Settings › Sound; a chosen mic is used until it's
   unplugged, then the Mac's input until it's back. It can also be changed on the record screen
   and during the call (see [Record](how-it-works.md#1-record)).
@@ -65,8 +68,9 @@ Notification Settings**.
   until dealt with.
 - **Show my next call in the menu bar** (on to start with, with a calendar connected): Oatcake's
   oatcake with the time until it starts, and what's coming up in its menu (see
-  [The menu bar](how-it-works.md#the-menu-bar)). With this on, closing Oatcake's window leaves it
-  running in the menu bar, so reminders and call notices keep working.
+  [The menu bar](how-it-works.md#the-menu-bar)). Turning this off hides calendar details, not the
+  icon while **Run in the background** is on. That setting controls whether reminders and call
+  notices still work with the window closed.
 - **Events that aren't calls:** events whose titles start with one of these names, as whole words
   ("Focus time", "Out of office", "Working location" and "Task" to begin with; "Task" doesn't leave
   out "Taskforce sync"), or that have "Oatcake ignore" anywhere in the title, are left out of
@@ -142,7 +146,7 @@ keeps its lowest level; one on Ollama that can't reason at all is asked again wi
   different summary (a one-to-one you lead, one with your own lead, a team meeting). **Add
   Template** starts one as a copy of the summary instructions; change its name and instructions in
   place, or **Delete…** it. Pick one on [New recording](how-it-works.md#1-record) or change it from
-  [Regenerate › Regenerate summary](how-it-works.md#regenerate-and-summary-templates). The meeting
+  [Regenerate Summary](how-it-works.md#regenerate-and-summary-templates). The meeting
   keeps the choice without changing your standard summary instructions.
   A meeting keeps its template by name: once that template is renamed or deleted, the meeting is
   back on the summary instructions, until a template is given that name again. A new name is saved
