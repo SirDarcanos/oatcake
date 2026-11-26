@@ -75,11 +75,29 @@ public func resolveInside(_ root: URL, _ rel: String) throws -> URL {
         // Nothing there (yet): nothing further along to follow.
         guard lstat(path, &info) == 0 else { break }
         guard info.st_mode & S_IFMT == S_IFLNK else { continue }
-        realRoot = realRoot ?? realPath(base.path)
-        // A link that leads nowhere, or round in a loop, leads nowhere inside either.
-        guard let realRoot, let target = realPath(path), target == realRoot || target.hasPrefix(realRoot + "/") else { throw outside }
+        guard leadsInside(path, base.path, &realRoot) else { throw outside }
     }
     return full
+}
+
+/// `name` in `folder` (a folder `resolveInside` gave for `root`), or nil when it's a link that leads
+/// out of `root`: a meeting's own files are held to the same rule as its folder. Only the file
+/// itself needs looking at, as its folder has been already.
+public func fileInside(_ root: URL, _ folder: URL, _ name: String) -> URL? {
+    let file = folder.appendingPathComponent(name)
+    var info = stat()
+    var realRoot: String?
+    guard lstat(file.path, &info) == 0, info.st_mode & S_IFMT == S_IFLNK else { return file }
+    return leadsInside(file.path, root.standardizedFileURL.path, &realRoot) ? file : nil
+}
+
+/// Whether the link at `path` leads to `root` or somewhere inside it. `realRoot` is `root` with its
+/// own links followed, worked out the first time it's needed. A link that leads nowhere, or round in
+/// a loop, leads nowhere inside either.
+private func leadsInside(_ path: String, _ root: String, _ realRoot: inout String?) -> Bool {
+    realRoot = realRoot ?? realPath(root)
+    guard let realRoot, let target = realPath(path) else { return false }
+    return target == realRoot || target.hasPrefix(realRoot + "/")
 }
 
 /// The path with every link in it followed, or nil when one can't be.

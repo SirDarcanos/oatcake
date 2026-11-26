@@ -61,6 +61,18 @@ import Testing
         for outside in ["Out", "Out/Meetings/Team", "Nowhere", "Nowhere/Weekly sync", "Loop"] {
             #expect(throws: OatcakeError.self) { try resolveInside(root, outside) }
         }
+
+        // A file in a folder that's inside: the same, for the file itself.
+        let team = root.appendingPathComponent("Team")
+        try "Notes.".write(to: real.appendingPathComponent("Team/notes.md"), atomically: true, encoding: .utf8)
+        try "Elsewhere.".write(to: tmp.appendingPathComponent("summary.md"), atomically: true, encoding: .utf8)
+        for (name, target) in [("summary.md", "../../summary.md"), ("todo.md", "notes.md"), ("draft.md", "Missing.md")] {
+            try fm.createSymbolicLink(atPath: real.appendingPathComponent("Team/\(name)").path, withDestinationPath: target)
+        }
+        #expect(fileInside(root, team, "summary.md") == nil && fileInside(root, team, "draft.md") == nil)
+        for name in ["todo.md", "notes.md", "transcript.md"] {
+            #expect(fileInside(root, team, name) == team.appendingPathComponent(name))
+        }
     }
 
     /// A file with a byte that isn't UTF-8 is read as far as it can be, not as nothing.

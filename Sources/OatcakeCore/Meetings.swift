@@ -140,13 +140,13 @@ public final class Meetings: @unchecked Sendable {
             // A link that leads out of the Meetings folder isn't listed: nothing could be read through it.
             guard let full = try? resolveInside(root, rel) else { return nil }
             let name = rel.isEmpty ? root.lastPathComponent : (rel as NSString).lastPathComponent
-            let metaFile = full.appendingPathComponent("meeting.json")
-            if !rel.isEmpty, let modified = modificationDate(metaFile) {
+            // A meeting.json or summary.md that's a link out of the Meetings folder is as good as not there.
+            if !rel.isEmpty, let metaFile = fileInside(root, full, "meeting.json"), let modified = modificationDate(metaFile) {
                 found.insert(full.path)
                 var node = meetingNode(metaFile, modified: modified)
                 node.name = name
                 node.path = rel
-                node.preview = preview(full.appendingPathComponent("summary.md"))
+                node.preview = fileInside(root, full, "summary.md").map { preview($0) } ?? ""
                 return node
             }
             let entries = (try? fm.contentsOfDirectory(at: full, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
@@ -174,12 +174,11 @@ public final class Meetings: @unchecked Sendable {
 
     public func read(_ rel: String) throws -> MeetingFiles {
         let dir = try resolveInside(root, rel)
-        return MeetingFiles(summary: readText(dir.appendingPathComponent("summary.md")),
-                            transcript: readText(dir.appendingPathComponent("transcript.md")),
-                            notes: readText(dir.appendingPathComponent("notes.md")),
-                            todo: readText(dir.appendingPathComponent("todo.md")),
-                            draft: readText(dir.appendingPathComponent(MeetingFile.draft.rawValue)),
-                            meta: tryJSON(MeetingMeta.self, dir.appendingPathComponent("meeting.json")) ?? MeetingMeta())
+        // A file that's a link out of the Meetings folder reads as empty, as if it weren't there.
+        let text = { (name: String) in fileInside(self.root, dir, name).map(readText) ?? "" }
+        return MeetingFiles(summary: text("summary.md"), transcript: text("transcript.md"), notes: text("notes.md"),
+                            todo: text("todo.md"), draft: text(MeetingFile.draft.rawValue),
+                            meta: fileInside(root, dir, "meeting.json").flatMap { tryJSON(MeetingMeta.self, $0) } ?? MeetingMeta())
     }
 
     /// The saved recording, not the temporary tracks or speaker clips used to process a call.
@@ -226,12 +225,12 @@ public final class Meetings: @unchecked Sendable {
             // Words typed since: what's found from here on would be thrown away.
             guard !Task.isCancelled, let dir = try? resolveInside(root, meeting.path) else { return nil }
             let label = foldedForSearch(meeting.label)
-            let files = order.map { ($0, searchable(dir.appendingPathComponent($0.rawValue))) }
+            let files = order.map { ($0, fileInside(root, dir, $0.rawValue).map { searchable($0) } ?? "") }
             guard words.allSatisfy({ w in label.contains(w) || files.contains { $0.1.contains(w) } }) else { return nil }
             let wanted = words.filter { !label.contains($0) }
             guard !wanted.isEmpty else { return SearchHit(path: meeting.path) }
             for (file, content) in files where wanted.contains(where: { content.contains($0) }) {
-                for raw in readText(dir.appendingPathComponent(file.rawValue)).components(separatedBy: "\n") {
+                for raw in (fileInside(root, dir, file.rawValue).map(readText) ?? "").components(separatedBy: "\n") {
                     let folded = foldedForSearch(raw)
                     guard let word = wanted.first(where: { folded.contains($0) }) else { continue }
                     let plain = plainLine(raw)
@@ -287,9 +286,11 @@ public final class Meetings: @unchecked Sendable {
     /// a meeting's files in between. nil from `change` leaves the file as it is, and returns false.
     @discardableResult
     func update(_ rel: String, _ file: MeetingFile, _ change: (String) throws -> String?) throws -> Bool {
-        let target = try resolveInside(root, rel).appendingPathComponent(file.rawValue)
+        let dir = try resolveInside(root, rel)
+        let target = dir.appendingPathComponent(file.rawValue)
         return try Self.changing.withLock {
-            let now = readText(target)
+            // A link out of the Meetings folder isn't read; what's written takes its place (writeAtomic).
+            let now = fileInside(root, dir, file.rawValue).map(readText) ?? ""
             guard let changed = try change(now) else { return false }
             // Unchanged is left alone: an empty file isn't made where there was none.
             if changed != now { try writeAtomic(target, changed) }
@@ -312,8 +313,10 @@ public final class Meetings: @unchecked Sendable {
     /// Rewrites a to-do in a meeting's todo.md ("" is the Meetings folder's own), read afresh, or
     /// takes it out when `body` is nil. False when it isn't in the file any more: nothing was written.
     public func editTodo(_ rel: String, line: Int, text: String, to body: String?) throws -> Bool {
-        let file = try resolveInside(root, rel).appendingPathComponent(MeetingFile.todo.rawValue)
-        guard let changed = OatcakeCore.editTodo(readText(file), line: line, text: text, to: body) else { return false }
+        let dir = try resolveInside(root, rel)
+        let file = dir.appendingPathComponent(MeetingFile.todo.rawValue)
+        let now = fileInside(root, dir, MeetingFile.todo.rawValue).map(readText) ?? ""
+        guard let changed = OatcakeCore.editTodo(now, line: line, text: text, to: body) else { return false }
         try writeAtomic(file, changed)
         return true
     }
@@ -321,7 +324,7 @@ public final class Meetings: @unchecked Sendable {
     /// A meeting's todo.md on its own ("" is the Meetings folder's own), without the rest of the
     /// meeting: "" when it has none.
     public func readTodo(_ rel: String) throws -> String {
-        readText(try resolveInside(root, rel).appendingPathComponent(MeetingFile.todo.rawValue))
+        fileInside(root, try resolveInside(root, rel), MeetingFile.todo.rawValue).map(readText) ?? ""
     }
 
     private func checkName(_ name: String) throws -> String {
@@ -380,8 +383,10 @@ public final class Meetings: @unchecked Sendable {
         let clean = title.trimmed
         guard !clean.isEmpty else { throw OatcakeError("Give the meeting a title") }
         guard !rel.isEmpty else { throw OatcakeError("That isn't a meeting") }
-        let file = try resolveInside(root, rel).appendingPathComponent("meeting.json")
-        guard let data = try? Data(contentsOf: file), var meta = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+        let dir = try resolveInside(root, rel)
+        let file = dir.appendingPathComponent("meeting.json")
+        guard let data = fileInside(root, dir, "meeting.json").flatMap({ try? Data(contentsOf: $0) }),
+              var meta = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             throw OatcakeError("This meeting's details (meeting.json) can't be read")
         }
         meta["title"] = clean
@@ -396,8 +401,10 @@ public final class Meetings: @unchecked Sendable {
     /// kept). nil = the summary instructions.
     public func setSummaryTemplate(_ rel: String, _ name: String?) throws {
         guard !rel.isEmpty else { throw OatcakeError("That isn't a meeting") }
-        let file = try resolveInside(root, rel).appendingPathComponent("meeting.json")
-        guard let data = try? Data(contentsOf: file), var meta = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+        let dir = try resolveInside(root, rel)
+        let file = dir.appendingPathComponent("meeting.json")
+        guard let data = fileInside(root, dir, "meeting.json").flatMap({ try? Data(contentsOf: $0) }),
+              var meta = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             throw OatcakeError("This meeting's details (meeting.json) can't be read")
         }
         let before = meta["template"] as? String
@@ -461,13 +468,12 @@ public final class Meetings: @unchecked Sendable {
     public func allTodos(in tree: TreeNode) -> [MeetingTodos] {
         var out: [MeetingTodos] = []
         for meeting in tree.allMeetings {
-            guard let file = try? resolveInside(root, meeting.path).appendingPathComponent("todo.md"),
+            guard let dir = try? resolveInside(root, meeting.path), let file = fileInside(root, dir, "todo.md"),
                   FileManager.default.exists(file) else { continue }
             out.append(MeetingTodos(path: meeting.path, title: meeting.title ?? meeting.name, startedAt: meeting.startedAt, todo: readText(file)))
         }
         // To-dos added on the To-dos page itself live in the Meetings folder's own todo.md.
-        let own = root.appendingPathComponent("todo.md")
-        if FileManager.default.exists(own) { out.insert(MeetingTodos(path: "", title: "To-dos", startedAt: nil, todo: readText(own)), at: 0) }
+        if let own = fileInside(root, root.standardizedFileURL, "todo.md"), FileManager.default.exists(own) { out.insert(MeetingTodos(path: "", title: "To-dos", startedAt: nil, todo: readText(own)), at: 0) }
         return out
     }
 }

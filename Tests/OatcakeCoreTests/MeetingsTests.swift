@@ -74,6 +74,54 @@ import Testing
         #expect(readText(inside.appendingPathComponent("notes.md")) == "Bring the figures.")
     }
 
+    /// A meeting's own file that's a link to somewhere outside the Meetings folder is as good as not
+    /// there: it isn't read, previewed, searched or listed as a to-do, and what's saved replaces the
+    /// link rather than going through it. One that leads to another file inside the folder works. A
+    /// meeting.json that's a link out leaves a plain folder.
+    @Test func fileLinksOutOfTheFolderAreRefused() throws {
+        let fm = FileManager.default
+        let tmp = fm.temporaryDirectory.appendingPathComponent("oatcake-linked-files-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: tmp) }
+        let root = tmp.appendingPathComponent("Meetings"), elsewhere = tmp.appendingPathComponent("Elsewhere")
+        let rel = "Team/2026-11-07 0900 Review", details = "Team/2026-11-08 1000 Linked details"
+        let review = root.appendingPathComponent(rel), planning = root.appendingPathComponent("Team/2026-11-06 1000 Planning")
+        for dir in [elsewhere, review, planning, root.appendingPathComponent(details)] {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        let kept = [("summary.md", "Kept elsewhere.\n"), ("notes.md", "Private notes.\n"), ("todo.md", "- [ ] Pay the invoice\n"),
+                    ("meeting.json", #"{"title":"Elsewhere"}"#)]
+        for (name, text) in kept { try text.write(to: elsewhere.appendingPathComponent(name), atomically: true, encoding: .utf8) }
+        try #"{"title":"Planning"}"#.write(to: planning.appendingPathComponent("meeting.json"), atomically: true, encoding: .utf8)
+        try "Jane Doe: the figures are in.\n".write(to: planning.appendingPathComponent("transcript.md"), atomically: true, encoding: .utf8)
+        try #"{"title":"Review"}"#.write(to: review.appendingPathComponent("meeting.json"), atomically: true, encoding: .utf8)
+        try fm.createSymbolicLink(atPath: review.appendingPathComponent("summary.md").path, withDestinationPath: "../../../Elsewhere/summary.md")
+        for name in ["notes.md", "todo.md"] {
+            try fm.createSymbolicLink(atPath: review.appendingPathComponent(name).path, withDestinationPath: elsewhere.appendingPathComponent(name).path)
+        }
+        try fm.createSymbolicLink(atPath: review.appendingPathComponent("transcript.md").path, withDestinationPath: "../2026-11-06 1000 Planning/transcript.md")
+        try fm.createSymbolicLink(atPath: root.appendingPathComponent(details).appendingPathComponent("meeting.json").path,
+                                  withDestinationPath: elsewhere.appendingPathComponent("meeting.json").path)
+        let meetings = Meetings(root: root)
+
+        let tree = meetings.tree()
+        #expect(tree.find(rel)?.kind == .meeting && tree.find(rel)?.preview == "")
+        #expect(tree.find(details)?.kind == .folder)
+        let files = try meetings.read(rel)
+        #expect(files.summary == "" && files.notes == "" && files.todo == "" && files.meta.title == "Review")
+        #expect(files.transcript == "Jane Doe: the figures are in.\n")
+        let all = tree.allMeetings.map { (path: $0.path, label: $0.title ?? $0.name) }
+        #expect(meetings.search("elsewhere", in: all).isEmpty && meetings.search("invoice", in: all).isEmpty)
+        #expect(meetings.search("figures", in: all).map(\.path).contains(rel))
+        #expect(!meetings.allTodos().contains { $0.path == rel })
+        #expect(try meetings.readTodo(rel) == "")
+        #expect(try meetings.toggleTodo(rel, line: 0, text: "Pay the invoice") == false)
+        #expect(throws: OatcakeError.self) { try meetings.retitle(details, to: "Renamed") }
+
+        try meetings.addTodo(rel, "Send the deck")
+        #expect(try meetings.readTodo(rel).contains("Send the deck"))
+        for (name, text) in kept { #expect(readText(elsewhere.appendingPathComponent(name)) == text) }
+    }
+
     @Test func folderNames() {
         var c = DateComponents()
         (c.year, c.month, c.day, c.hour, c.minute) = (2026, 11, 5, 14, 0)
