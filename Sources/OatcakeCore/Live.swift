@@ -204,10 +204,15 @@ nonisolated(unsafe) private var chosenFor = ""
 nonisolated(unsafe) private var chosenPlaceholders: [Int: String] = [:]
 nonisolated(unsafe) private var lastPlaceholder: String?
 
+/// The most of a track transcribed in one go: a helper started again partway through a call (Name
+/// voices turned on, or Oatcake reopened) catches up two minutes at a time, showing each stretch's
+/// lines as it goes, rather than showing nothing until it has been through the whole call.
+let liveStretch = 2 * 60 * sampleRate
+
 /**
  * Transcribes a recording while it's being made, reporting each line as it's finished. Returns once
- * the recorder has finished (meta.json is there), the recording has been thrown away, or Oatcake
- * itself has gone.
+ * the recorder has finished (meta.json is there) and everything it wrote has been transcribed, the
+ * recording has been thrown away, or Oatcake itself has gone.
  */
 public func transcribeLive(_ dir: URL, config: Config = Config.load(), voiceprints: URL = Paths.voiceprints,
                            report: @escaping (LiveEvent) -> Void) async throws {
@@ -231,11 +236,15 @@ public func transcribeLive(_ dir: URL, config: Config = Config.load(), voiceprin
         guard FileManager.default.exists(dir), getppid() == oatcake else { return }
         let finished = FileManager.default.exists(dir.appendingPathComponent("meta.json"))
         var lines: [LiveTranscriptLine] = []
+        // A whole stretch read: there's more of the track after it, so it's gone on to straight away.
+        var behind = false
         for i in done.indices {
-            let fresh = readPcm(dir.appendingPathComponent(done[i].file), fromSample: done[i].samples)
+            let fresh = readPcm(dir.appendingPathComponent(done[i].file), fromSample: done[i].samples, count: liveStretch)
             guard fresh.count >= sampleRate / 2 else { continue }
+            let more = fresh.count == liveStretch
+            behind = behind || more
             // Once the recorder has finished, what's left is all there will be: its last words included.
-            let (utterances, consumed) = try await transcriber.transcribeFinished(fresh, last: finished)
+            let (utterances, consumed) = try await transcriber.transcribeFinished(fresh, last: finished && !more)
             let offset = Double(done[i].samples) / Double(sampleRate)
             let new = utterances.map { LiveTranscriptLine(track: done[i].track, start: $0.start + offset, end: $0.end + offset, text: $0.text) }
             if let fingerprints, done[i].track == .system, !utterances.isEmpty,
@@ -265,8 +274,8 @@ public func transcribeLive(_ dir: URL, config: Config = Config.load(), voiceprin
             }
         }
         for line in lines { report(LiveEvent(line: line)) }
-        if finished { return }
-        try await Task.sleep(for: .seconds(1.5))
+        if finished && !behind { return }
+        if !behind { try await Task.sleep(for: .seconds(1.5)) }
     }
 }
 
