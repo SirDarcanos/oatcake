@@ -133,7 +133,11 @@ final class AppModel {
         calendar.app = app
         library.whenMoved = { [unowned self] from, to in self.moved(from: from, to: to) }
         // A meeting saved without checking who's who keeps voice clips in Oatcake's own folder: they go with it.
-        library.whenTrashed = { [unowned self] in self.jobs.tidySavedRecordings() }
+        // Edits still waiting for them have nowhere to go.
+        library.whenTrashed = { [unowned self] paths in
+            self.jobs.tidySavedRecordings()
+            self.edits.discard(paths)
+        }
         calendar.changed = { [unowned self] in self.recording.updateMenuBar() }
         recording.folderForEvent = { [unowned self] title, recurring in try self.library.meetings.folderForEvent(title: title, recurring: recurring) }
         recording.ended = { [unowned self] rec in self.jobs.progress[rec.id] = JobProgress() }
@@ -520,7 +524,7 @@ final class AppModel {
         // Typed, and kept nowhere that outlasts Oatcake.
         var lost: [String] = []
         if let title = notesOfCallNotRecorded { lost.append("the notes you’ve typed for “\(title)”, a call that wasn’t recorded") }
-        if edits.hasFailed { lost.append("edits that couldn’t be saved") }
+        if edits.hasFailed(in: library.meetings) { lost.append("edits that couldn’t be saved") }
         // Not while an update is under way: it said so before it started, and its quit isn't asked again.
         if updater.installing == nil, jobs.hasNamesTyped { lost.append("the names you’ve typed in Who’s who") }
         guard !doing.isEmpty || !lost.isEmpty else { return nil }
@@ -554,7 +558,7 @@ final class AppModel {
     /// window doesn't wait for them (quitting asks instead).
     private func whyUpdateWaits() -> String? {
         saveEdits()
-        if edits.hasFailed { return "Oatcake couldn’t save some edits to a meeting. Choose Try again in the meeting, then install the update." }
+        if edits.hasFailed(in: library.meetings) { return "Oatcake couldn’t save some edits to a meeting. Choose Try again in the meeting, then install the update." }
         if let title = notesOfCallNotRecorded {
             return "Installing the update would delete the notes you’ve typed for “\(title)”, a call that wasn’t recorded. Copy them somewhere else and close the call first."
         }

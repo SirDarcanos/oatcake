@@ -50,8 +50,13 @@ public struct MeetingEdits: Equatable, Sendable {
 
     public func isWaiting(in meeting: String) -> Bool { waiting.keys.contains { $0.meeting == meeting } }
 
-    /// Some edit couldn't be written the last time it was tried.
-    public var hasFailed: Bool { waiting.values.contains(where: \.failed) }
+    /// Some edit couldn't be written the last time it was tried, to a meeting that's still there. One
+    /// whose folder has gone (deleted or moved in Finder) has nowhere to go, so there's nothing to ask about.
+    public func hasFailed(in meetings: Meetings) -> Bool {
+        waiting.contains { key, edit in
+            edit.failed && (try? resolveInside(meetings.root, key.meeting)).map { FileManager.default.exists($0) } == true
+        }
+    }
 
     /**
      * Writes what's waiting, in one meeting or in all of them. Whatever is written stops waiting. So does
@@ -73,6 +78,11 @@ public struct MeetingEdits: Equatable, Sendable {
             }
         }
         return outcomes
+    }
+
+    /// Meetings or folders have gone to the Trash: what's waiting for them, or for anything in them, goes too.
+    public mutating func discard(_ paths: [String]) {
+        waiting = waiting.filter { key, _ in !paths.contains { key.meeting == $0 || key.meeting.hasPrefix($0 + "/") } }
     }
 
     /// A meeting or folder has been renamed or moved: `remap` gives a path's new place.

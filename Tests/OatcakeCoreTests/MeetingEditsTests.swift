@@ -55,10 +55,17 @@ import Testing
     }
 
     /// Edits are written and stop waiting; one that can't be written waits, marked as failed, until it
-    /// can be. Saving one meeting leaves another's edits alone.
+    /// can be. Saving one meeting leaves another's edits alone. A failure only counts while its
+    /// meeting's folder is there.
     @Test func savingAndFailing() throws {
         let (root, rel, dir) = try meeting()
-        defer { try? FileManager.default.removeItem(at: root) }
+        let locked = root.appendingPathComponent("Read only/2026-11-11 1000 Locked")
+        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: locked.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path)
+            try? FileManager.default.removeItem(at: root)
+        }
         let meetings = Meetings(root: root)
         var edits = MeetingEdits()
         let gone = "Team/2026-11-10 1000 Gone"
@@ -67,19 +74,36 @@ import Testing
 
         #expect(edits.save(to: meetings, in: rel).isEmpty)
         #expect(readText(dir.appendingPathComponent("notes.md")) == "- [02:10] Ask about the budget\n")
-        #expect(edits.texts(in: gone) == [.notes: "Typed into a meeting that isn't there\n"] && !edits.hasFailed)
+        #expect(edits.texts(in: gone) == [.notes: "Typed into a meeting that isn't there\n"])
 
         let outcomes = edits.save(to: meetings)
         guard case .failed(let key, _) = outcomes.first, outcomes.count == 1 else { Issue.record("Expected a failure: \(outcomes)"); return }
-        #expect(key == MeetingEdits.Key(meeting: gone, file: .notes) && edits.hasFailed && edits.isWaiting(in: gone))
+        // Its folder isn't there (deleted or moved in Finder, say): it waits, but isn't asked about.
+        #expect(key == MeetingEdits.Key(meeting: gone, file: .notes) && edits.isWaiting(in: gone) && !edits.hasFailed(in: meetings))
+
+        // One that can't be written into a folder that is there is.
+        edits.typed("Jane will send the deck.\n", in: "Read only/2026-11-11 1000 Locked", .summary, before: "")
+        #expect(edits.save(to: meetings).count == 2 && edits.hasFailed(in: meetings))
 
         // The meeting was renamed: its edit follows it, and can be written there.
         let renamed = "Team/2026-11-10 1000 Found"
         try FileManager.default.createDirectory(at: root.appendingPathComponent(renamed), withIntermediateDirectories: true)
         edits.moved { $0 == gone ? renamed : $0 }
         #expect(edits.texts(in: renamed) == [.notes: "Typed into a meeting that isn't there\n"] && !edits.isWaiting(in: gone))
-        #expect(edits.save(to: meetings).isEmpty && edits.waiting.isEmpty && !edits.hasFailed)
+        #expect(edits.save(to: meetings, in: renamed).isEmpty && !edits.isWaiting(in: renamed))
         #expect(readText(root.appendingPathComponent(renamed + "/notes.md")) == "Typed into a meeting that isn't there\n")
+    }
+
+    /// A meeting, or a folder holding it, has gone to the Trash: what was waiting for it goes too, and
+    /// nothing else does.
+    @Test func trashedMeetingsLoseTheirEdits() {
+        var edits = MeetingEdits()
+        edits.typed("One\n", in: "Team/2026-11-09 1000 Weekly sync", .notes, before: "")
+        edits.typed("Two\n", in: "Team/Leads/2026-11-10 1000 Leads sync", .summary, before: "")
+        edits.typed("Three\n", in: "Teamwork/2026-11-11 1000 Retro", .notes, before: "")
+        edits.typed("Four\n", in: "2026-11-12 1000 One-off", .notes, before: "")
+        edits.discard(["Team", "2026-11-12 1000 One-off"])
+        #expect(edits.waiting.keys.map(\.meeting) == ["Teamwork/2026-11-11 1000 Retro"])
     }
 
     /// To-dos ticked and added while the summary's to-dos are appended, from more than one `Meetings`
