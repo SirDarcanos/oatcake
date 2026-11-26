@@ -153,7 +153,8 @@ or only the naming of voices, which saves about 180 MB of memory during a call.
 
 When a calling app or a browser starts using your microphone and nothing is being recorded, a
 notification offers **Start recording** (under the calendar event happening now, if there is
-one). When a recording has had a calling app on the microphone, and that app has let go and the
+one: of two that overlap, the one that started last, so a call inside a day-long block is the
+call). When a recording has had a calling app on the microphone, and that app has let go and the
 call audio has been quiet for 15 seconds, a notification says the call seems to have ended; 30
 seconds later the recording stops and starts processing, unless you choose **Keep recording** (on
 the notification or the call's screen) or the call comes back. Music still playing, or a call
