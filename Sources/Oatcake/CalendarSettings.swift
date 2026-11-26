@@ -1,6 +1,70 @@
 import OatcakeCore
 import SwiftUI
 
+extension SettingsView {
+    @ViewBuilder var calendar: some View {
+        Section {
+            CalendarSettingsRows(calendar: model.calendar, editor: $calendarEditor)
+        } header: {
+            Text("Calendars")
+        } footer: {
+            Text("In Google Calendar, open Settings, pick a calendar under “Settings for my calendars”, then copy its “Secret address in iCal format” from Integrate calendar. Any other calendar that gives you an iCal (.ics) address, starting https:// or webcal://, works the same way. Repeat for each calendar you want in Upcoming.")
+                .settingsHint()
+        }
+        Section("Reminders") {
+            Toggle(isOn: bind(\.callReminders)) {
+                Text("Remind me before calls")
+                Text("Before each call, a notification with a button that opens the call and starts recording, ready for notes.")
+            }
+            if model.config.callReminders {
+                ReminderTimesRows(minutes: bind(\.reminderMinutes))
+                notificationsHint
+            }
+            Toggle(isOn: bind(\.menuBarNextCall)) {
+                Text("Show my next call in the menu bar")
+                Text("The time until it starts, with what’s coming up in its menu.")
+            }
+        }
+        // Typed as one comma-separated line, like Jargon; kept as a list.
+        Section {
+            // Named on the left with the field on the right, as Your name is: alone, the line read as a sentence.
+            TextField("Leave out", text: $ignoredEvents, prompt: Text("Focus time, Out of office"), axis: .vertical)
+                .lineLimit(1...4)
+                .onChange(of: ignoredEvents) {
+                    let titles = commaList(ignoredEvents)
+                    if titles != model.config.ignoredEvents { model.saveConfig(with(model.config) { $0.ignoredEvents = titles }) }
+                }
+        } header: {
+            Text("Events that aren’t calls")
+        } footer: {
+            Text("Separated by commas. Events whose titles start with one of these, or have “Oatcake ignore” anywhere in them, are left out of Upcoming, the menu bar and reminders. Capitals don’t matter, and “Task” doesn’t leave out “Taskforce sync”.")
+                .settingsHint()
+        }
+        // Ignored one at a time from Upcoming's right-click menu. Only shown once there are some.
+        let ignored = withoutEnded(model.config.ignoredCalendarEvents, now: Date())
+        if !ignored.isEmpty {
+            Section {
+                ForEach(ignored) { item in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.title)
+                            Text(item.series ? "This and following events" : parseISO(item.start).map { dayAndTime($0) } ?? "Once")
+                                .settingsHint()
+                        }
+                        Spacer()
+                        Button("Stop ignoring") { model.stopIgnoring(item) }
+                    }
+                }
+            } header: {
+                Text("Ignored events")
+            } footer: {
+                Text("Right-click an event in Upcoming to ignore it. Only Oatcake leaves it out: it stays in your calendar. An event its organiser moves shows again, and so does the rest of a series changed with “this and following events”.")
+                    .settingsHint()
+            }
+        }
+    }
+}
+
 struct CalendarSettingsEdit: Identifiable {
     let id = UUID()
     let existing: CalendarController.Label?
