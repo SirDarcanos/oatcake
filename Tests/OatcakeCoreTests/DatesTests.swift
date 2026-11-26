@@ -45,7 +45,7 @@ import Testing
         #expect(dateAndTime(thursday, locale: british).contains("29 Oct") && dateAndTime(thursday, locale: british).contains("16:30"))
     }
 
-    /// Seconds under a minute, then to the nearest minute.
+    /// Seconds under a minute, then whole minutes, rounded down.
     @Test func writesLengthsOfTimeShortAndLong() {
         #expect(shortDuration(45) == "45s")
         #expect(shortDuration(12 * 60) == "12m")
