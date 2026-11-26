@@ -307,17 +307,17 @@ who's who has **Name voices…** instead.
 
 ## 5. Ask
 
-The lozenge at the bottom of a meeting takes questions about it ("what did we decide about
-hiring?") or across meetings ("when did Jane first raise the launch date?"); an empty chat offers
-three to start with. The model on your Mac is given the meeting you have open: its summary,
-to-dos, your notes and the transcript (all of it, or for a call too long for that, the parts
-nearest the question). It's first asked whether the question reaches beyond that meeting. When it
-does, Oatcake searches your other meetings for the names and topics the model gives, favours the
-other meetings in the same folder, and adds their summaries, to-dos and the transcript lines that
-match. The model never opens a file or runs anything itself. Answers link to the meetings they
+Use **Ask about your calls…** at the bottom of Home to search across saved calls without opening
+one first ("when did Jane Doe first raise the launch date?"). On a meeting page, Ask starts with
+that call, so you can ask "what did we decide about hiring?" without naming the meeting. The model
+gets the open call’s summary, to-dos, notes and transcript (or the closest parts of a long transcript).
+If the question reaches beyond the open call, Oatcake also searches other meetings and favours ones
+in the same folder. From Home it searches the whole library without favouring a folder. Search results
+include summaries, to-dos and matching transcript lines. The model never opens a file or runs
+anything itself. Answers link to the meetings they
 draw on, and a time in an answer opens the transcript at that moment. An answer is one piece of
 text: select any stretch of it, or all of it, and copy. Web links in an answer are shown as text,
-not made clickable. Follow-ups continue the same conversation, which stays open as you move
-between meetings, until **New chat**. **Stop** ends an answer early, and Esc or **Hide** puts the
+not made clickable. Follow-ups continue the same conversation as you move between Home and meetings.
+Choose **New chat** to start over. **Stop** ends an answer early, and Esc or **Hide** puts the
 chat away. The first question about a call takes longest, while the model reads it; follow-ups
 about the same call are quicker.

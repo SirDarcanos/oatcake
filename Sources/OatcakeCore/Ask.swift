@@ -1,9 +1,9 @@
 // Ask: questions about your meetings, answered by the model on this Mac. The meeting that's open is
 // put in front of the model whole (its summary, to-dos, your notes and the transcript), so nearly
 // every question is answered from the words that were said. The model is first asked whether the
-// question reaches beyond that meeting; when it does, Oatcake searches the others for the names and
-// topics the model gives and adds what it finds: their summaries, to-dos and the transcript lines
-// that match. The model never opens a file or runs anything: it only sees the text it's handed.
+// question reaches beyond that meeting. If it does, or if asked from Home, Oatcake searches for
+// the names and topics the model gives and adds what it finds: summaries, to-dos and the transcript
+// lines that match. The model never opens a file or runs anything: it only sees the text it's handed.
 
 import Foundation
 
@@ -32,6 +32,11 @@ private let routeTask = """
     Reply as JSON: {"beyond": true or false, "search": [...]}. "search" is up to four short phrases to look for in the other meetings (a name, a project or a topic, one to three words each), and [] when "beyond" is false.
     """
 
+private let libraryRouteTask = """
+    No meeting is open. Don't answer the question yet. Choose up to four short phrases to find relevant calls in the meeting library (names, meeting titles, projects or topics, one to three words each). Use the earlier conversation to resolve references in follow-up questions.
+    Reply as JSON: {"beyond":true,"search":[...]}.
+    """
+
 /// The shape that comes back in. The model's server holds the reply to it.
 let routeSchema = #"{"type":"object","properties":{"beyond":{"type":"boolean"},"search":{"type":"array","items":{"type":"string"}}},"required":["beyond","search"]}"#
 
@@ -45,46 +50,57 @@ private let otherMeetingsTokens = 6_000
 private let otherMeetingsCount = 5
 
 /**
- * Answers a question about the meeting at `rel` (and, when the question reaches beyond it, the
- * others). `history` is what has been asked and answered so far in this conversation. The answer is
- * Markdown; where the model cited a meeting, there's a link to it (see citationLinks).
+ * Answers from the open meeting and, when needed, other meetings. Without an open meeting, searches
+ * the library. `history` is what has been asked and answered so far. The Markdown answer links to
+ * the meetings it cites (see citationLinks).
  */
-public func ask(_ config: Config, meeting rel: String, question: String, history: [AskExchange] = [],
+public func ask(_ config: Config, meeting rel: String?, question: String, history: [AskExchange] = [],
                 onStep: @escaping @Sendable (String) -> Void = { _ in }) async throws -> String {
     let meetings = Meetings(root: config.meetingsRoot)
-    let files = try meetings.read(rel)
-    let tree = meetings.tree()
-    let others = tree.allMeetings.filter { $0.path != rel }
+    let files = try rel.map { try meetings.read($0) }
+    let others = meetings.tree().allMeetings.filter { $0.path != rel }
+    if rel == nil, others.isEmpty { return "There are no saved calls to search yet." }
     let system = ChatMessage("system", askSystem(config))
     let think = config.llm.reasoning.ask
     // Last, after the meetings: the model keeps its reading of them for the next question.
     let tail = "\(historyBlock(history))Today is \(longDate(Date())).\nQuestion: \(question)"
+    let routing = rel == nil ? libraryRouteTask : routeTask
     let largest = largestContext(config.llm)
-    let fixed = LocalModels.tokens(in: system.content + tail + routeTask) + replyTokens + 300
-    let open = openMeetingText(config, rel, files, question: question, tokens: max(1_000, largest - fixed))
+    let fixed = LocalModels.tokens(in: system.content + tail + routing) + replyTokens + 300
+    let open = if let rel, let files {
+        openMeetingText(config, rel, files, question: question, tokens: max(1_000, largest - fixed))
+    } else { "" }
     let openTokens = LocalModels.tokens(in: open)
     // Room for what a search may add is asked for now, so the model isn't started again to fit it.
     let extra = others.isEmpty ? 0 : max(0, min(otherMeetingsTokens, largest - fixed - openTokens))
 
     return try await withModel(config.llm, tokens: openTokens + fixed + extra) { model, _ in
-        onStep("Reading this call")
+        onStep(rel == nil ? "Looking through your calls" : "Reading this call")
         var found: [(path: String, text: String)] = []
         if extra >= 500 {
+            let routePrompt = [open, tail, routing].filter { !$0.isEmpty }.joined(separator: "\n\n")
             do {
-                let reply = try await model.complete([system, ChatMessage("user", "\(open)\n\n\(tail)\n\n\(routeTask)")], schema: routeSchema, think: think, maxTokens: 4_096)
-                if let route = try? parseJsonObject(AskRoute.self, reply), route.beyond {
-                    onStep("Looking through your other meetings")
+                let reply = try await model.complete([system, ChatMessage("user", routePrompt)], schema: routeSchema, think: think, maxTokens: 4_096)
+                if let route = try? parseJsonObject(AskRoute.self, reply), rel == nil || route.beyond {
+                    if rel != nil { onStep("Looking through your other meetings") }
                     found = otherMeetings(meetings, others: others, besides: rel, phrases: route.search, tokens: extra, todos: config.todosEnabled)
                 }
             } catch {
-                // Stopped: stop. Anything else: answer from this meeting alone.
-                if isCancellation(error) { throw error }
+                // With no open meeting there's nothing to fall back on if the search request fails.
+                if rel == nil || isCancellation(error) { throw error }
+            }
+            if rel == nil, found.isEmpty {
+                found = otherMeetings(meetings, others: others, besides: nil, phrases: questionWords(question), tokens: extra, todos: config.todosEnabled)
             }
         }
+        if rel == nil, found.isEmpty {
+            return "I couldn’t find a saved call that matches. Try adding a name, call title or topic."
+        }
         onStep("Writing the answer")
-        let prompt = ([open] + found.map(\.text)).joined(separator: "\n\n") + "\n\n" + tail
+        let prompt = ([open] + found.map(\.text) + [tail]).filter { !$0.isEmpty }.joined(separator: "\n\n")
         let answer = try await model.complete([system, ChatMessage("user", prompt)], think: think, maxTokens: replyTokens)
-        return citationLinks(theyThem(answer, names: files.meta.participants ?? []), sources: [rel] + found.map(\.path))
+        let sources = [rel].compactMap { $0 } + found.map(\.path)
+        return citationLinks(theyThem(answer, names: files?.meta.participants ?? []), sources: sources, hasOpenMeeting: rel != nil)
     }
 }
 
@@ -174,10 +190,10 @@ private func historyBlock(_ history: [AskExchange]) -> String {
  * The other meetings a question reaches for: those with one of the phrases in them (every word of
  * it, anywhere in the meeting), and the ones in the same folder as the open meeting, which is where
  * a series lives. The most phrases first, then the newest. Each is given as its summary, its to-dos
- * (unless `todos` is false: they're turned off) and the transcript lines that match, tagged [M2],
- * [M3]… in the order returned.
+ * (unless `todos` is false: they're turned off) and the transcript lines that match. The tags
+ * start at [M2] if a meeting is open and at [M1] otherwise.
  */
-func otherMeetings(_ meetings: Meetings, others: [TreeNode], besides rel: String, phrases: [String], tokens: Int, todos: Bool = true) -> [(path: String, text: String)] {
+func otherMeetings(_ meetings: Meetings, others: [TreeNode], besides rel: String?, phrases: [String], tokens: Int, todos: Bool = true) -> [(path: String, text: String)] {
     let phrases = phrases.map(\.trimmed).filter { !$0.isEmpty }.prefix(4)
     let folderOf = { (path: String) in (path as NSString).deletingLastPathComponent }
     let listed = others.map { (path: $0.path, label: "\($0.title ?? $0.name) \(folderOf($0.path))") }
@@ -189,8 +205,7 @@ func otherMeetings(_ meetings: Meetings, others: [TreeNode], besides rel: String
             matched[hit.path, default: []].append(phrase)
         }
     }
-    let folder = folderOf(rel)
-    if !folder.isEmpty {
+    if let folder = rel.map(folderOf), !folder.isEmpty {
         for node in others where folderOf(node.path) == folder { score[node.path, default: 0] += 3 }
     }
     let ranked = others.filter { score[$0.path] != nil }
@@ -208,11 +223,19 @@ func otherMeetings(_ meetings: Meetings, others: [TreeNode], besides rel: String
                 foldedForSearch(phrase).split(whereSeparator: \.isWhitespace).allSatisfy { folded.contains($0) }
             }
         }.prefix(8).map { String($0.trimmed.prefix(700)) }
+        let transcript: String?
+        if rel == nil, lines.isEmpty {
+            // A match on the title or participants alone can still have the answer in the transcript.
+            let excerpt = transcriptFor(files.transcript, question: phrases.joined(separator: " "), tokens: min(600, each / 2))
+            transcript = section("Transcript excerpt ([mm:ss] is the time into that call)", excerpt.text)
+        } else {
+            transcript = section("Transcript lines that match the search ([mm:ss] is the time into that call)", lines.joined(separator: "\n\n"))
+        }
         let text = [
-            heading(found.count + 2, node.path, files.meta),
+            heading(found.count + (rel == nil ? 1 : 2), node.path, files.meta),
             section("Summary", forReading(files.summary)) ?? "Summary: none was written.",
             todos ? section("To-dos ([x] = done)", files.todo) : nil,
-            section("Transcript lines that match the search ([mm:ss] is the time into that call)", lines.joined(separator: "\n\n")),
+            transcript,
         ].compactMap { $0 }.joined(separator: "\n\n")
         // Cut to its share of the room.
         found.append((node.path, String(text.prefix(LocalModels.bytes(forTokens: each)))))
@@ -228,10 +251,10 @@ private let hrefCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvw
  * The model cites a meeting by its tag: "[M2]", or "[M2 12:34]" for a line of its transcript. Here
  * each becomes a Markdown link the app opens: to the meeting (its target is the meeting folder's
  * path, percent-encoded), and with a time, to that moment in its transcript ("#12:34" on the end).
- * `sources` are the meetings' paths in tag order; the first is the open meeting, whose times are
- * shown as the time alone. A tag for a meeting that wasn't given is left as the model wrote it.
+ * `sources` are the meetings' paths in tag order. If a meeting is open, it's first and its times
+ * are shown as the time alone. A tag for a meeting that wasn't given is left as the model wrote it.
  */
-func citationLinks(_ answer: String, sources: [String]) -> String {
+func citationLinks(_ answer: String, sources: [String], hasOpenMeeting: Bool = true) -> String {
     let time = try! NSRegularExpression(pattern: stampForm)
     func href(_ path: String) -> String { path.addingPercentEncoding(withAllowedCharacters: hrefCharacters) ?? path }
     func label(_ path: String) -> String {
@@ -253,10 +276,10 @@ func citationLinks(_ answer: String, sources: [String]) -> String {
         let rest = g[2] ?? ""
         let times = time.matches(in: rest, range: NSRange(rest.startIndex..., in: rest)).compactMap { Range($0.range, in: rest).map { String(rest[$0]) } }
         if times.isEmpty { return "[\(label(path))](\(href(path)))" }
-        return times.map { "[\(n == 1 ? $0 : "\(label(path)) · \($0)")](\(href(path))#\($0))" }.joined(separator: ", ")
+        return times.map { "[\(hasOpenMeeting && n == 1 ? $0 : "\(label(path)) · \($0)")](\(href(path))#\($0))" }.joined(separator: ", ")
     }
     // With only the open meeting in front of it, a bare "[12:34]" can only be a time in that one.
-    if sources.count == 1 {
+    if hasOpenMeeting, sources.count == 1 {
         out = replacing(out, "\\[(\(stampForm))\\](?!\\()") { g in g[1].map { "[\($0)](\(href(sources[0]))#\($0))" } }
     }
     return out

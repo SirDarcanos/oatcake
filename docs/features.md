@@ -115,9 +115,9 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 
 ## Ask
 
-- Questions about the meeting you have open or across all of them, answered by the model on this
-  Mac, with links to the meetings and times it drew on. [Ask](how-it-works.md#5-ask)
-- Follow-ups in the same conversation, as you move between meetings. [Ask](how-it-works.md#5-ask)
+- Ask across your saved calls from Home, or start with the call you have open. Answers link to the
+  meetings and times they draw on. [Ask](how-it-works.md#5-ask)
+- Follow-ups in the same conversation as you move between Home and meetings. [Ask](how-it-works.md#5-ask)
 
 ## Local MCP server
 

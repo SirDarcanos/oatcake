@@ -301,6 +301,8 @@ struct DetailView: View {
             switch model.selection {
             case .home:
                 HomeView()
+                    .safeAreaPadding(.bottom, 58)
+                    .overlay(alignment: .bottom) { AskBar(path: nil) }
             case .meeting(let path, let jump):
                 if let node = model.library.tree?.find(path), node.kind == .meeting {
                     MeetingView(node: node, jump: jump)
