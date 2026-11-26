@@ -63,6 +63,9 @@ final class RecordingController {
     var live: Recording?
     /// The call being recorded, as it's heard: lines from the live helper, and what the helper is doing.
     var liveLines: [LiveTranscriptLine] = []
+    /// `liveLines` as the live screen shows them: in order, without your microphone's echoes of the
+    /// call. Worked out when a line arrives or is named, not each time the screen is drawn.
+    private(set) var liveShown: [LiveTranscriptLine] = []
     var liveState = LiveTranscriptState.idle
     /// The lines you've said who said during this call, as kept in the recording (live-names.json).
     var liveNames: [LiveName] = []
@@ -623,6 +626,7 @@ final class RecordingController {
         // started, say): one is enough.
         guard liveTranscriptFor != rec.id else { return }
         liveLines = []
+        liveShown = []
         liveState = .idle
         liveNames = LiveNames.load(rec.dir)
         guard config.liveTranscript, liveHelper == nil else { return }
@@ -645,6 +649,7 @@ final class RecordingController {
                     for change in event.names ?? [] {
                         if let i = self.liveLines.firstIndex(where: { $0.id == change.line }) { self.liveLines[i].speaker = change.name }
                     }
+                    if event.line != nil || event.names?.isEmpty == false { self.liveShown = liveTranscript(self.liveLines) }
                     if let stage = event.stage { self.liveState = .at(stage) }
                     if let error = event.error { self.liveState = .stopped(error) }
                 }
@@ -683,7 +688,10 @@ final class RecordingController {
             liveNames = names
             // Shown straight away; the helper names the lines that sound like it a moment later. A name
             // taken back stays until the helper has decided again.
-            if let name, let i = liveLines.firstIndex(where: { $0.id == line.id }) { liveLines[i].speaker = name }
+            if let name, let i = liveLines.firstIndex(where: { $0.id == line.id }) {
+                liveLines[i].speaker = name
+                liveShown = liveTranscript(liveLines)
+            }
         } catch {
             toast("Couldn’t keep that name: \(error.localizedDescription)", isError: true)
         }

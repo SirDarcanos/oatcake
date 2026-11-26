@@ -24,7 +24,7 @@ struct AskBar: View {
 
     /// From Home, Ask finds calls by the words in the question, so these name the latest calls.
     private var homeSuggestions: [String] {
-        let latest = listedIn(model.library.tree).prefix(2).map(meetingTitle)
+        let latest = newestIn(model.library.tree, 2).map(meetingTitle)
         guard let newest = latest.first else { return [] }
         var questions = ["What did we decide in “\(newest)”?", "Who said they’d follow up after “\(newest)”, and on what?"]
         if latest.count > 1 { questions.append("What’s still open from “\(latest[1])”?") }
@@ -71,7 +71,7 @@ struct AskBar: View {
         let question = (text ?? draft).trimmed
         guard !question.isEmpty, model.ask.running == nil else { return }
         draft = ""
-        model.ask.send(question, meeting: path, config: model.config, downloads: model.downloads)
+        model.ask.send(question, meeting: path, config: model.config, downloads: model.downloads, meetings: model.library.meetings)
     }
 
     private func panel(_ chat: AskChat) -> some View {

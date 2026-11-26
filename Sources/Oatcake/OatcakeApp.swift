@@ -310,7 +310,7 @@ struct DetailView: View {
 
     /// An empty folder says so (with Record here) in the middle column; this pane stays blank.
     private var blank: some View {
-        Text(listedIn(model.library.tree?.find(model.folder) ?? model.library.tree).isEmpty ? "" : "Select a meeting")
+        Text(newestIn(model.library.tree?.find(model.folder) ?? model.library.tree, 1).isEmpty ? "" : "Select a meeting")
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .toolbar { EmptyPaneToolbar() }

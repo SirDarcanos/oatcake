@@ -331,7 +331,7 @@ struct NewRecordingView: View {
                 if let existing = model.library.tree?.subfolders.first(where: { loose($0.name) == loose(newName) }) {
                     target = existing.path
                 } else {
-                    target = try Meetings(root: model.config.meetingsRoot).createFolder(in: "", named: newName)
+                    target = try model.library.meetings.createFolder(in: "", named: newName)
                 }
             }
             let notes = prep + prepLines(prepDraft)

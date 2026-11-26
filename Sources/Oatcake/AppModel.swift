@@ -139,7 +139,9 @@ final class AppModel {
             self.edits.discard(paths)
         }
         calendar.changed = { [unowned self] in self.recording.updateMenuBar() }
-        recording.folderForEvent = { [unowned self] title, recurring in try self.library.meetings.folderForEvent(title: title, recurring: recurring) }
+        recording.folderForEvent = { [unowned self] title, recurring in
+            try self.library.meetings.folderForEvent(title: title, recurring: recurring, in: self.library.tree)
+        }
         recording.ended = { [unowned self] rec in self.jobs.progress[rec.id] = JobProgress() }
     }
 
@@ -183,9 +185,7 @@ final class AppModel {
 
         recording.resumeRecordings()
         library.watchMeetings()
-        // Load the library before the window shows, so the meeting list and Home's to-dos are ready at launch.
-        library.tree = library.meetings.tree()
-        if let tree = library.tree { library.setTodos(library.meetings.allTodos(in: tree)) }
+        // The library is read by refresh() below, off the main thread, so a big one doesn't hold up the window.
         jobs.pending = Recordings.waiting(except: recording.activeIDs)
         jobs.unchecked = Recordings.unchecked()
         // A recording picked up again above has opened its live view: Home only when nothing has.
@@ -229,11 +229,13 @@ final class AppModel {
         let waiting = waitingForRead
         waitingForRead = []
         let live = recording.activeIDs
+        let shown = library.tree
+        let changedOnDisk = library.takeChangedOnDisk()
         Task {
             let (tree, pending, unchecked, todos) = await Task.detached {
                 // The folder is walked once: the to-dos are read from the tree just built.
                 let tree = meetings.tree()
-                return (tree, Recordings.waiting(except: live), Recordings.unchecked(),
+                return (tree == shown ? nil : tree, Recordings.waiting(except: live), Recordings.unchecked(),
                         meetings.allTodos(in: tree))
             }.value
             refreshing = false
@@ -251,11 +253,10 @@ final class AppModel {
             var quiet = Transaction()
             quiet.disablesAnimations = true
             withTransaction(quiet) {
-                self.library.tree = tree
+                self.library.landed(tree, changedOnDisk: changedOnDisk)
                 self.jobs.pending = pending
                 self.jobs.unchecked = unchecked
                 self.library.setTodos(todos)
-                self.library.diskVersion += 1
             }
             jobs.startWaiting()
             jobs.updateBadge()
@@ -303,7 +304,7 @@ final class AppModel {
 
     func openFolder(_ path: String) {
         folder = path
-        if let first = listedIn(library.tree?.find(path)).first {
+        if let first = newestIn(library.tree?.find(path), 1).first {
             selection = .meeting(first.path)
         } else {
             selection = .folder(path)

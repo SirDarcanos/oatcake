@@ -19,9 +19,12 @@ struct MeetingListView: View {
         let rows = listedIn(folder)
         // What's listed, and how many, are named in the toolbar above the list, as Mail names a mailbox.
         let title = everything ? "All meetings" : baseName(folder!.path)
-        let subtitle = "\(everything || parentOf(folder!.path).isEmpty ? "" : folderPath(parentOf(folder!.path)) + " · ")\(rows.count) meeting\(rows.count == 1 ? "" : "s")"
+        let subtitle = folder == nil ? "" : "\(everything || parentOf(folder!.path).isEmpty ? "" : folderPath(parentOf(folder!.path)) + " · ")\(rows.count) meeting\(rows.count == 1 ? "" : "s")"
         Group {
-            if rows.isEmpty {
+            if folder == nil {
+                // The Meetings folder is still being read, just after launch: not "no meetings".
+                Color.clear
+            } else if rows.isEmpty {
                 VStack(spacing: 10) {
                     Text(everything ? "No meetings yet." : "No meetings in this folder yet.")
                         .foregroundStyle(.secondary)
@@ -32,8 +35,10 @@ struct MeetingListView: View {
                 // Picking a meeting leaves this list as it is, rather than swapping it for the meeting's folder.
                 // Picking several (⌘- or ⇧-click) leaves the open meeting open, for acting on them all at once.
                 let listed = Set(rows.map(\.path))
-                let chosen = rows.filter { selected(in: listed).contains($0.path) }
-                List(selection: Binding(get: { selected(in: listed) }, set: { paths in
+                // Worked out once, not again for each row.
+                let shown = selected(in: listed)
+                let chosen = rows.filter { shown.contains($0.path) }
+                List(selection: Binding(get: { shown }, set: { paths in
                     picked = paths
                     if paths.count == 1, let p = paths.first { model.selectMeeting(p) }
                 })) {

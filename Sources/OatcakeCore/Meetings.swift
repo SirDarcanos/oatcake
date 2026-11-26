@@ -84,39 +84,69 @@ public enum MeetingFile: String, CaseIterable, Sendable {
     case summary = "summary.md", transcript = "transcript.md", notes = "notes.md", todo = "todo.md", draft = "draft.md"
 }
 
-// Sendable by its lock: `root` never changes, and the two caches below are only touched inside `lock`.
+/// The most folded text search keeps between searches. A bigger library has the rest read again each time.
+private let searchCacheLimit = 64 << 20
+
+/// When a file was last changed; nil when there's nothing there. Asked of every meeting each time the
+/// tree is read, so without FileManager's dictionary of attributes.
+private func modificationDate(_ file: URL) -> Date? {
+    var info = stat()
+    guard stat(file.path, &info) == 0 else { return nil }
+    return Date(timeIntervalSince1970: TimeInterval(info.st_mtimespec.tv_sec) + TimeInterval(info.st_mtimespec.tv_nsec) / 1e9)
+}
+
+// Sendable by its lock: `root` never changes, and the caches below are only touched inside `lock`.
 public final class Meetings: @unchecked Sendable {
     public let root: URL
     private let lock = NSLock()
-    /// Previews are re-read only when summary.md changes, since the tree is rebuilt on every edit.
+    /// Previews, and what each meeting.json says, are re-read only when their file changes, since the
+    /// tree is rebuilt on every change in the Meetings folder (Oatcake's own saves included). Dates
+    /// in particular are slow to parse.
     private var previews: [String: (Date, String)] = [:]
-    /// Each file's text for search, as written and with case and accents folded away. Kept the same way.
-    private var texts: [String: (modified: Date, text: String, folded: String)] = [:]
+    private var metas: [String: (Date, TreeNode)] = [:]
+    /// Each file's text for search, with case and accents folded away, kept the same way: only the
+    /// folded copy, as the text as written is needed only for a meeting that's found. Up to
+    /// `searchCacheLimit` bytes of it, counted in `textBytes`.
+    private var texts: [String: (modified: Date, folded: String)] = [:]
+    private var textBytes = 0
 
     public init(root: URL) { self.root = root }
 
     private func preview(_ file: URL) -> String {
-        guard let modified = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date else { return "" }
+        guard let modified = modificationDate(file) else { return "" }
         if let cached = lock.withLock({ previews[file.path] }), cached.0 == modified { return cached.1 }
         let text = String(previewOf(readText(file)).prefix(240))
         lock.withLock { previews[file.path] = (modified, text) }
         return text
     }
 
+    /// A meeting's node as meeting.json describes it, without its name, path or preview.
+    private func meetingNode(_ file: URL, modified: Date) -> TreeNode {
+        if let cached = lock.withLock({ metas[file.path] }), cached.0 == modified { return cached.1 }
+        // A hand-edited meeting.json shouldn't hide the meeting.
+        let meta = tryJSON(MeetingMeta.self, file)
+        let node = TreeNode(name: "", path: "", kind: .meeting, title: meta?.title, summaryTemplate: meta?.template,
+                            calendarIDs: meta?.calendarIDs, startedAt: parseISO(meta?.startedAt),
+                            endedAt: parseISO(meta?.endedAt), granola: meta?.source == "granola")
+        lock.withLock { metas[file.path] = (modified, node) }
+        return node
+    }
+
     public func tree() -> TreeNode {
         let fm = FileManager.default
         try? fm.createDirectory(at: root, withIntermediateDirectories: true)
+        var found = Set<String>()
         func walk(_ rel: String) -> TreeNode {
             let full = (try? resolveInside(root, rel)) ?? root
             let name = rel.isEmpty ? root.lastPathComponent : (rel as NSString).lastPathComponent
             let metaFile = full.appendingPathComponent("meeting.json")
-            if !rel.isEmpty, fm.exists(metaFile) {
-                // A hand-edited meeting.json shouldn't hide the meeting.
-                let meta = tryJSON(MeetingMeta.self, metaFile)
-                return TreeNode(name: name, path: rel, kind: .meeting, title: meta?.title, summaryTemplate: meta?.template,
-                                calendarIDs: meta?.calendarIDs, startedAt: parseISO(meta?.startedAt),
-                                endedAt: parseISO(meta?.endedAt), granola: meta?.source == "granola",
-                                preview: preview(full.appendingPathComponent("summary.md")))
+            if !rel.isEmpty, let modified = modificationDate(metaFile) {
+                found.insert(full.path)
+                var node = meetingNode(metaFile, modified: modified)
+                node.name = name
+                node.path = rel
+                node.preview = preview(full.appendingPathComponent("summary.md"))
+                return node
             }
             let entries = (try? fm.contentsOfDirectory(at: full, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
             var children = entries.filter { fm.isDirectory($0) }.map { walk(rel.isEmpty ? $0.lastPathComponent : rel + "/" + $0.lastPathComponent) }
@@ -129,7 +159,16 @@ public final class Meetings: @unchecked Sendable {
             }
             return TreeNode(name: name, path: rel, kind: .folder, children: children)
         }
-        return walk("")
+        let tree = walk("")
+        // What was kept for meetings that have gone (renamed, moved, in the Trash) goes too.
+        let inMeeting = { (file: String) in found.contains((file as NSString).deletingLastPathComponent) }
+        lock.withLock {
+            previews = previews.filter { inMeeting($0.key) }
+            metas = metas.filter { inMeeting($0.key) }
+            texts = texts.filter { inMeeting($0.key) }
+            textBytes = texts.values.reduce(0) { $0 + $1.folded.utf8.count }
+        }
+        return tree
     }
 
     public func read(_ rel: String) throws -> MeetingFiles {
@@ -154,13 +193,22 @@ public final class Meetings: @unchecked Sendable {
         return file
     }
 
-    private func searchable(_ file: URL) -> (text: String, folded: String) {
-        guard let modified = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date else { return ("", "") }
-        if let cached = lock.withLock({ texts[file.path] }), cached.modified == modified { return (cached.text, cached.folded) }
-        let text = readText(file)
-        let folded = foldedForSearch(text)
-        lock.withLock { texts[file.path] = (modified, text, folded) }
-        return (text, folded)
+    private func searchable(_ file: URL) -> String {
+        guard let modified = modificationDate(file) else {
+            lock.withLock { if let gone = texts.removeValue(forKey: file.path) { textBytes -= gone.folded.utf8.count } }
+            return ""
+        }
+        if let cached = lock.withLock({ texts[file.path] }), cached.modified == modified { return cached.folded }
+        let folded = foldedForSearch(readText(file))
+        lock.withLock {
+            let before = texts.removeValue(forKey: file.path)?.folded.utf8.count ?? 0
+            textBytes -= before
+            if textBytes + folded.utf8.count <= searchCacheLimit {
+                texts[file.path] = (modified, folded)
+                textBytes += folded.utf8.count
+            }
+        }
+        return folded
     }
 
     /**
@@ -168,21 +216,22 @@ public final class Meetings: @unchecked Sendable {
      * `label` (what the list shows for it: its title and folder) or anywhere in its summary, to-dos,
      * notes or transcript. Case and accents don't matter. A hit carries the first line with a word that
      * the label doesn't have, so the list can show why the meeting was found. With `todos` false (to-dos
-     * turned off in Settings), todo.md isn't looked in.
+     * turned off in Settings), todo.md isn't looked in. A search whose task is cancelled (the words
+     * have changed, or Ask was stopped) stops looking at the next meeting.
      */
     public func search(_ query: String, in meetings: [(path: String, label: String)], todos: Bool = true) -> [SearchHit] {
         let words = foldedForSearch(query).split(whereSeparator: \.isWhitespace).map(String.init)
         guard !words.isEmpty else { return [] }
         let order: [MeetingFile] = todos ? [.summary, .todo, .notes, .transcript] : [.summary, .notes, .transcript]
         return meetings.compactMap { meeting in
-            guard let dir = try? resolveInside(root, meeting.path) else { return nil }
+            guard !Task.isCancelled, let dir = try? resolveInside(root, meeting.path) else { return nil }
             let label = foldedForSearch(meeting.label)
             let files = order.map { ($0, searchable(dir.appendingPathComponent($0.rawValue))) }
-            guard words.allSatisfy({ w in label.contains(w) || files.contains { $0.1.folded.contains(w) } }) else { return nil }
+            guard words.allSatisfy({ w in label.contains(w) || files.contains { $0.1.contains(w) } }) else { return nil }
             let wanted = words.filter { !label.contains($0) }
             guard !wanted.isEmpty else { return SearchHit(path: meeting.path) }
-            for (file, content) in files where wanted.contains(where: { content.folded.contains($0) }) {
-                for raw in content.text.components(separatedBy: "\n") {
+            for (file, content) in files where wanted.contains(where: { content.contains($0) }) {
+                for raw in readText(dir.appendingPathComponent(file.rawValue)).components(separatedBy: "\n") {
                     let folded = foldedForSearch(raw)
                     guard let word = wanted.first(where: { folded.contains($0) }) else { continue }
                     let plain = plainLine(raw)
@@ -363,10 +412,11 @@ public final class Meetings: @unchecked Sendable {
      * ignored, so "John & Jane 1:1" finds "John & Jane 1-1"), by its own name or its whole path. With no
      * such folder, it goes where the latest meeting of the same name is (a "Weekly sync" kept in
      * Team stays in Team). Failing that, a recurring event gets a new top-level folder named after
-     * it, and a one-off goes at the top level.
+     * it, and a one-off goes at the top level. `tree` is the one the app has just read, when it has:
+     * the Meetings folder isn't walked again while the call waits to be recorded.
      */
-    public func folderForEvent(title: String, recurring: Bool) throws -> String {
-        let tree = tree()
+    public func folderForEvent(title: String, recurring: Bool, in tree: TreeNode? = nil) throws -> String {
+        let tree = tree ?? self.tree()
         if let match = matchingFolder(title, in: tree) { return match }
         if let earlier = latestMeeting(titled: title, in: tree) { return (earlier.path as NSString).deletingLastPathComponent }
         if !recurring { return "" }

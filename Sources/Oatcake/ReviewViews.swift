@@ -192,6 +192,8 @@ struct ReviewView: View {
             // Kept while this showed it, so the cards didn't go blank after Save.
             if saved { model.jobs.reviewDrafts.removeValue(forKey: rec.id) }
         }
+        // The voiceprints file is read off the main thread.
+        .task { people = await Task.detached { knownPeople() }.value }
     }
 
     /// Its analysis couldn't be read (damaged, or cut short): it can be analysed again, or discarded.
@@ -228,7 +230,6 @@ struct ReviewView: View {
         do {
             let a = try loadAnalysis(rec)
             analysis = a
-            people = knownPeople()
             if model.jobs.reviewDrafts[rec.id] == nil {
                 // As it opens, with nothing changed yet: not through `draft`, which would count it as an edit.
                 model.jobs.reviewDrafts[rec.id] = ReviewDraft(title: rec.title, folder: rec.folder ?? "",
@@ -495,11 +496,7 @@ struct ReviewView: View {
                     .accessibilityLabel("\(on ? "Pause" : "Play") the clip at \(clock(q.start))")
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(alignment: .leading) {
-                        GeometryReader { g in
-                            Capsule().fill(Color.accentColor.opacity(0.18)).frame(width: on ? g.size.width * player.fraction : 0)
-                        }
-                    }
+                    .background(alignment: .leading) { ClipProgress(player: player, on: on) }
                     .background(Capsule().fill(Color.fill))
                     .clipShape(Capsule())
                 }
@@ -510,30 +507,11 @@ struct ReviewView: View {
     }
 
     private func transcript(_ analysis: Analysis) -> some View {
-        // The names are text here, so each person's colour is in the shade that reads against the window.
-        let colors = provisionalNameColors(names(analysis))
-        return ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    SectionLabel(text: "Transcript")
-                    Spacer()
-                    Text("Updates as you name voices").font(.caption).foregroundStyle(.secondary)
-                }
-                ForEach(Array(analysis.lines.enumerated()).filter { !leftOut($0.element.speaker) }, id: \.offset) { _, l in
-                    let name = nameOf(analysis, l.speaker)
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack {
-                            Text(name).fontWeight(.semibold).foregroundStyle(colors[name].map { AnyShapeStyle($0) } ?? AnyShapeStyle(.secondary))
-                            Text(clock(l.start)).foregroundStyle(.tertiary).monospacedDigit()
-                        }
-                        .font(.caption)
-                        Text(l.text).font(.callout).textSelection(.enabled)
-                    }
-                }
-            }
-            .padding(16)
-        }
-        .background(Color(nsColor: .windowBackgroundColor))
+        let voices = [me] + analysis.speakers.map(\.id)
+        let out = Set(voices.filter { leftOut($0) })
+        return ReviewTranscript(lines: analysis.lines,
+                                names: Dictionary(voices.filter { !out.contains($0) }.map { ($0, nameOf(analysis, $0)) }) { first, _ in first },
+                                leftOut: out, order: names(analysis))
     }
 
     /// Saving writes the meeting straight away; its summary is then written in the background and
@@ -565,5 +543,57 @@ struct ReviewView: View {
         } catch {
             self.error = error.localizedDescription
         }
+    }
+}
+
+/// How much of a playing clip has played. A view of its own: the player says so ten times a second,
+/// and only this is drawn again for it.
+private struct ClipProgress: View {
+    let player: ClipPlayer
+    let on: Bool
+
+    var body: some View {
+        GeometryReader { g in
+            Capsule().fill(Color.accentColor.opacity(0.18)).frame(width: on ? g.size.width * player.fraction : 0)
+        }
+    }
+}
+
+/// Who's who's transcript, under the names the lines will be saved with. A view of its own, drawn
+/// again when a name changes rather than whenever the screen is, and lazily: a long call has
+/// hundreds of lines.
+private struct ReviewTranscript: View {
+    let lines: [Line]
+    /// Each voice's name, by its id; a voice left out of the meeting has none, and its lines aren't shown.
+    let names: [String: String]
+    let leftOut: Set<String>
+    /// Everyone named, in the order their colours are given in.
+    let order: [String]
+
+    var body: some View {
+        // The names are text here, so each person's colour is in the shade that reads against the window.
+        let colors = provisionalNameColors(order)
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    SectionLabel(text: "Transcript")
+                    Spacer()
+                    Text("Updates as you name voices").font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(Array(lines.enumerated()).filter { !leftOut.contains($0.element.speaker) }, id: \.offset) { _, l in
+                    let name = names[l.speaker] ?? "Unknown"
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(name).fontWeight(.semibold).foregroundStyle(colors[name].map { AnyShapeStyle($0) } ?? AnyShapeStyle(.secondary))
+                            Text(clock(l.start)).foregroundStyle(.tertiary).monospacedDigit()
+                        }
+                        .font(.caption)
+                        Text(l.text).font(.callout).textSelection(.enabled)
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 }
