@@ -130,6 +130,12 @@ public struct SummaryTemplate: Codable, Equatable, Hashable, Sendable {
     }
 }
 
+/// A list typed as one line in Settings (Jargon, Events that aren't calls): separated by commas or
+/// new lines, each trimmed, blanks left out.
+public func commaList(_ text: String) -> [String] {
+    text.split(whereSeparator: { $0 == "," || $0.isNewline }).map { String($0).trimmed }.filter { !$0.isEmpty }
+}
+
 public struct Config: Codable, Equatable, Sendable {
     /// Your name: the microphone track is always you.
     public var myName: String
@@ -320,6 +326,9 @@ public struct Config: Codable, Equatable, Sendable {
         guard let name = name?.trimmed, !name.isEmpty else { return nil }
         return summaryTemplates.first { $0.name.trimmed == name && !$0.instructions.trimmed.isEmpty }
     }
+
+    /// The templates a meeting can be summarised with (New recording, Regenerate): named, and with instructions.
+    public var summaryTemplateChoices: [SummaryTemplate] { summaryTemplates.filter { summaryTemplate(named: $0.name) != nil } }
 
     /// What the model is told when it writes a summary with a template (by name): that template's
     /// instructions, or, with none or one that has gone since, the summary instructions.

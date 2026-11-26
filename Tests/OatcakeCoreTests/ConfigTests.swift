@@ -11,6 +11,16 @@ import Testing
         #expect(config.jargonLine.isEmpty)
         config.jargon = ["Automattic", " ", "WooCommerce"]
         #expect(config.jargonLine.hasSuffix("Automattic, WooCommerce."))
+        // Typed in Settings as one line, separated by commas or new lines.
+        #expect(commaList(" Focus time,Out of office ,\n, Task\n") == ["Focus time", "Out of office", "Task"] && commaList(" , ").isEmpty)
+    }
+
+    /// The templates offered for a meeting: those with a name and instructions.
+    @Test func summaryTemplateChoices() {
+        var config = Config.defaults()
+        config.summaryTemplates = [SummaryTemplate(name: "1:1", instructions: "Wins."), SummaryTemplate(name: " ", instructions: "Unnamed."),
+                                   SummaryTemplate(name: "Empty", instructions: "  ")]
+        #expect(config.summaryTemplateChoices.map(\.name) == ["1:1"])
     }
 
     /// A server of your own's context, as you've told Oatcake: none to start with (Qwen3's native

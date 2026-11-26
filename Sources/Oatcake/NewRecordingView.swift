@@ -149,7 +149,7 @@ struct NewRecordingView: View {
                     .frame(maxWidth: 360)
                     .onSubmit(start)
             }
-            let templates = model.config.summaryTemplates.filter { model.config.summaryTemplate(named: $0.name) != nil }
+            let templates = model.config.summaryTemplateChoices
             if !templates.isEmpty {
                 GridRow {
                     Text("Summary template").foregroundStyle(.secondary)

@@ -212,7 +212,7 @@ struct SettingsView: View {
                 .lineLimit(1...4)
                 .labelsHidden()
                 .onChange(of: ignoredEvents) {
-                    let titles = ignoredEvents.split(whereSeparator: { $0 == "," || $0.isNewline }).map { String($0).trimmed }.filter { !$0.isEmpty }
+                    let titles = commaList(ignoredEvents)
                     if titles != model.config.ignoredEvents { model.saveConfig(with(model.config) { $0.ignoredEvents = titles }) }
                 }
         } header: {
@@ -285,7 +285,7 @@ struct SettingsView: View {
                 .lineLimit(2...5)
                 .labelsHidden()
                 .onChange(of: jargon) {
-                    let terms = jargon.split(whereSeparator: { $0 == "," || $0.isNewline }).map { String($0).trimmed }.filter { !$0.isEmpty }
+                    let terms = commaList(jargon)
                     if terms != model.config.jargon { model.saveConfig(with(model.config) { $0.jargon = terms }) }
                 }
         } header: {

@@ -743,9 +743,7 @@ struct MeetingView: View {
     }
 
     /// The summary templates a meeting can be regenerated with: named, and with instructions.
-    private var templates: [SummaryTemplate] {
-        model.config.summaryTemplates.filter { model.config.summaryTemplate(named: $0.name) != nil }
-    }
+    private var templates: [SummaryTemplate] { model.config.summaryTemplateChoices }
 
     private func regenerate(_ part: SummaryPart, template: SummaryTemplateChoice = .meetings) {
         // Save edits before asking for a replacement; a failed save must not discard pending text.
