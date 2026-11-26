@@ -288,9 +288,10 @@ Organise meetings by dragging them onto folders; ⌘-click or ⇧-click selects 
 move. Right-click a meeting for **Rename…**, **Show in Finder** or **Move to Trash**, or several for
 **Show in Finder** or **Move to Trash** (⌘⌫ in the File menu does the same); **Show in Finder** is in the meeting's toolbar too. Renaming
 a meeting changes its title (in `meeting.json`) and its folder's name, which keeps its date.
-Folders can hold folders: right-click one for **New Folder Inside…**, **Rename…**, **Show in
-Finder** or **Move to Trash** (which asks first if it holds meetings). Finder and the app stay in
-step. The middle column's width drags, like the sidebar's.
+Folders can hold folders. Click the arrow next to a folder's name to show or hide its subfolders.
+Right-click a folder for **New Folder Inside…**, **Rename…**, **Show in Finder** or **Move to
+Trash** (which asks first if it holds meetings). Finder and the app stay in step. The middle
+column's width drags, like the sidebar's.
 
 ### Rename Speakers
 
