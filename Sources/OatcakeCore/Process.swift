@@ -68,16 +68,8 @@ final class Locked<Value: Sendable>: @unchecked Sendable {
     }
 }
 
-/// Whether a process ID is a running copy of the program whose path ends with `name`: a pid file
-/// outlives its process when that crashes, and macOS gives process IDs out again.
-func isRunning(_ pid: pid_t, program name: String) -> Bool {
-    guard pid > 1 else { return false }
-    var path = [CChar](repeating: 0, count: 4096)
-    guard proc_pidpath(pid, &path, UInt32(path.count)) > 0 else { return false }
-    return path.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }.hasSuffix("/" + name)
-}
-
-/// The process ID a file holds, when that process is still running and is `name`.
+/// The process ID a file holds, when that process is still running and is `name` (isRunning, which
+/// the recorder uses too, is RecorderContract's).
 func runningPid(in file: URL, program name: String) -> pid_t? {
     guard let text = try? String(contentsOf: file, encoding: .utf8), let pid = pid_t(text.trimmed), isRunning(pid, program: name) else { return nil }
     return pid

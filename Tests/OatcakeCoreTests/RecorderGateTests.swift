@@ -71,5 +71,8 @@ import Testing
         #expect(status.state == .recording && status.micDevice?.name == "A")
         let older = #"{"endedAt":"2026-11-05T15:00:00Z","micDevices":[{"at":0,"name":"A","uid":"a"}],"micOffset":0.4,"sampleRate":16000,"startedAt":"2026-11-05T14:00:00Z","systemOffset":0.1}"#
         #expect(try JSONDecoder().decode(RecorderMeta.self, from: Data(older.utf8)).micOffset == 0.4)
+        // A status from a recorder before it gave the tracks' offsets reads as not having them yet.
+        let earlier = try JSONDecoder().decode(RecorderStatus.self, from: Data(#"{"state":"recording","elapsed":3}"#.utf8))
+        #expect(earlier.micOffset == nil && earlier.systemOffset == nil)
     }
 }
