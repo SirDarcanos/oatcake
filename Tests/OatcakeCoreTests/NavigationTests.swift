@@ -64,4 +64,34 @@ import Testing
         #expect(history.goBack(from: "now", where: there) == "home")
         #expect(history.goForward(from: "home", where: there) == "now")
     }
+
+    @Test func aMeetingMovedToTheTrashCanBePutBack() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-putback-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let root = tmp.appendingPathComponent("Meetings")
+        let rel = "Team/2026-11-05 1400 Weekly sync"
+        let fm = FileManager.default
+        try fm.createDirectory(at: root.appendingPathComponent(rel), withIntermediateDirectories: true)
+        try "Jane Doe said hello.".write(to: root.appendingPathComponent(rel + "/summary.md"), atomically: true, encoding: .utf8)
+        // Stands in for the Trash: the tests leave your own alone.
+        let trash = tmp.appendingPathComponent("Trash/Weekly sync")
+        try fm.createDirectory(at: trash.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fm.moveItem(at: root.appendingPathComponent(rel), to: trash)
+        let meetings = Meetings(root: root)
+
+        try meetings.putBack(trash, to: rel)
+        #expect(readText(root.appendingPathComponent(rel + "/summary.md")) == "Jane Doe said hello.")
+        #expect(!fm.exists(trash))
+
+        // Something else in its place: it stays in the Trash.
+        try fm.moveItem(at: root.appendingPathComponent(rel), to: trash)
+        try fm.createDirectory(at: root.appendingPathComponent(rel), withIntermediateDirectories: true)
+        #expect(throws: OatcakeError.self) { try meetings.putBack(trash, to: rel) }
+        #expect(fm.exists(trash))
+
+        // The folder it was in has gone.
+        try fm.removeItem(at: root.appendingPathComponent("Team"))
+        #expect(throws: OatcakeError.self) { try meetings.putBack(trash, to: rel) }
+        #expect(fm.exists(trash))
+    }
 }

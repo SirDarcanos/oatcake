@@ -57,11 +57,12 @@ struct MeetingListView: View {
                     } else if nodes.count > 1 {
                         Button("Show in Finder") { model.library.reveal(nodes.map(\.path)) }
                         Divider()
-                        Button("Move \(nodes.count) Meetings to Trash") { model.library.trash(nodes) }
+                        Button("Move \(nodes.count) Meetings to Trash") { model.trash(nodes) }
                     }
                 }
-                // File › Move to Trash (⌘⌫, as in Finder) acts on the selection while the list has the keyboard.
-                .focusedValue(\.trashMeetings, chosen.isEmpty ? nil : { model.library.trash(chosen) })
+                // File › Move to Trash (⌘⌫, as in Finder) acts on the selection while the list has the
+                // keyboard; the next meeting opens, as in Mail.
+                .focusedValue(\.trashMeetings, chosen.isEmpty ? nil : { model.trash(chosen) })
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

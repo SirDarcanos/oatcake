@@ -402,6 +402,16 @@ final class AppModel {
         refresh()
     }
 
+    /// Move to Trash, from the meeting list or any meeting's menu. When the open meeting goes, the next
+    /// one in the list opens, as in Mail, so the keyboard carries on from there.
+    func trash(_ nodes: [TreeNode]) {
+        let listed = listedIn(library.tree?.find(folder) ?? library.tree).map(\.path)
+        let gone = Set(library.trash(nodes))
+        if case .meeting(let open, _) = selection, gone.contains(open) {
+            selection = rowAfterRemoving(gone, from: listed).map { .meeting($0) } ?? .folder
+        }
+    }
+
     /// A passing note at the bottom of the window. One that says something went wrong stays for
     /// eight seconds or until it's clicked, and is read out by VoiceOver, which never sees the note itself.
     func toast(_ text: String, isError: Bool = false) {

@@ -315,9 +315,24 @@ public final class Meetings: @unchecked Sendable {
         return relativePath(target, to: root)
     }
 
-    public func trash(_ rel: String) throws {
+    /// Moves a meeting or folder to the Trash. Returns where it is in the Trash, to put it back from.
+    @discardableResult
+    public func trash(_ rel: String) throws -> URL? {
         guard !rel.isEmpty else { throw OatcakeError("The Meetings folder itself can't be moved to the Trash") }
-        try FileManager.default.trashItem(at: try resolveInside(root, rel), resultingItemURL: nil)
+        var inTrash: NSURL?
+        try FileManager.default.trashItem(at: try resolveInside(root, rel), resultingItemURL: &inTrash)
+        return inTrash as URL?
+    }
+
+    /// Undo for Move to Trash: puts `trashed` back at `rel`, unless something else has taken its place
+    /// meanwhile or the folder it was in has gone.
+    public func putBack(_ trashed: URL, to rel: String) throws {
+        let target = try resolveInside(root, rel)
+        try ensureFree(target)
+        guard FileManager.default.isDirectory(target.deletingLastPathComponent()) else {
+            throw OatcakeError("The folder “\(((rel as NSString).deletingLastPathComponent as NSString).lastPathComponent)” isn't there any more")
+        }
+        try FileManager.default.moveItem(at: trashed, to: target)
     }
 
     /**
