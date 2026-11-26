@@ -78,8 +78,9 @@ microphone and system-audio permissions too.
 ## Layout
 
 - `Sources/OatcakeRecorder/` — system-audio + mic recorder (helper app)
-- `Sources/RecorderContract/` — the files the recorder and Oatcake pass between them, and the
-  check that the recorder only records for Oatcake
+- `Sources/RecorderContract/` — the files the recorder and Oatcake pass between them, the
+  check that the recorder only records for Oatcake, and the recorder's decisions (keeping its
+  tracks lined up, restarting a capture, stopping by itself), where tests can reach them
 - `Sources/OatcakeCore/` — recordings, speech pipeline, voiceprints, the language model and its
   download, summaries and templates, meeting folders, renaming speakers, calendar and its private
   address, Granola and Quill imports, Ask, updates, the MCP server

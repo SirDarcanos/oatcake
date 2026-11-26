@@ -31,5 +31,8 @@ import Testing
         let lines = buffer.add(Data(both.dropFirst(5).dropLast(1)))
         #expect(lines.compactMap { MenuBarLink.read(MenuBarAction.self, $0) } == [.stop])
         #expect(buffer.add(Data("\n".utf8)).compactMap { MenuBarLink.read(MenuBarAction.self, $0) } == [.openEvent(event)])
+        // What's left when the pipe closes is a line too, even without its newline.
+        #expect(buffer.finish() == nil)
+        #expect(buffer.add(Data("one\ntwo".utf8)) == ["one"] && buffer.finish() == "two" && buffer.finish() == nil)
     }
 }

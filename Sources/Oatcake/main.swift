@@ -13,6 +13,14 @@ if let flag = CommandLine.arguments.firstIndex(of: HelperMode.analyse), flag + 1
     let post: @Sendable (AnalysisProgress) -> Void = { progress in
         if let data = try? JSONEncoder().encode(progress) { output.write(data + Data("\n".utf8)) }
     }
+    // Oatcake quitting (or crashing) ends this too: launchd is its parent then, and nothing would read
+    // what it says. Left running, it went on until a write failed, and a reopened Oatcake could start a
+    // second on the same folder; reopened, Oatcake analyses the recording again from the start.
+    let oatcake = getppid()
+    let parentCheck = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+    parentCheck.schedule(deadline: .now() + 1, repeating: 1)
+    parentCheck.setEventHandler { if getppid() != oatcake { exit(0) } }
+    parentCheck.resume()
     Task {
         do {
             try await analyse(dir, report: post)

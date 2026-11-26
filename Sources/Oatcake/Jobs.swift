@@ -12,6 +12,8 @@ struct JobProgress: Equatable {
     var error: String?
     /// What kind of failure `error` is.
     var failure: AnalysisFailure?
+    /// Waiting for another recording's analysis to finish: they're done one at a time.
+    var waiting = false
 }
 
 /// What you've set on a Who's who screen, kept by the app so looking at something else and coming
@@ -82,6 +84,10 @@ final class Jobs {
     private var helpers: [String: ChildProcess.Handle] = [:]
     private var analyses: [String: Task<Void, Never>] = [:]
     private var autoStarted = Set<String>()
+    /// One analysis helper at a time: each loads the speech models and its whole call, so several at
+    /// once (recordings left from before a quit, back-to-back calls) would hold several of each.
+    private var helperBusy = false
+    private var helperQueue: [CheckedContinuation<Void, Never>] = []
     /// One at a time: two clear-ups at once could both be writing the same meeting's audio.
     private let tidying = DispatchQueue(label: "oatcake.tidy-saved", qos: .utility)
 
@@ -92,11 +98,18 @@ final class Jobs {
     /// Whether any call is being analysed now.
     var isAnalysingAny: Bool { !analysing.isEmpty }
 
-    /// Recordings waiting to be processed start straight away, in the background.
+    /// Recordings waiting to be processed start straight away, in the background, one at a time. So
+    /// does the last step of one that a quit cut short (names, then saving by itself).
     func startWaiting() {
-        for rec in pending where rec.state == .recorded && !autoStarted.contains(rec.id) {
-            autoStarted.insert(rec.id)
-            analyse(rec.id)
+        for rec in pending where !autoStarted.contains(rec.id) && !analysing.contains(rec.id) {
+            if rec.state == .recorded {
+                autoStarted.insert(rec.id)
+                analyse(rec.id)
+            } else if rec.state == .processed, Recordings.lastStepPending(rec) {
+                autoStarted.insert(rec.id)
+                analysing.insert(rec.id)
+                analyses[rec.id] = Task { await finish(rec, AnalysisProgress(done: true)) }
+            }
         }
     }
 
@@ -122,61 +135,108 @@ final class Jobs {
         analysing.insert(id)
         progress[id] = JobProgress(stage: progress[id]?.stage)
         analyses[id] = Task {
-            // Steps arrive as they happen; the outcome is read from the full output once it exits.
-            let result = try? await ChildProcess.run(Bundle.main.executableURL!, [HelperMode.analyse, rec.dir.path], onStart: { process in
-                Task { @MainActor in self.helpers[id] = process }
-            }, onLine: { line in
-                guard let p = try? JSONDecoder().decode(AnalysisProgress.self, from: Data(line.utf8)), p.stage != nil else { return }
-                Task { @MainActor in self.apply(id, p) }
-            })
-            helpers.removeValue(forKey: id)
-            var outcome = (result?.stdout ?? "").split(separator: "\n").reversed()
-                .compactMap { try? JSONDecoder().decode(AnalysisProgress.self, from: Data($0.utf8)) }
-                .first { $0.done == true || $0.error != nil }
-            if outcome == nil {
-                if result?.status == 0, FileManager.default.fileExists(atPath: rec.dir.appendingPathComponent("analysis.json").path) {
-                    outcome = AnalysisProgress(done: true)
-                } else {
-                    let detail = result.map { $0.stderr.trimmed.isEmpty ? "" : ": " + String($0.stderr.trimmed.suffix(300)) } ?? ""
-                    outcome = AnalysisProgress(error: "Analysis stopped (code \(result?.status ?? -1))\(detail)", failure: .helperStopped)
-                }
-            }
-            // Step 5, here rather than in the helper: the language model is the app's to run. A model
-            // that's still downloading isn't waited for; the names can be typed. Saving the transcript only
-            // asks nothing of the model: the call is saved without its guesses anyway (suggestedDecisions),
-            // and waiting for them held the save up. Naming its voices later starts without them.
-            if outcome?.done == true, Recordings.get(id) != nil, !Task.isCancelled, hasUnnamedVoices(rec.dir) {
-                if let chosenModel = downloads.chosenModel, !LocalModels.isDownloaded(chosenModel) { downloads.downloadModel(chosenModel) }
-                if config.afterCall != .saveTranscript {
-                    progress[id] = JobProgress(stage: .suggestingNames)
-                    await suggestNames(rec.dir, config: config)
-                }
-            }
-            analysing.remove(id)
-            analyses.removeValue(forKey: id)
-            // Discarded while it ran: nothing to report.
-            guard Recordings.get(id) != nil else {
-                progress.removeValue(forKey: id)
-                return
-            }
-            if let outcome { apply(id, outcome) }
-            // Settings › General › After a call: saved now, rather than waiting under Needs review.
-            if outcome?.done == true, config.afterCall != .review { autoSave(id) }
-            // Waiting under Needs review. Away from Oatcake (its window closed, say) the Dock badge may
-            // not be there to see, so it's said.
-            if outcome?.done == true, config.afterCall == .review, !NSApp.isActive { Reminders.readyToCheck(rec.title, id: id) }
+            let outcome = await runHelper(rec)
+            await finish(rec, outcome)
         }
+    }
+
+    /// Waits for the helper before this one to finish, saying so in the meantime. Decided here rather
+    /// than when the job is made: several started in one go are only queued as each reaches this.
+    private func helperTurn(_ id: String) async {
+        guard helperBusy else {
+            helperBusy = true
+            return
+        }
+        progress[id]?.waiting = true
+        await withCheckedContinuation { helperQueue.append($0) }
+    }
+
+    private func helperDone() {
+        if helperQueue.isEmpty { helperBusy = false } else { helperQueue.removeFirst().resume() }
+    }
+
+    /// Runs the analysis helper, when its turn comes, and says how it went.
+    private func runHelper(_ rec: Recording) async -> AnalysisProgress? {
+        let id = rec.id
+        await helperTurn(id)
+        defer { helperDone() }
+        // Discarded while it waited.
+        guard Recordings.get(id) != nil, !Task.isCancelled else { return nil }
+        progress[id]?.waiting = false
+        // A recorder that went without meta.json when one couldn't be written: there may be room now.
+        Recordings.finishInterrupted(rec)
+        // Steps arrive as they happen; the outcome is read from the full output once it exits.
+        let result = try? await ChildProcess.run(Bundle.main.executableURL!, [HelperMode.analyse, rec.dir.path], onStart: { process in
+            Task { @MainActor in self.helpers[id] = process }
+        }, onLine: { line in
+            guard let p = try? JSONDecoder().decode(AnalysisProgress.self, from: Data(line.utf8)), p.stage != nil else { return }
+            Task { @MainActor in self.apply(id, p) }
+        })
+        helpers.removeValue(forKey: id)
+        let outcome = (result?.stdout ?? "").split(separator: "\n").reversed()
+            .compactMap { try? JSONDecoder().decode(AnalysisProgress.self, from: Data($0.utf8)) }
+            .first { $0.done == true || $0.error != nil }
+        if let outcome { return outcome }
+        if result?.status == 0, FileManager.default.fileExists(atPath: rec.dir.appendingPathComponent("analysis.json").path) {
+            return AnalysisProgress(done: true)
+        }
+        let detail = result.map { $0.stderr.trimmed.isEmpty ? "" : ": " + String($0.stderr.trimmed.suffix(300)) } ?? ""
+        return AnalysisProgress(error: "Analysis stopped (code \(result?.status ?? -1))\(detail)", failure: .helperStopped)
+    }
+
+    /// What's left once the helper is done: step 5, then saving the call by itself if Settings says
+    /// so, then saying how it went.
+    private func finish(_ rec: Recording, _ outcome: AnalysisProgress?) async {
+        let id = rec.id
+        // Step 5, here rather than in the helper: the language model is the app's to run. A model
+        // that's still downloading isn't waited for; the names can be typed. Saving the transcript only
+        // asks nothing of the model: the call is saved without its guesses anyway (suggestedDecisions),
+        // and waiting for them held the save up. Naming its voices later starts without them.
+        if outcome?.done == true, Recordings.get(id) != nil, !Task.isCancelled, hasUnnamedVoices(rec.dir) {
+            if let chosenModel = downloads.chosenModel, !LocalModels.isDownloaded(chosenModel) { downloads.downloadModel(chosenModel) }
+            if config.afterCall != .saveTranscript {
+                progress[id] = JobProgress(stage: .suggestingNames)
+                await suggestNames(rec.dir, config: config)
+            }
+        }
+        // Settings › General › After a call: saved now, rather than waiting under Needs review. Still
+        // counted as being analysed meanwhile, so Who's who can't open and save it a second time.
+        if outcome?.done == true, Recordings.get(id) != nil, !Task.isCancelled, config.afterCall != .review { await autoSave(id) }
+        if outcome?.done == true { Recordings.lastStepDone(rec) }
+        analysing.remove(id)
+        analyses.removeValue(forKey: id)
+        // Discarded while it ran: nothing to report.
+        guard Recordings.get(id) != nil else {
+            progress.removeValue(forKey: id)
+            return
+        }
+        if let outcome { apply(id, outcome) }
+        // Waiting under Needs review. Away from Oatcake (its window closed, say) the Dock badge may
+        // not be there to see, so it's said.
+        if outcome?.done == true, config.afterCall == .review, !NSApp.isActive { Reminders.readyToCheck(rec.title, id: id) }
     }
 
     /// Saves a processed recording as a meeting without stopping at who's who: a voice Oatcake
     /// recognised under that person's name, the rest as "Voice 1"… They can be named later from the
     /// meeting. If it can't be saved, it waits under Needs review as usual.
-    private func autoSave(_ id: String) {
+    private func autoSave(_ id: String) async {
         guard let rec = Recordings.get(id), rec.state == .processed, let analysis = try? loadAnalysis(rec) else { return }
+        // Nothing heard in a call that has audio (a very quiet microphone, a track that couldn't be
+        // transcribed): saved, it would have an empty transcript, and with Keep call audio off its
+        // tracks would go and it couldn't be analysed again.
+        if analysis.lines.isEmpty, Recordings.audioSeconds(rec) > 5 {
+            toast("Couldn’t save “\(rec.title)” by itself: no speech was found in its audio. It’s waiting under Needs review.", isError: true)
+            return
+        }
         let folder = rec.folder ?? ""
         let withSummary = config.afterCall == .saveWithSummary
+        let config = config
         do {
-            let path = try saveMeeting(config, rec, decisions: suggestedDecisions(analysis), folder: folder, title: rec.title, unchecked: true)
+            // Off the main thread: with Keep call audio off it deletes the call's tracks, and it writes
+            // the transcript and voiceprints.
+            let path = try await Task.detached {
+                try saveMeeting(config, rec, decisions: suggestedDecisions(analysis), folder: folder, title: rec.title, unchecked: true)
+            }.value
             reviewDrafts.removeValue(forKey: id)
             if withSummary { writeSummary(path) }
             tidySavedRecordings()
@@ -258,6 +318,8 @@ final class Jobs {
             // A helper still analysing it would write its transcript and clips back after the folder had gone.
             helpers.removeValue(forKey: rec.id)?.terminate()
             analyses.removeValue(forKey: rec.id)?.cancel()
+            // One still waiting its turn finds it gone when the turn comes; it isn't work under way meanwhile.
+            analysing.remove(rec.id)
             try Recordings.discard(rec.id)
             reviewDrafts.removeValue(forKey: rec.id)
             Reminders.withdrawReadyToCheck(rec.id)
@@ -283,7 +345,11 @@ final class Jobs {
     /// earlier versions (which kept them) or by a copy of Oatcake that quit before it got to this.
     func tidySavedRecordings() {
         let root = config.meetingsRoot
-        tidying.async { Recordings.tidySaved(meetingsRoot: root) }
+        tidying.async {
+            let problems = Recordings.tidySaved(meetingsRoot: root)
+            // Said, rather than left to happen again unseen: the folder is kept and tried again next time.
+            if let first = problems.first { Task { @MainActor in self.toast(first, isError: true) } }
+        }
     }
 
     /// Regenerate summary or Regenerate to-dos: asks first, as it replaces what's there. The old one

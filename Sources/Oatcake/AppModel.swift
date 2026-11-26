@@ -186,13 +186,13 @@ final class AppModel {
         // Load the library before the window shows, so the meeting list and Home's to-dos are ready at launch.
         library.tree = library.meetings.tree()
         if let tree = library.tree { library.setTodos(library.meetings.allTodos(in: tree)) }
-        jobs.pending = Recordings.list().filter { $0.state == .recorded || $0.state == .processed }
+        jobs.pending = Recordings.waiting(except: recording.activeIDs)
         jobs.unchecked = Recordings.unchecked()
         // A recording picked up again above has opened its live view: Home only when nothing has.
         if selection == nil { selection = .home }
         refresh()
         calendar.start()
-        timers.append(Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
+        timers.append(Timer.common(every: 30) { _ in
             Task { @MainActor in
                 self.calendar.now = Date()
                 self.library.countTodosIfNewDay()
@@ -228,11 +228,12 @@ final class AppModel {
         // This read sees everything those waiting asked for; anyone asking from now on waits for the next.
         let waiting = waitingForRead
         waitingForRead = []
+        let live = recording.activeIDs
         Task {
             let (tree, pending, unchecked, todos) = await Task.detached {
                 // The folder is walked once: the to-dos are read from the tree just built.
                 let tree = meetings.tree()
-                return (tree, Recordings.list().filter { $0.state == .recorded || $0.state == .processed }, Recordings.unchecked(),
+                return (tree, Recordings.waiting(except: live), Recordings.unchecked(),
                         meetings.allTodos(in: tree))
             }.value
             refreshing = false
