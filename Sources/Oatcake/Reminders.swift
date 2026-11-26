@@ -89,7 +89,7 @@ enum Reminders {
     @MainActor static func readyToCheck(_ title: String, id: String) {
         let content = UNMutableNotificationContent()
         content.title = "Ready to check who’s who"
-        content.body = "“\(title)” is waiting under Needs review."
+        content.body = "“\(title)” is waiting under Who’s who."
         post(content, id: readyPrefix + id)
     }
 

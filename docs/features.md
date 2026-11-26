@@ -138,8 +138,9 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 - VoiceOver: headings, a name for every button and note line, the notes at the bottom of the
   window and Ask's answers read out, and the menu bar item's countdown.
   [The window](how-it-works.md#the-window)
-- Reduce motion, Increase contrast and Differentiate without colour followed, and Bigger Text for
-  lists, to-dos and transcripts as well as what you read. [The window](how-it-works.md#the-window)
+- Reduce motion and Increase contrast followed, errors told from warnings by their symbol as well
+  as their colour, and Bigger Text for lists, to-dos and transcripts as well as what you read.
+  [The window](how-it-works.md#the-window)
 - Fields and cards edged at 3:1 or more against the window, light and dark, and buttons at least
   24 points to click.
 

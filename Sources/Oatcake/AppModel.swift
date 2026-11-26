@@ -486,9 +486,12 @@ final class AppModel {
     /// one in the list opens, as in Mail, so the keyboard carries on from there.
     func trash(_ nodes: [TreeNode]) {
         let listed = listedIn(library.tree?.find(folder) ?? library.tree).map(\.path)
-        let gone = Set(library.trash(nodes))
-        if case .meeting(let open, _) = selection, gone.contains(open) {
-            selection = rowAfterRemoving(gone, from: listed).map { .meeting($0) } ?? .folder
+        // Several are asked about first, so what went is known only once they've gone.
+        library.trash(nodes) { [self] trashed in
+            let gone = Set(trashed)
+            if case .meeting(let open, _) = selection, gone.contains(open) {
+                selection = rowAfterRemoving(gone, from: listed).map { .meeting($0) } ?? .folder
+            }
         }
     }
 

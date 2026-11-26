@@ -106,7 +106,7 @@ private struct TabItems: View {
     var body: some View {
         let open = model.meetingInView
         ForEach(Array(MeetingTab.allCases.enumerated()), id: \.offset) { i, tab in
-            Button(tab == .notes ? "My Notes" : tab.menuName) { model.request(.tab(tab)) }
+            Button(tab.menuName) { model.request(.tab(tab)) }
                 .keyboardShortcut(KeyEquivalent(Character("\(i + 1)")), modifiers: .command)
                 .disabled(!(open?.tabs.contains(tab) ?? false))
         }

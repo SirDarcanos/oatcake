@@ -343,7 +343,7 @@ struct TodosView: View {
         model.library.tick(path, item.todo, undo: undoManager) { [local = $local] text in
             // nil: nothing was ticked, and the list is read again.
             withAnimation { local.wrappedValue[path] = text }
-            if text != nil { model.toast("Saved to \(path.isEmpty ? "Meetings" : folderPath(path)) › todo.md") }
+            if text != nil { model.toast("\(item.todo.done ? "Unticked" : "Ticked") in \(path.isEmpty ? "your list" : "“\(item.meeting.title)”")") }
         }
     }
 
@@ -354,7 +354,7 @@ struct TodosView: View {
             guard try model.library.editTodo(path, line: item.todo.line, text: item.todo.text, to: body) else {
                 // It isn't in the file as it's shown here: nothing was changed, and the list is read again.
                 withAnimation { local[path] = nil }
-                return model.toast("That to-do has changed in todo.md since this list was read, so it wasn’t changed. The list has been read again.")
+                return model.toast("That to-do has changed in your list since this page was read, so it wasn’t changed. The list has been read again.")
             }
             withAnimation { local[path] = onDisk(path) }
             model.toast(body == nil ? "Deleted from your list" : "Changed in your list")

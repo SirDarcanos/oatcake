@@ -166,7 +166,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
         case .recording(let name, let elapsed):
             // What it shows is said too, in words a clock's digits wouldn't be read as.
             (symbol, title, tip, accessibilityLabel) = ("record.circle.fill", elapsed.map { " " + clock($0) } ?? "",
-                                                       "Oatcake is recording “\(name)”", "Oatcake, recording" + (elapsed.map { " for \(minutes($0))" } ?? ""))
+                                                       "Oatcake is recording “\(name)”", "Oatcake, recording" + (elapsed.map { " for \(longDuration($0))" } ?? ""))
         case .upcoming(let events):
             let now = Date()
             let label = nextCallLabel(events, now: now)

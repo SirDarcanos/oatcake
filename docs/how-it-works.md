@@ -103,8 +103,8 @@ Oatcake follows the Mac's accessibility settings (System Settings › Accessibil
 **Reduce motion**, the recording dot doesn't pulse, the refresh arrow doesn't turn, notes at the
 bottom of the window fade rather than slide in, and a transcript or Ask jumps to a line rather than
 scrolling smoothly to it. With **Increase contrast**, the edges of fields and cards are darker, and
-notices and times get an edge of their own. With **Differentiate without colour**, an error's
-symbol is an octagon, not the warning's triangle. VoiceOver reads out each note at the bottom of
+notices and times get an edge of their own. An error's symbol is an octagon, not the warning's
+triangle, so the two differ in more than colour. VoiceOver reads out each note at the bottom of
 the window (an error's note goes when you press it) and says when an answer in Ask is ready, and
 the menu bar item says the time until the next call, or how long a call has been recorded.
 

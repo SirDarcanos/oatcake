@@ -131,7 +131,6 @@ struct Notice<Content: View>: View {
     enum Tone { case amber, red, grey, blue }
     let tone: Tone
     @ViewBuilder var content: Content
-    @Environment(\.accessibilityDifferentiateWithoutColor) private var withoutColour
     @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {

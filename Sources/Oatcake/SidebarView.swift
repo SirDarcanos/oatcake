@@ -402,7 +402,7 @@ struct UpcomingNote: View {
             if model.calendar.hasFailures {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Some calendars couldn’t update.")
-                    SettingsPaneLink(pane: "calendar", title: "Settings › Calendars").buttonStyle(.link)
+                    SettingsPaneLink(pane: .calendar, title: "Settings › Calendars").buttonStyle(.link)
                 }
             } else if !model.calendar.hasUpdated {
                 Text("Fetching calendars…")
@@ -440,7 +440,7 @@ private struct LiveRow: View {
             if recording {
                 RecDot()
             } else if failed {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).font(.caption)
+                Image(systemName: "xmark.octagon.fill").foregroundStyle(.red).font(.caption)
             } else {
                 Circle().fill(.secondary).frame(width: 7, height: 7)
             }
