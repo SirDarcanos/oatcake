@@ -67,10 +67,12 @@ struct HomeView: View {
                 }
                 if !events.isEmpty {
                     let first = events.first?.id
+                    // Joining and recording are offered for calls under way and the next one to start.
+                    let next = events.first { $0.startDate > now }?.id
                     rows {
                         ForEach(events) { event in
                             if event.id != first { Divider() }
-                            callRow(event, now: now, first: event.id == first)
+                            callRow(event, now: now, first: event.id == first, actionable: event.startDate <= now || event.id == next)
                         }
                     }
                 }
@@ -84,7 +86,7 @@ struct HomeView: View {
         }
     }
 
-    private func callRow(_ event: CalendarEvent, now: Date, first: Bool) -> some View {
+    private func callRow(_ event: CalendarEvent, now: Date, first: Bool, actionable: Bool) -> some View {
         let day = Calendar.current.isDate(event.startDate, inSameDayAs: now) ? "Today" : "Tomorrow"
         let time = event.startDate <= now ? "In progress" : "\(day) at \(hhmm(event.startDate))"
         let calendars = model.calendar.labels(for: event)
@@ -97,11 +99,12 @@ struct HomeView: View {
                         .accessibilityLabel("\(event.title), \(names)")
                 }
                 .help(names)
-                Text(first && event.startDate > now ? "Next · \(time)" : time)
+                Text(actionable && event.startDate > now ? "Next · \(time)" : time)
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 12)
-            if let link = event.callLink, let url = URL(string: link) {
+            // Later calls are only listed.
+            if actionable, let link = event.callLink, let url = URL(string: link) {
                 Button { NSWorkspace.shared.open(url) } label: {
                     Label("Join the call", systemImage: "video")
                 }
@@ -109,7 +112,7 @@ struct HomeView: View {
                 .controlSize(.large)
                 .accessibilityLabel("Join the call: \(event.title)")
             }
-            if model.recording.live == nil {
+            if actionable, model.recording.live == nil {
                 Button { model.newRecording(event) } label: {
                     Label("Start recording", systemImage: "circle.fill")
                         .padding(.horizontal, 6)
@@ -158,7 +161,7 @@ struct HomeView: View {
                                     .frame(maxWidth: 240, alignment: .trailing)
                                     .gridCellAnchor(.trailing)
                                 if let date = meetingDate(meeting) {
-                                    Text(date, format: .dateTime.year().month(.abbreviated).day())
+                                    Text(compactDate(date))
                                         .font(.callout).foregroundStyle(.secondary)
                                         .gridCellAnchor(.trailing)
                                 } else {

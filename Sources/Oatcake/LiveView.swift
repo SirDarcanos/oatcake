@@ -74,6 +74,7 @@ struct LiveView: View {
             }
             .toolbarStatusPadding()
         }
+        .withoutCapsule()
         if model.config.liveTranscript {
             ToolbarItem(placement: .automatic) {
                 Toggle(isOn: Binding(get: { showTranscript }, set: { showTranscript = $0; UserDefaults.standard.set($0, forKey: "liveTranscriptShown") })) {
@@ -176,7 +177,10 @@ struct LiveView: View {
                     HStack {
                         SectionLabel(text: "Live transcript")
                         Spacer()
-                        Text(namesVoices ? "Click a name to say who it is" : "Names come after the call").font(.caption).foregroundStyle(.secondary)
+                        // Once there's a line, and so a name, to click.
+                        if !lines.isEmpty {
+                            Text(namesVoices ? "Click a name to say who it is" : "Names come after the call").font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                     if lines.isEmpty && stopped == nil {
                         Text(waiting(state))
@@ -348,7 +352,10 @@ struct LiveView: View {
                 Meter(label: "You", level: status.micLevel)
                 Meter(label: "Call", level: status.systemLevel)
             }
-            Label(mic.text, systemImage: "mic").font(.callout).foregroundStyle(mic.color).lineLimit(2)
+            // The menu on the right names the microphone: this says something only when there's more to say.
+            if mic.warn || !started {
+                Label(mic.text, systemImage: "mic").font(.callout).foregroundStyle(mic.color).lineLimit(2)
+            }
             Spacer()
             Menu {
                 Section("Microphone") {

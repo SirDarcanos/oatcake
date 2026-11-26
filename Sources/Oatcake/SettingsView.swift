@@ -150,7 +150,8 @@ struct SettingsView: View {
                     .accessibilityLabel("MCP configuration")
             }
         } header: {
-            Text("Local MCP server")
+            // What it does, in plain words: MCP is named in the setup shown once it's on.
+            Text("Other apps")
         } footer: {
             Text("An app you add Oatcake to starts its reader itself, whether or not Oatcake is open, and can read your whole Meetings folder while this is on. An app that uses an online model may send what it reads to that service.")
                 .settingsHint()
@@ -199,7 +200,7 @@ struct SettingsView: View {
             if model.config.callReminders { notificationsHint }
             Toggle(isOn: bind(\.menuBarNextCall)) {
                 Text("Show my next call in the menu bar")
-                Text("The time until it starts, with what’s coming up in its menu. Oatcake then stays in the menu bar when its window is closed.")
+                Text("The time until it starts, with what’s coming up in its menu.")
             }
         }
         // Typed as one comma-separated line, like Jargon; kept as a list.
@@ -522,7 +523,7 @@ private struct TemplatesSections: View {
                 Button("Add Template") { add() }
             } label: {
                 Text(model.config.summaryTemplates.isEmpty ? "None yet" : model.config.summaryTemplates.map(\.name).joined(separator: ", "))
-                Text("Pick one for a meeting from Regenerate › Regenerate summary.")
+                Text("Pick one for a meeting from its ⋯ menu › Regenerate Summary.")
             }
         } header: {
             Text("Summary templates")

@@ -80,6 +80,7 @@ struct ProcessingView: View {
                 (Text(progress?.error != nil ? "Couldn’t finish" : "Processing").fontWeight(.semibold) + Text(" · \(rec.title)").foregroundStyle(.secondary)).lineLimit(1)
                     .toolbarStatusPadding()
             }
+            .withoutCapsule()
             if progress?.error == nil {
                 ToolbarItem(placement: .automatic) { Button("Discard…") { model.jobs.discard(rec) } }
             }
@@ -229,13 +230,20 @@ struct ReviewView: View {
             (Text("Who’s who").fontWeight(.semibold) + Text(" · \(title)").foregroundStyle(.secondary)).lineLimit(1)
                 .toolbarStatusPadding()
         }
+        .withoutCapsule()
         ToolbarItemGroup(placement: .automatic) {
             Toggle(isOn: $showTranscript) { Text("Transcript") }.toggleStyle(.button)
             if !rechecking { Button("Discard…") { model.jobs.discard(rec) }.disabled(saved) }
-            if unnamed > 0 {
+        }
+        if unnamed > 0 {
+            ToolbarItem(placement: .automatic) {
                 Text("\(unnamed) voice\(unnamed == 1 ? "" : "s") unnamed").font(.callout).foregroundStyle(.secondary)
                     .help("Unnamed voices are saved as “Voice 1”, “Voice 2”…")
+                    .toolbarStatusPadding()
             }
+            .withoutCapsule()
+        }
+        ToolbarItem(placement: .automatic) {
             Button(rechecking ? "Update meeting" : "Save") { save(analysis) }
                 .buttonStyle(.borderedProminent)
                 .disabled(saved)

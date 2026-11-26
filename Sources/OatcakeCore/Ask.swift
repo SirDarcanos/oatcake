@@ -59,7 +59,7 @@ public func ask(_ config: Config, meeting rel: String?, question: String, histor
     let meetings = Meetings(root: config.meetingsRoot)
     let files = try rel.map { try meetings.read($0) }
     let others = meetings.tree().allMeetings.filter { $0.path != rel }
-    if rel == nil, others.isEmpty { return "There are no saved calls to search yet." }
+    if rel == nil, others.isEmpty { return "There are no saved meetings to search yet." }
     let system = ChatMessage("system", askSystem(config))
     let think = config.llm.reasoning.ask
     // Last, after the meetings: the model keeps its reading of them for the next question.
@@ -75,7 +75,7 @@ public func ask(_ config: Config, meeting rel: String?, question: String, histor
     let extra = others.isEmpty ? 0 : max(0, min(otherMeetingsTokens, largest - fixed - openTokens))
 
     return try await withModel(config.llm, tokens: openTokens + fixed + extra) { model, _ in
-        onStep(rel == nil ? "Looking through your calls" : "Reading this call")
+        onStep(rel == nil ? "Looking through your meetings" : "Reading this meeting")
         var found: [(path: String, text: String)] = []
         if extra >= 500 {
             let routePrompt = [open, tail, routing].filter { !$0.isEmpty }.joined(separator: "\n\n")
@@ -94,7 +94,7 @@ public func ask(_ config: Config, meeting rel: String?, question: String, histor
             }
         }
         if rel == nil, found.isEmpty {
-            return "I couldn’t find a saved call that matches. Try adding a name, call title or topic."
+            return "I couldn’t find a saved meeting that matches. Try adding a name, meeting title or topic."
         }
         onStep("Writing the answer")
         let prompt = ([open] + found.map(\.text) + [tail]).filter { !$0.isEmpty }.joined(separator: "\n\n")

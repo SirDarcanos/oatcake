@@ -13,11 +13,13 @@ struct AskBar: View {
     let path: String?
     @ViewState private var draft = ""
     @FocusState private var focused: Bool
+    /// The conversation's own height: the panel is as tall as that, up to its limit.
+    @ViewState private var contentHeight: CGFloat = 0
     @AppStorage(TextScale.key) private var textScale = 1.0
 
     private var placeholder: String {
         if !model.ask.turns.isEmpty { return "Ask a follow-up…" }
-        return path == nil ? "Ask about your calls…" : "Ask about this call, or any other…"
+        return path == nil ? "Ask about your meetings…" : "Ask about this meeting, or any other…"
     }
 
     /// From Home, Ask finds calls by the words in the question, so these name the latest calls.
@@ -99,11 +101,13 @@ struct AskBar: View {
                     }
                     .padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
                 }
                 // Show the newest question at the top, so a long answer is read from its start.
                 .onChange(of: chat.turns.count) { if let last = chat.turns.last { withAnimation { proxy.scrollTo(last.id, anchor: .top) } } }
             }
-            .frame(maxHeight: 420)
+            // As tall as the conversation, up to 420 points; a short answer isn't put in a tall empty panel.
+            .frame(height: min(max(contentHeight, 60), 420))
         }
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.line))

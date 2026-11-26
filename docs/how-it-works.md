@@ -54,8 +54,9 @@ your own, on your Mac or your network, instead.
 ## The window
 
 Oatcake opens on **Home**, or on a recording that was still going when it was last closed. Home
-shows upcoming calls, the ten most recent saved meetings across all folders, and a button to start
-a new recording or return to the one in progress. Click a recent meeting to open it, or **View all
+shows upcoming calls (the one on now or next has **Join the call** and **Start recording**), the ten
+most recent saved meetings across all folders, and a button to start a new recording or return to
+the one in progress. Click a recent meeting to open it, or **View all
 meetings** to open the library. When to-dos are enabled, Home also shows up to five open items,
 earliest due first, with their assignees and due dates. Add or tick off to-dos on Home, or choose
 **View all to-dos** to manage the full list.
@@ -242,7 +243,7 @@ she/her/hers it writes is changed to they/them/their afterwards, with the verb a
 
 ### Reading and editing
 
-Tabs, at the left of the toolbar: Summary (with the meeting's to-dos at the top), Transcript and
+Tabs, above the meeting: Summary (with the meeting's to-dos at the top), Transcript and
 My notes (⌘1–⌘3), and Draft for Sharing (⌘4) in a meeting that has [one](#draft-for-sharing), each
 Rendered or as editable Markdown from the switch at the top right of the note (saved as you type;
 Summary shows `todo.md` and `summary.md`). Everything else that can be done to the meeting is in
@@ -323,7 +324,7 @@ who's who has **Name voices…** instead.
 
 ## 5. Ask
 
-Use **Ask about your calls…** at the bottom of Home to search across saved calls without opening
+Use **Ask about your meetings…** at the bottom of Home to search across saved meetings without opening
 one first ("when did Jane Doe first raise the launch date?"). On a meeting page, Ask starts with
 that call, so you can ask "what did we decide about hiring?" without naming the meeting. The model
 gets the open call’s summary, to-dos, notes and transcript (or the closest parts of a long transcript).

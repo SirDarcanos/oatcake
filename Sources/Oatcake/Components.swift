@@ -72,6 +72,7 @@ struct Chip: View {
     enum Style { case normal, prep, outline, pending }
     let text: String
     var style = Style.normal
+    var help = "Jump to this moment in the transcript"
     var action: (() -> Void)?
 
     var body: some View {
@@ -83,7 +84,7 @@ struct Chip: View {
             .background(RoundedRectangle(cornerRadius: 4).fill(style == .normal ? AnyShapeStyle(.tint.opacity(0.12)) : style == .prep ? AnyShapeStyle(Color.fill) : AnyShapeStyle(.clear)))
             .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(style == .outline ? Color.line : .clear))
         if let action {
-            Button(action: action) { label }.buttonStyle(.plain).help("Jump to this moment in the transcript")
+            Button(action: action) { label }.buttonStyle(.plain).help(help).accessibilityLabel("\(help): \(text)")
         } else {
             label
         }
@@ -146,6 +147,14 @@ extension View {
     /// state, "Who’s who · …"). macOS 26 draws a capsule behind a toolbar item, hard against whatever is
     /// in it: without this the words run into the capsule's rounded ends.
     func toolbarStatusPadding() -> some View { padding(.horizontal, 12) }
+}
+
+extension ToolbarContent {
+    /// A title or a status in the toolbar, without the glass capsule macOS 26 draws behind toolbar
+    /// items: in one, words read as a button.
+    @ToolbarContentBuilder func withoutCapsule() -> some ToolbarContent {
+        if #available(macOS 26, *) { sharedBackgroundVisibility(.hidden) } else { self }
+    }
 }
 
 /// The pulsing red dot of a recording in progress.

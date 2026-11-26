@@ -187,7 +187,7 @@ keeps its lowest level; one on Ollama that can't reason at all is asked again wi
 - **Import from Granola** and **Import from Quill:** **Import…** picks an export (see
   [Importing](importing.md)).
 
-### Local MCP server
+### Other apps (local MCP server)
 
 Turn on **Let other apps read my meetings** to let an app that supports the Model Context Protocol
 (MCP), such as Claude Code or Claude Desktop, browse and search the current Meetings folder, read

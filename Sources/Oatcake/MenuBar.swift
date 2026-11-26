@@ -220,7 +220,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
             break
         }
         if menu.numberOfItems > 0 { menu.addItem(.separator()) }
-        add("Settings", #selector(openSettings))
+        add("Settings…", #selector(openSettings))
         menu.addItem(.separator())
         add("Open Oatcake", #selector(openApp))
         add("Quit Oatcake", #selector(quit))

@@ -248,22 +248,13 @@ struct MeetingView: View {
 
     // MARK: Toolbar
 
-    /// The tabs on the left; on the right, how saving is going (while there's something to say) and
-    /// one menu with everything that can be done to the meeting.
+    /// The tabs sit above the meeting itself (tabBar). Up here, on the right: how saving is going,
+    /// while there's something to say, and one menu with everything that can be done to the meeting.
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
-            Picker("Tab", selection: Binding(get: { tab }, set: { switchTab($0) })) {
-                Text("Summary").tag(MeetingTab.summary).help("⌘1")
-                Text("Transcript").tag(MeetingTab.transcript).help("⌘2")
-                Text("My notes").tag(MeetingTab.notes).help("⌘3")
-                if showsDraftTab { Text("Draft for Sharing").tag(MeetingTab.draft).help("⌘4") }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-        }
         // What follows goes to the right. (With nothing in the middle of the toolbar, nothing else pushes it there.)
         if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
-        // How saving is going stays up here, in sight wherever the note is scrolled to.
+        // How saving is going stays up here, in sight wherever the note is scrolled to. Words, not a
+        // button: no capsule behind them.
         if markdown || status == .todo || status == .failed {
             ToolbarItem(placement: .automatic) {
                 HStack(spacing: 6) {
@@ -274,10 +265,12 @@ struct MeetingView: View {
                 .font(.callout)
                 .toolbarStatusPadding()
             }
+            .withoutCapsule()
         }
         ToolbarItem(placement: .automatic) {
             Menu {
-                actions
+                // Every item with its icon: a share item always shows one, so the rest do too.
+                actions.labelStyle(.titleAndIcon)
             } label: {
                 // Named on the image too: a toolbar menu is read out by its image's name.
                 Label { Text("More") } icon: { Image(systemName: "ellipsis").accessibilityLabel("More") }
@@ -345,13 +338,42 @@ struct MeetingView: View {
         case .notes: "notes"
         case .draft: "draft for sharing"
         }
-        Button { copy(what) } label: { Label("Copy", systemImage: "doc.on.doc") }
+        let tabName = switch tab {
+        case .summary: "Summary"
+        case .transcript: "Transcript"
+        case .notes: "Notes"
+        case .draft: "Draft"
+        }
+        Button { copy(what) } label: { Label("Copy \(tabName)", systemImage: "doc.on.doc") }
             .help("Copy the \(what), formatted (as Markdown where only plain text can go)")
         ShareLink(item: shareText, subject: Text(meetingTitle(node))) { Label("Share", systemImage: "square.and.arrow.up") }
             .help("Send the \(what) with Mail, Messages or another app")
         Divider()
         Button { model.library.reveal(path) } label: { Label("Show in Finder", systemImage: "arrow.up.forward.square") }
             .help("Show this meeting’s folder in Finder")
+    }
+
+    /// Summary, Transcript, My notes and Draft for Sharing, above the meeting they switch: pinned, so
+    /// they're in reach wherever the note is scrolled to, and lined up with its text. Each segment is
+    /// as wide as its label, so the draft's tab is added without the others moving.
+    private var tabBar: some View {
+        HStack {
+            Picker("Tab", selection: Binding(get: { tab }, set: { switchTab($0) })) {
+                Text("Summary").tag(MeetingTab.summary).help("⌘1")
+                Text("Transcript").tag(MeetingTab.transcript).help("⌘2")
+                Text("My notes").tag(MeetingTab.notes).help("⌘3")
+                if showsDraftTab { Text("Draft for Sharing").tag(MeetingTab.draft).help("⌘4") }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            Spacer()
+        }
+        .padding(.horizontal, 40)
+        .padding(.top, 14)
+        .padding(.bottom, 6)
+        .frame(maxWidth: 760, alignment: .leading)
+        .frame(maxWidth: .infinity)
     }
 
     /// Rendered or Markdown: how the note below is shown. It sits at the top right of the note, beside its title.
@@ -421,6 +443,7 @@ struct MeetingView: View {
     private func content(_ files: [FileKey: String]) -> some View {
         let found = finding && tab == .transcript && !markdown ? matches(in: rows) : []
         return VStack(spacing: 0) {
+            tabBar
             if finding && tab == .transcript && !markdown {
                 findBar(found)
                 Divider()
@@ -481,7 +504,7 @@ struct MeetingView: View {
                     }
                 }
                 .padding(.horizontal, 40)
-                .padding(.top, 28)
+                .padding(.top, 16)
                 .padding(.bottom, 120)
                 .frame(maxWidth: 760, alignment: .leading)
                 .frame(maxWidth: .infinity)
@@ -852,12 +875,8 @@ struct MeetingView: View {
 
     @ViewBuilder private func transcriptTime(_ row: Row) -> some View {
         if let at = row.at, recordingAudio != nil, at < playback.duration {
-            Button { playback.seek(to: at) } label: {
-                Text(row.stamp).foregroundStyle(Color.accentColor).underline().monospacedDigit()
-            }
-            .buttonStyle(.borderless)
-            .help("Jump to \(row.stamp) in the recording")
-            .accessibilityLabel("Jump to \(row.stamp) in the recording")
+            // The same chip as a to-do's or a note's time.
+            Chip(text: row.stamp, help: "Go to this moment in the recording") { playback.seek(to: at) }
         } else {
             Text(row.stamp).foregroundStyle(.tertiary).monospacedDigit()
         }

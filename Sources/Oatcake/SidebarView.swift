@@ -64,9 +64,14 @@ struct SidebarView: View {
         .listStyle(.sidebar)
         .safeAreaInset(edge: .top) {
             Button { model.newRecording() } label: {
-                Label("New recording", systemImage: "circle.fill")
-                    .labelStyle(NewRecordingLabelStyle())
-                    .frame(maxWidth: .infinity)
+                // During a call it goes back to that call, so it says so.
+                if model.recording.live != nil {
+                    Label("Return to recording", systemImage: "waveform").frame(maxWidth: .infinity)
+                } else {
+                    Label("New recording", systemImage: "circle.fill")
+                        .labelStyle(NewRecordingLabelStyle())
+                        .frame(maxWidth: .infinity)
+                }
             }
             .controlSize(.large)
             .buttonStyle(.bordered)
@@ -204,7 +209,7 @@ struct SidebarView: View {
         HStack(spacing: 4) {
             Label(meetingTitle(m), systemImage: "doc.text").lineLimit(1)
             Spacer()
-            if let date = meetingDate(m) { Text("\(shortMonth(date)) \(gregorian.component(.day, from: date))").foregroundStyle(.secondary).monospacedDigit() }
+            if let date = meetingDate(m) { Text(compactDate(date)).foregroundStyle(.secondary).monospacedDigit() }
         }
         .draggable(dragPrefix + m.path)
     }

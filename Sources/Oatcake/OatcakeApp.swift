@@ -10,7 +10,7 @@ struct OatcakeApp: App {
         Window("Oatcake", id: "main") {
             ContentView()
                 .environment(delegate.model)
-                .frame(minWidth: 1000, minHeight: 560)
+                .frame(minWidth: 1100, minHeight: 560)
         }
         .defaultSize(width: 1440, height: 880)
         .windowToolbarStyle(.unified(showsTitle: false))
@@ -261,7 +261,8 @@ private struct MeetingListSplit<ListContent: View, Detail: View>: View {
         GeometryReader { geometry in
             let available = max(0, geometry.size.width - 1)
             let minimum = min(220, available)
-            let maximum = max(minimum, min(560, available - 420))
+            // The meeting keeps at least 560 points: below that, the list gives way first.
+            let maximum = max(minimum, min(560, available - 560))
             let startingWidth = min(max(preferredWidth, minimum), maximum)
             let width = min(max(startingWidth + dragOffset, minimum), maximum)
             HStack(spacing: 0) {
@@ -302,13 +303,16 @@ private struct MeetingListSplit<ListContent: View, Detail: View>: View {
 struct DetailView: View {
     @Environment(AppModel.self) private var model
 
+    private var hasMeetings: Bool { !(model.library.tree?.allMeetings.isEmpty ?? true) }
+
     var body: some View {
         Group {
             switch model.selection {
             case .home:
                 HomeView()
-                    .safeAreaPadding(.bottom, 58)
-                    .overlay(alignment: .bottom) { AskBar(path: nil) }
+                    // Nothing to ask about until something is saved.
+                    .safeAreaPadding(.bottom, hasMeetings ? 58 : 0)
+                    .overlay(alignment: .bottom) { if hasMeetings { AskBar(path: nil) } }
             case .meeting(let path, let jump):
                 if let node = model.library.tree?.find(path), node.kind == .meeting {
                     MeetingView(node: node, jump: jump)
