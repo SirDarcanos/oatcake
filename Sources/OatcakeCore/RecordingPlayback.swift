@@ -37,21 +37,34 @@ public final class RecordingPlayback: NSObject, AVAudioPlayerDelegate {
             isPlaying = false
             return
         }
+        guard open(url), let player else { return }
+        if elapsed >= duration { seek(to: 0) }
+        guard player.play() else { fail(.playbackFailed); return }
+        failure = nil
+        isPlaying = true
+    }
+
+    /// Opens the recording without playing it, so its length is known (and the transcript's times
+    /// can be clicked) before Play.
+    public func prepare(_ url: URL) {
+        guard player == nil, failure == nil else { return }
+        _ = open(url)
+    }
+
+    /// Checks the file is still there, and loads it if it isn't loaded yet. False, with `failure`
+    /// set, when it can't be played.
+    private func open(_ url: URL) -> Bool {
         do {
             let file = try FileManager.default.attributesOfItem(atPath: url.path)
-            guard file[.type] as? FileAttributeType == .typeRegular else { fail(.unreadableFile); return }
+            guard file[.type] as? FileAttributeType == .typeRegular else { fail(.unreadableFile); return false }
             if player == nil {
                 let audio = try AVAudioPlayer(contentsOf: url)
-                guard audio.duration.isFinite, audio.duration > 0 else { fail(.unreadableFile); return }
+                guard audio.duration.isFinite, audio.duration > 0 else { fail(.unreadableFile); return false }
                 audio.delegate = self
                 player = audio
                 duration = audio.duration
             }
-            guard let player else { return }
-            if elapsed >= duration { seek(to: 0) }
-            guard player.play() else { fail(.playbackFailed); return }
-            failure = nil
-            isPlaying = true
+            return true
         } catch {
             // The file can disappear between checking it and handing it to AVFoundation.
             do {
@@ -60,6 +73,7 @@ public final class RecordingPlayback: NSObject, AVAudioPlayerDelegate {
             } catch let reachabilityError {
                 fail(Failure(reachabilityError))
             }
+            return false
         }
     }
 

@@ -19,7 +19,9 @@ struct RecordingPlayerView: View {
             // Don't silently lose the player if Finder removes audio someone was trying to hear.
             recordingRemoved = old != nil && new == nil && (playback.duration > 0 || playback.failure != nil)
             playback.stop()
+            if let new { playback.prepare(new) }
         }
+        .onAppear { if let url { playback.prepare(url) } }
         .task(id: playback.isPlaying) {
             while playback.isPlaying && !Task.isCancelled {
                 do { try await Task.sleep(for: .milliseconds(200)) }
@@ -62,13 +64,13 @@ struct RecordingPlayerView: View {
     private func message(for failure: RecordingPlayback.Failure) -> some View {
         let message: LocalizedStringKey = switch failure {
         case .missingFile:
-            "Unable to play this recording: the audio file is no longer in the meeting folder. [Open Finder](oatcake-action://show-in-finder) to check the folder."
+            "Unable to play this recording: the audio file is no longer in the meeting folder. [Show in Finder](oatcake-action://show-in-finder) to check the folder."
         case .accessDenied:
-            "Unable to play this recording: Oatcake doesn’t have permission to read the audio file. [Open Finder](oatcake-action://show-in-finder) to check its permissions."
+            "Unable to play this recording: Oatcake doesn’t have permission to read the audio file. [Show in Finder](oatcake-action://show-in-finder) to check its permissions."
         case .unreadableFile:
-            "Unable to play this recording: the audio file couldn’t be read. [Open Finder](oatcake-action://show-in-finder) and try playing the file manually."
+            "Unable to play this recording: the audio file couldn’t be read. [Show in Finder](oatcake-action://show-in-finder) and try playing the file manually."
         case .playbackFailed:
-            "Unable to play this recording: playback failed. [Open Finder](oatcake-action://show-in-finder) and try playing the file manually."
+            "Unable to play this recording: playback failed. [Show in Finder](oatcake-action://show-in-finder) and try playing the file manually."
         }
         return Text(message)
             .font(.callout)

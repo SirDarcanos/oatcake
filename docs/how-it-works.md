@@ -248,8 +248,9 @@ and **Share** sends the same text with Mail, Messages or another app.
 
 ### Listening to the recording
 
-If a meeting has saved audio, select **Play recording** below its title. Use the slider or click a
-time in the rendered transcript to jump to that point in the recording. If playback is paused, it
+If a meeting has saved audio, a player sits below its title, with the recording's length. Use the
+slider or click a time in the rendered transcript to jump to that point in the recording, before or
+after pressing play. If playback is paused, it
 stays paused at the new time. Playback stops when you leave the meeting. For calls recorded in
 Oatcake, turn on [Keep call audio after saving](settings.md#storage) to make audio available for
 future meetings.
