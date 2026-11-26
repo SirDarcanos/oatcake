@@ -158,18 +158,27 @@ struct SidebarView: View {
         }
     }
 
+    /// The row for what the window shows. Until Oatcake has put back where it was, that's Home.
+    private var highlighted: SidebarItem? {
+        switch model.selection {
+        case .home, nil: .home
+        case .live: .live
+        case .todos: .todos
+        case .job(let id): .job(id)
+        case .meeting(let path, _) where parentOf(path).isEmpty: .meeting(path)
+        case .meeting, .folder: .folder(model.folder)
+        case .new: nil
+        }
+    }
+
     private var selectionBinding: Binding<SidebarItem?> {
         Binding {
-            switch model.selection {
-            case .home: .home
-            case .live: .live
-            case .todos: .todos
-            case .job(let id): .job(id)
-            case .meeting(let path, _) where parentOf(path).isEmpty: .meeting(path)
-            case .meeting, .folder, nil: .folder(model.folder)
-            case .new: nil
-            }
+            highlighted
         } set: { item in
+            // The list can hand back the row it was given as it's laid out. That's no choice: taken for
+            // one, it could open All meetings before the Meetings folder had been read, and Oatcake then
+            // left the window there rather than putting back the screen it was on.
+            guard item != highlighted else { return }
             switch item {
             case .home: model.selection = .home
             case .live: model.selection = .live
@@ -213,7 +222,7 @@ struct SidebarView: View {
 
     /// The folder or top-level meeting highlighted in the sidebar.
     private var selectedNode: TreeNode? {
-        switch selectionBinding.wrappedValue {
+        switch highlighted {
         case .folder(let path) where !path.isEmpty, .meeting(let path): model.library.tree?.find(path)
         default: nil
         }

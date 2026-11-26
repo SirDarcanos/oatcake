@@ -107,6 +107,9 @@ final class AppModel {
     var wantsNewFolder = false
     var selection: Selection? {
         didSet {
+            // The window's split view is about to be made again with the other number of columns: what
+            // the one before saved mustn't be what the new one opens on (see ContentView).
+            if Self.listShown(oldValue) != listShown { forgetSavedColumns() }
             // Kept for the next launch: Home, To-dos or a meeting. The other screens don't last.
             let screen: String?
             switch selection {
@@ -120,6 +123,16 @@ final class AppModel {
             if let screen { UserDefaults.standard.set(screen, forKey: "lastScreen") }
         }
     }
+    /// A folder or All meetings chosen, or a meeting open: the meeting list is beside it.
+    var listShown: Bool { Self.listShown(selection) }
+
+    private static func listShown(_ selection: Selection?) -> Bool {
+        switch selection {
+        case .folder, .meeting: true
+        default: false
+        }
+    }
+
     /// The folder the middle column lists.
     var folder = "" { didSet { UserDefaults.standard.set(folder, forKey: "lastFolder") } }
     /// The meeting last open, kept while another screen shows: a recording discarded or cancelled comes back to it.

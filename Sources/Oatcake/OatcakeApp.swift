@@ -6,6 +6,11 @@ import UserNotifications
 struct OatcakeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
+    init() {
+        // Before the window, and its split view, is made.
+        forgetSavedColumns()
+    }
+
     var body: some Scene {
         Window("Oatcake", id: "main") {
             ContentView()
@@ -335,14 +340,6 @@ struct ContentView: View {
     /// when there's room again (unless it was hidden on purpose), or when it's shown on purpose.
     @ViewState private var squeezed = false
 
-    /// A folder or All meetings chosen, or a meeting open: the meeting list is beside it.
-    private var listShown: Bool {
-        switch model.selection {
-        case .folder, .meeting: true
-        default: false
-        }
-    }
-
     var body: some View {
         @Bindable var model = model
         // Laid out as Mail is: folders, the meetings in the one chosen, and the meeting. Home, To-dos,
@@ -354,15 +351,14 @@ struct ContentView: View {
         //
         // Both split views save their columns' frames under the one name, so each would find the
         // other's there. A split view with another number of columns was seen to discard them, but
-        // nothing promises it, so they're removed before either split view is made (at launch, and
-        // each time the list comes or goes) and each column starts at the width KeepsWidth kept.
-        let _ = UserDefaults.standard.removeObject(forKey: savedColumnFrames)
+        // nothing promises it, so they're removed before either split view is made
+        // (forgetSavedColumns) and each column starts at the width KeepsWidth kept.
         let sidebarWidth = KeepsWidth(key: "sidebarWidth", range: 200...520, ideal: 260)
         let listWidth = KeepsWidth(key: "meetingListWidth", range: 220...560, ideal: 300)
         // Below about 420 points a meeting's title wraps a letter to a line.
         let needed = sidebarWidth.start + listWidth.start + 420
         Group {
-            if listShown {
+            if model.listShown {
                 NavigationSplitView(columnVisibility: sidebar(hiddenAs: .doubleColumn, squeezable: true)) {
                     SidebarView().modifier(sidebarWidth)
                 } content: {
@@ -379,7 +375,7 @@ struct ContentView: View {
             }
         }
         .onGeometryChange(for: Bool.self) { $0.size.width < needed } action: { tooNarrow = $0; squeezed = $0 }
-        .onChange(of: listShown) { squeezed = tooNarrow }
+        .onChange(of: model.listShown) { squeezed = tooNarrow }
         // Search is modal: while it's open, the window behind it can't be worked through accessibility either.
         .accessibilityHidden(model.searching)
         .overlay { if model.searching { SearchOverlay() } }
@@ -437,6 +433,14 @@ struct ContentView: View {
 /// view. The two-column and the three-column split views share it.
 private let savedColumnFrames = "NSSplitView Subview Frames main, SidebarNavigationSplitView"
 
+/// Removes the split view's saved columns before a split view is made: at launch, before the window
+/// is, and as the selection changes to or from a screen with the meeting list, before the window is
+/// drawn again with the other split view. Not while the window is being drawn, when a change to
+/// the app's defaults would land in the middle of it.
+@MainActor func forgetSavedColumns() {
+    UserDefaults.standard.removeObject(forKey: savedColumnFrames)
+}
+
 /// A column that starts at the width it last had, in place of the split view's own saved frames
 /// (see ContentView). Only a width the person drags it to is kept, not one the window forces on it.
 /// The column's width has to be the last modifier: under the others, the split view ignored it and
@@ -481,7 +485,8 @@ struct DetailView: View {
     var body: some View {
         Group {
             switch model.selection {
-            case .home:
+            // Until Oatcake has put back where it was (the Meetings folder is still being read).
+            case .home, nil:
                 HomeView()
                     .navigationTitle("Home")
                     // Nothing to ask about until something is saved.
@@ -521,7 +526,7 @@ struct DetailView: View {
                 .navigationTitle("Who’s who")
                 // Its toolbar starts with what it is and which call, so the title isn't said twice there.
                 .toolbar(removing: .title)
-            case .folder, nil:
+            case .folder:
                 blank
             }
         }
