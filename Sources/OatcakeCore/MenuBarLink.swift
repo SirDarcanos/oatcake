@@ -19,6 +19,7 @@ public enum MenuBarAction: Codable, Equatable, Sendable {
     case stop
     case open
     case record
+    case settings
     case openEvent(CalendarEvent)
     case quit
 }
