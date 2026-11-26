@@ -318,9 +318,19 @@ struct ToastView: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isError ? .isButton : [])
         .accessibilityHint(isError ? "Dismisses this message" : "")
-        .accessibilityAction { if isError { dismiss() } }
+        .modifier(DismissOnPress(enabled: isError, dismiss: dismiss))
         .padding(.bottom, 80)
         .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
+    }
+}
+
+/// VoiceOver's press for a note that goes when pressed (an error's), and none for one that doesn't.
+private struct DismissOnPress: ViewModifier {
+    let enabled: Bool
+    let dismiss: () -> Void
+
+    func body(content: Content) -> some View {
+        if enabled { content.accessibilityAction { dismiss() } } else { content }
     }
 }
 
