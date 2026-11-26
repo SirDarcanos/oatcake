@@ -6,11 +6,17 @@
 - Summaries and answers are drawn as Markdown with any HTML shown as text. Links in Ask's answers
   to anything but a meeting are shown as text, not made clickable.
 - Speech models are fetched from pinned commits (see [Speech models](models.md#speech-models)).
-- The language model and the program that runs it are fixed builds, each checked against its
-  SHA-256 before use. Its server listens only on this Mac's own address, at a port picked each
+- The language model and the program that runs it are fixed builds. The model's file is checked
+  against its SHA-256 when it's downloaded, and again before the model is started whenever the
+  file's size or modification date has changed since it last passed; a file changed without
+  changing either isn't noticed. llama.cpp's server comes from a release archive checked against
+  its SHA-256 when Oatcake is built (`Scripts/bundle.sh`), and is checked again before each start
+  as part of the app (below). It listens only on this Mac's own address, at a port picked each
   time, behind a key made up each time, and is told nothing but text: it can't open files, run
-  commands or reach the network through Oatcake. A model server of your own has to be at a local
-  address (see [Language model](models.md#language-model)).
+  commands or reach the network through Oatcake. The port is given up for a moment before
+  llama.cpp takes it, so once something answers there Oatcake checks that llama.cpp is still
+  running (one that couldn't take the port stops at once) before sending it anything. A model
+  server of your own has to be at a local address (see [Language model](models.md#language-model)).
 - What's said on a call ends up in front of the model, so its replies are treated as text from a
   stranger: a suggested name is only offered if it was said in the call, to-dos and Ask's first
   step are held to a fixed shape, and links are handled as above.
@@ -47,8 +53,16 @@
 - Oatcake itself is signed as using the microphone (`Resources/Oatcake.entitlements`) although
   only the recorder opens it: macOS counts the recorder's use as Oatcake's, and under the hardened
   runtime it won't ask for the permission at all without that.
-- The app, the recorder and llama.cpp's server are signed for the hardened runtime, so another
-  program on your Mac can't load its own code into them to borrow the recorder's permissions.
+- The app and the recorder are signed for the hardened runtime, so another program on your Mac
+  can't load its own code into them to borrow the recorder's permissions. llama.cpp's server is
+  signed for it too, but may load any library beside it (`Resources/Llama.entitlements`: its
+  libraries come with it, and the release certificate has no Apple team for macOS to match them
+  by), and it runs as Oatcake's child. So before every start of the server Oatcake checks its own
+  signature over the whole app, as `codesign --verify --deep --strict` does, and that the app on
+  the disk is the copy that's running: if a file in it has been changed, added or taken away (or
+  the app signed again since it was opened), the server isn't started and Oatcake says so. That
+  leaves a moment, between the check and the server loading its libraries, in which a file could
+  still be swapped. A development copy running llama.cpp from `OATCAKE_LLAMA_DIR` isn't checked.
 - Once a meeting is saved, the recording's working folder in Oatcake's own data folder is
   deleted: the audio, the analysis with its voice fingerprints, and the working copy of your
   notes. With **Keep call audio after saving** on, the audio goes into the meeting's own folder as

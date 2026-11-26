@@ -26,7 +26,10 @@ icon is `assets/icon.svg`; `assets/Oatcake.icns` is built from `assets/icon.png`
 `Scripts/bundle.sh` also puts llama.cpp's server in the app: one fixed build from llama.cpp's
 releases, downloaded once into `.build/llama` and checked against its SHA-256. A copy run straight
 from `swift build` has no llama.cpp beside it; point `OATCAKE_LLAMA_DIR` at a folder that holds
-`llama-server` and its libraries (`build/Oatcake.app/Contents/Resources/llama` will do).
+`llama-server` and its libraries (`build/Oatcake.app/Contents/Resources/llama` will do). Only the
+llama.cpp inside an app is checked before it starts (against the app's signature; see
+[Security](security.md)), so a bundled copy whose files you've changed won't start the model:
+build it again.
 
 macOS draws an app the way apps built with its SDK look: one that says it was built before
 macOS 26 gets no Liquid Glass. Swift 6.4's default build system records the deployment target
@@ -63,6 +66,7 @@ Environment variables that help when trying things out:
 A development copy has the same bundle ID as an installed Oatcake, so macOS can hand a click on
 one of its notification buttons to the installed copy, which then acts on your own data. Leave a
 test copy's notifications alone.
+
 
 ## Layout
 
