@@ -7,7 +7,8 @@ private let meetingSuggestions = [
     "Who said they’d follow up, and on what?",
 ]
 
-/// The floating "ask about your meetings" lozenge; the conversation opens above it.
+/// The "ask about your meetings" lozenge, in a bar across the bottom of the pane; the conversation
+/// opens above it.
 struct AskBar: View {
     @Environment(AppModel.self) private var model
     let path: String?
@@ -16,6 +17,7 @@ struct AskBar: View {
     /// The conversation's own height: the panel is as tall as that, up to its limit.
     @ViewState private var contentHeight: CGFloat = 0
     @AppStorage(TextScale.key) private var textScale = 1.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var placeholder: String {
         if !model.ask.turns.isEmpty { return "Ask a follow-up…" }
@@ -34,7 +36,7 @@ struct AskBar: View {
     var body: some View {
         let chat = model.ask
         VStack(spacing: 10) {
-            if chat.open { panel(chat) }
+            if chat.open { panel(chat).padding(.horizontal, 24) }
             HStack(spacing: 8) {
                 TextField(placeholder, text: $draft)
                     .textFieldStyle(.plain)
@@ -50,17 +52,32 @@ struct AskBar: View {
             }
             .padding(.leading, 16)
             .padding(.trailing, 6)
-            .frame(height: 40)
+            .frame(minHeight: 40)
             .background(.regularMaterial, in: Capsule())
             .overlay(Capsule().strokeBorder(Color.line))
-            .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
             .frame(maxWidth: 560)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 9)
+            // A bar of its own across the pane, which the text scrolls under, so no line shows half
+            // above the lozenge and half through it.
+            .frame(maxWidth: .infinity)
+            .background(.bar)
+            .overlay(alignment: .top) { Divider() }
         }
-        .padding(.horizontal, 24)
-        .padding(.bottom, 18)
         .onChange(of: focused) { if focused, !chat.turns.isEmpty { chat.open = true } }
         // Edit › Ask About Your Meetings (⌘L).
         .onChange(of: model.askRequest) { focused = true }
+        // VoiceOver hears nothing of an answer arriving unless it's told.
+        .onChange(of: chat.turns.last.map { !$0.running } ?? false) { _, finished in
+            guard finished, let last = chat.turns.last, !last.stopped else { return }
+            announce(last.answer != nil ? "Answer ready" : "Couldn’t answer. \(explainModelError(last.error ?? ""))")
+        }
+        .onKeyPress(.escape) {
+            guard chat.open else { return .ignored }
+            chat.open = false
+            focused = false
+            return .handled
+        }
     }
 
     private func submit(_ text: String? = nil) {
@@ -73,7 +90,7 @@ struct AskBar: View {
     private func panel(_ chat: AskChat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Ask about your meetings").font(.headline)
+                Text("Ask about your meetings").font(.headline).accessibilityAddTraits(.isHeader)
                 Spacer()
                 Button("New chat") { chat.newChat(); focused = true }.disabled(chat.running != nil)
                 // Escape hides it wherever the keyboard is, not only from its field. Not while search is
@@ -107,7 +124,7 @@ struct AskBar: View {
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
                 }
                 // Show the newest question at the top, so a long answer is read from its start.
-                .onChange(of: chat.turns.count) { if let last = chat.turns.last { withAnimation { proxy.scrollTo(last.id, anchor: .top) } } }
+                .onChange(of: chat.turns.count) { if let last = chat.turns.last { withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo(last.id, anchor: .top) } } }
             }
             // As tall as the conversation, up to 420 points; a short answer isn't put in a tall empty panel.
             .frame(height: min(max(contentHeight, 60), 420))
@@ -142,7 +159,7 @@ struct AskBar: View {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
                         Text("\(turn.step ?? "Thinking")…").lineLimit(1)
-                        Text("\(Int(context.date.timeIntervalSince(turn.startedAt))) s").foregroundStyle(.tertiary).monospacedDigit()
+                        Text("\(Int(context.date.timeIntervalSince(turn.startedAt))) s").monospacedDigit()
                     }
                     .foregroundStyle(.secondary)
                 }

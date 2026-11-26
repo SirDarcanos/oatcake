@@ -170,6 +170,8 @@ private struct LiveTranscriptPane: View {
     /// New lines are followed while you're at the end; scrolled up to read back, or to say who a voice
     /// is, the transcript stays where you are.
     @ViewState private var following = true
+    @AppStorage(TextScale.key) private var textScale = 1.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let lines = model.recording.liveShown
@@ -205,10 +207,10 @@ private struct LiveTranscriptPane: View {
                                 } else {
                                     Text(callPlaceholder(for: rec.id, lineAt: line.start)).fontWeight(.semibold).foregroundStyle(.secondary)
                                 }
-                                Text(clock(line.start)).foregroundStyle(.tertiary).monospacedDigit()
+                                Text(clock(line.start)).foregroundStyle(.secondary).monospacedDigit()
                             }
-                            .font(.caption)
-                            Text(line.text).font(.callout).textSelection(.enabled)
+                            .font(.scaled(.caption1, textScale))
+                            Text(line.text).font(.scaled(.callout, textScale)).textSelection(.enabled)
                         }
                     }
                     if let stopped { Text(stopped).font(.callout).foregroundStyle(.red) }
@@ -221,12 +223,12 @@ private struct LiveTranscriptPane: View {
             .onScrollPhaseChange { _, phase, context in
                 if phase != .animating { following = context.geometry.visibleRect.maxY >= context.geometry.contentSize.height - 30 }
             }
-            .onChange(of: lines.count) { if following { withAnimation { proxy.scrollTo("end", anchor: .bottom) } } }
+            .onChange(of: lines.count) { if following { withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo("end", anchor: .bottom) } } }
             .overlay(alignment: .bottom) {
                 if !following {
                     Button {
                         following = true
-                        withAnimation { proxy.scrollTo("end", anchor: .bottom) }
+                        withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo("end", anchor: .bottom) }
                     } label: {
                         Label("Jump to latest", systemImage: "arrow.down")
                     }
@@ -259,7 +261,7 @@ private struct LiveTranscriptPane: View {
                 Button("Take back “\(given ?? "")”") { model.recording.nameLiveLine(line, as: nil) }
             }
         } label: {
-            Text(line.speaker ?? callPlaceholder(for: rec.id, lineAt: line.start)).font(.caption.weight(.semibold))
+            Text(line.speaker ?? callPlaceholder(for: rec.id, lineAt: line.start)).font(.scaled(.caption1, textScale, weight: .semibold))
                 .foregroundStyle(color.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.secondary))
         }
         // Drawn as the name it is, like yours beside it: a borderless menu would set it in its own font.
@@ -331,7 +333,7 @@ private struct LiveNotes: View {
                     Chip(text: line.prep ? "Prep" : clock(line.at ?? 0), style: line.prep ? .prep : .normal)
                 }
             }
-            .frame(width: 58, alignment: .leading)
+            .frame(width: 58 * TextScale.clamped(textScale), alignment: .leading)
             TextField(index == lines.count - 1 && line.text.isEmpty ? "Type a point, then Return" : "", text: Binding(
                 get: { line.text },
                 set: { text in
@@ -348,6 +350,8 @@ private struct LiveNotes: View {
                 }))
                 .textFieldStyle(.plain)
                 .font(.system(size: 14 * TextScale.clamped(textScale)))
+                // Only the last line has a placeholder, so each says what it is.
+                .accessibilityLabel(line.prep ? "Prep note" : line.at.map { "Note at \(clock($0))" } ?? "New note")
                 .focused($focused, equals: line.id)
                 .onSubmit { returnPressed(on: line) }
                 .onKeyPress(.upArrow) { move(from: line, by: -1) }

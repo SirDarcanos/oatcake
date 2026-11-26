@@ -484,7 +484,8 @@ final class AppModel {
     }
 
     /// A passing note at the bottom of the window. One that says something went wrong stays for
-    /// eight seconds or until it's clicked, and is read out by VoiceOver, which never sees the note itself.
+    /// eight seconds or until it's clicked. Each is read out by VoiceOver, which never sees the note
+    /// itself; one that says something went wrong, before anything else it's saying.
     func toast(_ text: String, isError: Bool = false) {
         withAnimation {
             toastText = text
@@ -495,10 +496,7 @@ final class AppModel {
             try? await Task.sleep(for: .seconds(isError ? 8 : 2.4))
             if !Task.isCancelled { withAnimation { toastText = nil } }
         }
-        if isError, let window = NSApp.mainWindow ?? NSApp.keyWindow {
-            NSAccessibility.post(element: window, notification: .announcementRequested,
-                                 userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
-        }
+        announce(text, priority: isError ? .high : .medium)
     }
 
     func dismissToast() {

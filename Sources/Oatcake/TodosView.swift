@@ -36,6 +36,7 @@ struct TodosView: View {
     /// so two quick ticks in one meeting don't undo each other.
     @ViewState private var local: [String: String] = [:]
     @FocusState private var addFocused: Bool
+    @AppStorage(TextScale.key) private var textScale = 1.0
 
     var body: some View {
         let myName = model.config.myName
@@ -86,7 +87,7 @@ struct TodosView: View {
             }
             .padding(.horizontal, 14)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary).allowsHitTesting(false) }
+            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(Color.line).allowsHitTesting(false) }
         }
     }
 
@@ -129,9 +130,9 @@ struct TodosView: View {
                     HStack(spacing: 6) {
                         if grouping == .owner, let o = group.items.first?.todo.owner, !o.isEmpty { Avatar(name: o, size: 18) }
                         Text(group.label).foregroundStyle(group.key == "0" && grouping == .due ? AnyShapeStyle(.red) : AnyShapeStyle(.primary))
-                        Text("\(group.items.count)").foregroundStyle(.tertiary)
+                        Text("\(group.items.count)").foregroundStyle(.secondary)
                     }
-                    .font(.callout.weight(.semibold))
+                    .font(.scaled(.callout, textScale, weight: .semibold))
                     .padding(.top, 24)
                     .padding(.bottom, 6)
                     ForEach(group.items) { item in row(item, today: today, myName: myName, showOwner: grouping != .owner) }
@@ -248,6 +249,7 @@ struct TodosView: View {
                     Chip(text: item.todo.stamp) { model.openMeeting(item.meeting.path, jump: Jump(tab: .transcript, stamp: item.todo.stamp)) }
                 }
             }
+            .font(.scaled(.caption1, textScale))
         } trailing: {
             // Grouped by owner, the group heading already names them. The owner and the due date
             // take the width they need (up to a limit), and the task has the rest.
@@ -258,8 +260,8 @@ struct TodosView: View {
                         Text(ownerLabel(item.todo.owner, myName)).lineLimit(1)
                     }
                 }
-                .font(.callout)
-                .frame(maxWidth: 150, alignment: homePreview ? .trailing : .leading)
+                .font(.scaled(.callout, textScale))
+                .frame(maxWidth: 150 * TextScale.clamped(textScale), alignment: homePreview ? .trailing : .leading)
                 .fixedSize()
             }
             // Overdue says so in more than red.
@@ -268,18 +270,19 @@ struct TodosView: View {
                 Text(dueLabel(item, today: today)).lineLimit(1)
             }
                 .accessibilityLabel(late ? "Overdue, due \(dueLabel(item, today: today))" : dueLabel(item, today: today))
-                .font(.callout).monospacedDigit()
-                .foregroundStyle(late ? AnyShapeStyle(.red) : item.dueDate == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
-                .frame(maxWidth: 112, alignment: .trailing)
+                .font(.scaled(.callout, textScale)).monospacedDigit()
+                .foregroundStyle(late ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                .frame(maxWidth: 112 * TextScale.clamped(textScale), alignment: .trailing)
                 .fixedSize()
         }
+        .font(.scaled(.body, textScale))
         .padding(.vertical, 7)
     }
 
     /// One of your own list's to-dos, being put right: Return saves it, Escape leaves it as it was.
     private func editRow(_ item: TodoItem) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "pencil").font(.system(size: 13)).foregroundStyle(.tertiary).frame(width: 15)
+            Image(systemName: "pencil").font(.system(size: 13)).foregroundStyle(.secondary).frame(width: 24)
                 .accessibilityHidden(true)
             TextField("To-do", text: $edited, prompt: Text("Send the deck - Jane - due Fri, Nov 6"))
                 .textFieldStyle(.plain)
@@ -305,10 +308,12 @@ struct TodosView: View {
 
     private var addField: some View {
         HStack(spacing: 10) {
-            Image(systemName: "circle").font(.system(size: 15)).foregroundStyle(.quaternary)
+            // Dashed, not lighter, to tell it from a to-do's own circle; as wide as its checkbox.
+            Image(systemName: "circle.dashed").font(.system(size: 15)).foregroundStyle(.secondary).frame(width: 24)
                 .accessibilityHidden(true)
             TextField("Add a to-do, then Return", text: $draft)
                 .textFieldStyle(.plain)
+                .font(.scaled(.body, textScale))
                 .focused($addFocused)
                 .help("Yours unless you name someone: Send the deck - Jane - due Fri, Nov 6")
                 .onSubmit(add)

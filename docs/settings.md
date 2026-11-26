@@ -40,6 +40,8 @@ Settings, with **Open Notification Settings**.
 
 - **Add Calendar…** connects a calendar. Give it a name and paste its private iCal address (Google
   Calendar › Settings › your calendar › Integrate calendar › “Secret address in iCal format”).
+  Any other calendar that gives you an iCal (`.ics`) address starting `https://` or `webcal://`
+  works the same way.
   In the Add or Edit dialog, click the colour dot to open the same swatch picker as in People.
   Repeat for each calendar. **Edit…** changes the name or colour, replaces the
   address if you paste a new one, or removes the calendar. Oatcake keeps any previously connected
@@ -134,7 +136,8 @@ their chosen colour with them, and so does merging them into someone who hasn't 
   own, is how many tokens it's set to hold (Ollama's `num_ctx`, llama.cpp's `-c`): Oatcake sends no
   more than that at once, splitting a long call into parts if it has to. It doesn't change the
   server's setting, so match it to the server. Empty means 32,768, and Oatcake needs at least
-  16,384. **Download Now** fetches the
+  16,384. Under the list of models, whether the chosen one is on this Mac (or a server's details),
+  and **Check it works**: **Download Now** fetches the
   chosen model straight away rather than at your first call, **Stop** stops a download, **Remove…**
   deletes it (or **Remove Partial Download**), and **Test** asks it for one word. A model on a
   server of your own that reasons first can still be reasoning when the test's room for that word

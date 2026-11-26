@@ -84,7 +84,7 @@ struct SearchOverlay: View {
                     .font(.callout).foregroundStyle(.secondary).monospacedDigit()
             }
             if !model.search.query.isEmpty {
-                Button { model.search.query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                Button { model.search.query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary).frame(width: 24, height: 24).contentShape(Rectangle()) }
                     .buttonStyle(.plain).help("Clear the search").accessibilityLabel("Clear the search")
             }
         }

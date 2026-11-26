@@ -5,6 +5,7 @@ import SwiftUI
 struct HomeView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ScrollView {
@@ -44,7 +45,7 @@ struct HomeView: View {
                 if model.calendar.hasCalendars {
                     Button { model.calendar.refresh(force: true) } label: {
                         Image(systemName: "arrow.clockwise")
-                            .symbolEffect(.rotate, isActive: model.calendar.fetching)
+                            .symbolEffect(.rotate, isActive: model.calendar.fetching && !reduceMotion)
                     }
                     .buttonStyle(.borderless)
                     .accessibilityLabel("Refresh calendar")
@@ -129,6 +130,6 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 0, content: content)
             .padding(.horizontal, 14)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary).allowsHitTesting(false) }
+            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(Color.line).allowsHitTesting(false) }
     }
 }

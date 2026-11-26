@@ -64,7 +64,8 @@ The sidebar has a recording in progress, Home, To-dos, Upcoming, Needs review, f
 meetings at the top level. A one-off call with no folder of its own is saved at the top level;
 drag it onto a folder to file it. **All meetings**, at the top of the Meetings section, lists every
 meeting, whatever folder it's in. A folder lists only its own meetings, and says so when they're all
-in the folders inside it; an empty folder offers **Record here**. Drag the divider to resize the meeting list; it keeps that width
+in the folders inside it; an empty folder offers **Record here** under the folder's name, beside the
+list. Drag the divider to resize the meeting list; it keeps that width
 when you switch screens. Settings (⌘, or the menu bar item) is its own window, in panes; changes
 apply as you make them (see [Settings](settings.md)).
 
@@ -90,7 +91,18 @@ Meetings, Ask About Your Meetings), View (the meeting's tabs, and Bigger Text, S
 Actual Size for what you read and type), Go (Back, Forward, Home, To-dos, All Meetings), Meeting
 (everything in the open meeting's **⋯** menu), Recording (New Recording, Stop Recording…, Join Call,
 Show Live Notes) and Help, which opens these pages. [Keyboard shortcuts](keyboard-shortcuts.md)
-lists the keys.
+lists the keys. Bigger Text (⌘+), Smaller Text (⌘-) and Actual Size (⌘0) change the size of
+summaries, transcripts (the meeting's, the live one and Who's who's), notes, answers, the meeting
+list, to-dos, times and section headings.
+
+Oatcake follows the Mac's accessibility settings (System Settings › Accessibility › Display). With
+**Reduce motion**, the recording dot doesn't pulse, the refresh arrow doesn't turn, notes at the
+bottom of the window fade rather than slide in, and a transcript or Ask jumps to a line rather than
+scrolling smoothly to it. With **Increase contrast**, the edges of fields and cards are darker, and
+notices and times get an edge of their own. With **Differentiate without colour**, an error's
+symbol is an octagon, not the warning's triangle. VoiceOver reads out each note at the bottom of
+the window (an error's note goes when you press it) and says when an answer in Ask is ready, and
+the menu bar item says the time until the next call, or how long a call has been recorded.
 
 By default, closing the window keeps Oatcake running in the background, checking for calls and
 sending reminders. It stops appearing as a running app in the Dock and stays in the menu bar.
@@ -225,7 +237,8 @@ finish it (the disk was full) still waits here, rather than being hidden until O
 
 ## 3. Review (Who's who)
 
-Change the title or the folder it's saved in if you want to. One card per voice: play its clips,
+Change the title or the folder it's saved in if you want to. One card per voice: play its clips
+(the first words said in each are under it, so voices can be told apart without sound),
 confirm or type the name, or pick one of the people on the call's calendar invite (each is offered
 until they've been given a voice) (with where the suggestion came from: named by you during the
 call, recognised from before, or guessed from the conversation), merge it into another

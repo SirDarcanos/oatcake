@@ -42,6 +42,14 @@ struct NewRecordingView: View {
                 prepNotes
                 if !error.isEmpty { Notice(tone: .red) { Text(error) } }
                 VStack(alignment: .leading, spacing: 10) {
+                    // Said before it happens, where it's read before Start recording: the first recording
+                    // brings a download of several gigabytes with it.
+                    let _ = model.downloads.modelsVersion
+                    if let chosen = model.downloads.chosenModel, !LocalModels.isDownloaded(chosen), model.downloads.modelDownloads[chosen.id] == nil {
+                        Label("The language model that writes summaries (\(chosen.downloadSize)) starts downloading when you start recording.",
+                              systemImage: "arrow.down.circle")
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     HStack(spacing: 10) {
                         Button(action: start) {
                             Label(starting ? "Starting…" : "Start recording", systemImage: "circle.fill")
@@ -63,16 +71,9 @@ struct NewRecordingView: View {
                         Button("Cancel") { model.cancelNewRecording() }.controlSize(.large).buttonStyle(.borderless)
                             .keyboardShortcut(model.searching ? nil : .cancelAction)
                     }
-                    VStack(alignment: .leading, spacing: 3) {
-                        // Said before it happens: the first recording brings a download of several gigabytes with it.
-                        let _ = model.downloads.modelsVersion
-                        if let chosen = model.downloads.chosenModel, !LocalModels.isDownloaded(chosen), model.downloads.modelDownloads[chosen.id] == nil {
-                            Text("The language model that writes summaries (\(chosen.downloadSize)) starts downloading when you start recording.")
-                        }
-                        Text("Let the people on the call know you’re recording.")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    Text("Let the people on the call know you’re recording.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             .padding(.horizontal, 40)
@@ -298,9 +299,12 @@ struct NewRecordingView: View {
                     Text(p).textSelection(.enabled)
                     Spacer(minLength: 8)
                     Button { setPrep(prep.enumerated().filter { $0.offset != index }.map(\.element)) } label: {
+                        // 24 points to click around a small ✕, which stays on the line's baseline.
                         Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
+                            .alignmentGuide(.firstTextBaseline) { $0[.firstTextBaseline] }
+                            .frame(width: 24, height: 24).contentShape(Rectangle())
                     }
-                    .buttonStyle(.borderless).foregroundStyle(.tertiary)
+                    .buttonStyle(.borderless).foregroundStyle(.secondary)
                     .help("Remove this prep note").accessibilityLabel("Remove “\(p)”")
                 }
             }

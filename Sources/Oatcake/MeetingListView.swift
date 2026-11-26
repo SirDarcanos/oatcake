@@ -7,6 +7,7 @@ struct MeetingListView: View {
     /// The meetings selected with ⌘- or ⇧-click. One selected meeting is the open one, so this only
     /// matters when there are several.
     @ViewState private var picked: Set<String> = []
+    @AppStorage(TextScale.key) private var textScale = 1.0
 
     var body: some View {
         let folder = model.library.tree?.find(model.folder) ?? model.library.tree
@@ -21,18 +22,16 @@ struct MeetingListView: View {
                 // The Meetings folder is still being read, just after launch: not "no meetings".
                 Color.clear
             } else if rows.isEmpty {
-                VStack(spacing: 10) {
-                    // A folder lists only its own meetings: one whose meetings are all in the folders inside it says so.
-                    let inside = folder?.allMeetings.count ?? 0
-                    Text(everything ? "No meetings yet."
-                         : inside == 1 ? "This folder’s one meeting is in a folder inside it."
-                         : inside > 1 ? "This folder’s \(inside) meetings are in the folders inside it."
-                         : "No meetings in this folder yet.")
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    Button { model.newRecording() } label: { Label(everything ? "New recording" : "Record here", systemImage: "circle.fill") }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Record here is in the main pane beside this, which an empty folder leaves free. A folder
+                // lists only its own meetings: one whose meetings are all in the folders inside it says so.
+                let inside = folder?.allMeetings.count ?? 0
+                Text(everything ? "No meetings yet."
+                     : inside == 1 ? "This folder’s one meeting is in a folder inside it."
+                     : inside > 1 ? "This folder’s \(inside) meetings are in the folders inside it."
+                     : "No meetings in this folder yet.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 // Picking a meeting leaves this list as it is, rather than swapping it for the meeting's folder.
                 // Picking several (⌘- or ⇧-click) leaves the open meeting open, for acting on them all at once.
@@ -108,7 +107,7 @@ struct MeetingListView: View {
                 }
                 Spacer(minLength: 4)
                 if m.granola {
-                    Text("Granola").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+                    Text("Granola").font(.scaled(.caption2, textScale, weight: .medium)).foregroundStyle(.secondary)
                         .padding(.horizontal, 5).padding(.vertical, 1)
                         .background(RoundedRectangle(cornerRadius: 4).fill(Color.fill))
                 }
@@ -126,9 +125,10 @@ struct MeetingListView: View {
                 }
             }
             if !m.preview.isEmpty {
-                Text(m.preview).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Text(m.preview).font(.scaled(.caption1, textScale)).foregroundStyle(.secondary).lineLimit(2)
             }
         }
+        .font(.scaled(.body, textScale))
         .padding(.vertical, 4)
         .draggable(MeetingItem(m.path, in: model.library.meetings.root))
     }

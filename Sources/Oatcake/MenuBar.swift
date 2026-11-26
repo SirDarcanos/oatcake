@@ -164,15 +164,17 @@ final class StatusItem: NSObject, NSMenuDelegate {
         case .idle:
             (symbol, title, tip, accessibilityLabel) = ("oatcake", "", "Oatcake", "Oatcake")
         case .recording(let name, let elapsed):
+            // What it shows is said too, in words a clock's digits wouldn't be read as.
             (symbol, title, tip, accessibilityLabel) = ("record.circle.fill", elapsed.map { " " + clock($0) } ?? "",
-                                                       "Oatcake is recording “\(name)”", "Oatcake, recording")
+                                                       "Oatcake is recording “\(name)”", "Oatcake, recording" + (elapsed.map { " for \(minutes($0))" } ?? ""))
         case .upcoming(let events):
             let now = Date()
             let label = nextCallLabel(events, now: now)
+            let spoken = nextCallLabel(events, now: now, spoken: true)
             let next = events.first { $0.startDate > now } ?? events.first
             (symbol, title, tip, accessibilityLabel) = ("oatcake", label.isEmpty ? "" : " " + label,
                                                        next.map { "\($0.title) · \(hhmm($0.startDate))–\(hhmm($0.endDate))" } ?? "Nothing coming up on your calendar",
-                                                       "Oatcake, next call")
+                                                       spoken.isEmpty ? "Oatcake" : spoken == "now" ? "Oatcake, a call is on now" : "Oatcake, next call \(spoken)")
         }
         // Set only on a change: this runs twice a second during a recording.
         if button.title != title { button.title = title }
@@ -298,11 +300,16 @@ let oatcakeGlyph: NSImage = {
 
 /// "12m", "1h 5m" or "now" for the menu bar: the time until the next call starts. A call that's
 /// under way shows "now" unless the next one is within a quarter of an hour. "" when nothing is
-/// coming up in the next day.
-func nextCallLabel(_ events: [CalendarEvent], now: Date) -> String {
+/// coming up in the next day. `spoken`: "in 12 minutes", "in 1 hour 5 minutes", for VoiceOver.
+func nextCallLabel(_ events: [CalendarEvent], now: Date, spoken: Bool = false) -> String {
     let next = events.first { $0.startDate > now }
     let minutesAway = next.map { Int(($0.startDate.timeIntervalSince(now) / 60).rounded(.up)) }
     if events.contains(where: { $0.startDate <= now && $0.endDate > now }), (minutesAway ?? .max) > 15 { return "now" }
     guard let minutesAway, minutesAway < 24 * 60 else { return "" }
-    return minutesAway < 60 ? "\(minutesAway)m" : "\(minutesAway / 60)h\(minutesAway % 60 == 0 ? "" : " \(minutesAway % 60)m")"
+    let (hours, mins) = (minutesAway / 60, minutesAway % 60)
+    if spoken {
+        return "in " + [hours > 0 ? "\(hours) hour\(hours == 1 ? "" : "s")" : nil, mins > 0 ? "\(mins) minute\(mins == 1 ? "" : "s")" : nil]
+            .compactMap { $0 }.joined(separator: " ")
+    }
+    return minutesAway < 60 ? "\(minutesAway)m" : "\(hours)h\(mins == 0 ? "" : " \(mins)m")"
 }

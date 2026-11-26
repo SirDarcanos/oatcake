@@ -38,6 +38,7 @@ struct MarkdownView: View {
         switch block.kind {
         case .heading(let level):
             Text(text).font(.system(size: level <= 2 ? fontSize + 2 : fontSize + 1, weight: .semibold))
+                .accessibilityAddTraits(.isHeader)
         case .paragraph:
             Text(text).font(.system(size: fontSize)).lineSpacing(fontSize * 0.3)
         case .listItem(let marker, let depth):
@@ -50,7 +51,8 @@ struct MarkdownView: View {
         case .quote:
             Text(text).font(.system(size: fontSize)).foregroundStyle(.secondary)
                 .padding(.leading, 10)
-                .overlay(alignment: .leading) { Rectangle().fill(Color.line).frame(width: 3) }
+                // A rule, not an edge to click in: the light separator rather than Color.line.
+                .overlay(alignment: .leading) { Rectangle().fill(.separator).frame(width: 3) }
         case .code:
             Text(text).font(.system(size: fontSize - 1, design: .monospaced))
                 .padding(10).frame(maxWidth: .infinity, alignment: .leading)
@@ -70,7 +72,8 @@ struct MarkdownView: View {
                     }
                 }
             }
-            .overlay { RoundedRectangle(cornerRadius: 4).stroke(Color.line) }
+            // As light as the rules between its rows.
+            .overlay { RoundedRectangle(cornerRadius: 4).stroke(.separator) }
         }
     }
 }
