@@ -8,7 +8,7 @@ extension SettingsView {
         } header: {
             Text("Calendars")
         } footer: {
-            Text("In Google Calendar, open Settings, pick a calendar under “Settings for my calendars”, then copy its “Secret address in iCal format” from Integrate calendar. Any other calendar that gives you an iCal (.ics) address, starting https:// or webcal://, works the same way. Repeat for each calendar you want in Upcoming.")
+            Text("In Google Calendar, open Settings, pick a calendar under “Settings for my calendars”, then copy its “Secret address in iCal format” from Integrate calendar. Any other calendar that gives you an iCal (.ics) address, starting https:// or webcal://, works the same way. Repeat for each calendar you want in Upcoming. Or choose Add from this Mac… for calendars already in this Mac’s Calendar app.")
                 .settingsHint()
         }
         Section("Reminders") {
@@ -68,11 +68,15 @@ extension SettingsView {
 struct CalendarSettingsEdit: Identifiable {
     let id = UUID()
     let existing: CalendarController.Label?
+    /// Choosing from this Mac's calendars rather than adding or editing one.
+    var fromThisMac = false
 }
 
 struct CalendarSettingsRows: View {
     let calendar: CalendarController
     @Binding var editor: CalendarSettingsEdit?
+    /// Add from this Mac… was chosen: if access is refused, that's said even with none added yet.
+    @ViewState private var askedForMac = false
 
     var body: some View {
         Group {
@@ -92,10 +96,96 @@ struct CalendarSettingsRows: View {
                     Text(calendar.status(for: source.id)).settingsHint()
                 }
             }
-            Button("Add calendar…") { editor = CalendarSettingsEdit(existing: nil) }
-                .help("Add a calendar")
-                .disabled(calendar.settingsProblem != nil)
+            HStack {
+                Button("Add calendar…") { editor = CalendarSettingsEdit(existing: nil) }
+                    .help("Add a calendar by its private iCal address")
+                Button("Add from this Mac…") {
+                    askedForMac = true
+                    Task { if await calendar.allowMacCalendars() { editor = CalendarSettingsEdit(existing: nil, fromThisMac: true) } }
+                }
+                .help("Add calendars that are in this Mac’s Calendar app")
+            }
+            .disabled(calendar.settingsProblem != nil)
+            if askedForMac || calendar.hasMacCalendars { macAccessHint }
         }
+    }
+
+    /// Why this Mac's calendars can't be read, and where to change that.
+    @ViewBuilder private var macAccessHint: some View {
+        switch calendar.macAccess {
+        case .allowed: EmptyView()
+        case .notAsked:
+            // Only for calendars already added (their permission was withdrawn with tccutil, say):
+            // otherwise macOS is asking right now.
+            if calendar.hasMacCalendars {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("Oatcake needs your permission to read this Mac’s calendars.").settingsHint(.amber)
+                    Button("Allow access…") { Task { await calendar.allowMacCalendars() } }.controlSize(.small)
+                }
+            }
+        case .refused:
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("Oatcake isn’t allowed to read this Mac’s calendars. Give it full access in System Settings › Privacy & Security › Calendars.").settingsHint(.amber)
+                Button("Open Privacy & Security") {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") { NSWorkspace.shared.open(url) }
+                }
+                .controlSize(.small)
+            }
+        case .restricted:
+            Text("This Mac doesn’t let apps read its calendars: that’s set by Screen Time, or by whoever manages this Mac.").settingsHint(.amber)
+        }
+    }
+}
+
+/// Settings › Calendars › Add from this Mac…: the calendars in this Mac's Calendar app that haven't
+/// been added yet, to tick.
+struct MacCalendarPicker: View {
+    @Environment(\.dismiss) private var dismiss
+    let calendar: CalendarController
+    @ViewState private var choices: [MacCalendars.Choice] = []
+    @ViewState private var chosen: Set<String> = []
+    @ViewState private var problem: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Add calendars from this Mac").font(.title2.weight(.semibold))
+            if choices.isEmpty {
+                Text("There are no other calendars on this Mac to add. Calendars appear here once their account is set up in the Calendar app.")
+                    .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else {
+                Form {
+                    ForEach(choices) { choice in
+                        Toggle(isOn: Binding(get: { chosen.contains(choice.id) },
+                                             set: { if $0 { chosen.insert(choice.id) } else { chosen.remove(choice.id) } })) {
+                            Text(choice.title)
+                            if !choice.account.isEmpty { Text(choice.account) }
+                        }
+                    }
+                }
+                .formStyle(.grouped)
+                .frame(height: min(CGFloat(choices.count) * 44 + 24, 320))
+                Text("Their events are read on this Mac and stay on it. Each one gets a badge colour, which Edit… changes.")
+                    .settingsHint()
+            }
+            if let problem {
+                Text(problem).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Add") { add() }.keyboardShortcut(.defaultAction).disabled(chosen.isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 450)
+        .onAppear { choices = calendar.macCalendarChoices() }
+    }
+
+    private func add() {
+        do {
+            try calendar.addFromThisMac(choices.filter { chosen.contains($0.id) })
+            dismiss()
+        } catch { problem = error.localizedDescription }
     }
 }
 
@@ -170,8 +260,12 @@ struct CalendarEditor: View {
                     CalendarColourButton(title: name.trimmed.isEmpty ? "Badge colour" : "\(name.trimmed)’s colour",
                                          colour: colour) { colour = $0 }
                 }
-                SecureField("Private iCal address", text: $address,
-                            prompt: Text(existing == nil ? "Paste the address" : "Leave blank to keep the saved address"))
+                if existing?.onThisMac == true {
+                    LabeledContent("Events", value: "From this Mac’s Calendar app")
+                } else {
+                    SecureField("Private iCal address", text: $address,
+                                prompt: Text(existing == nil ? "Paste the address" : "Leave blank to keep the saved address"))
+                }
             }
             if let problem {
                 Text(problem).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)

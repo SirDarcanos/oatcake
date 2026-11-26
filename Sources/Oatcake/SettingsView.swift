@@ -25,7 +25,11 @@ struct SettingsView: View {
         }
         .frame(width: 620, height: 600)
         .sheet(item: $calendarEditor) { editor in
-            CalendarEditor(calendar: model.calendar, existing: editor.existing)
+            if editor.fromThisMac {
+                MacCalendarPicker(calendar: model.calendar)
+            } else {
+                CalendarEditor(calendar: model.calendar, existing: editor.existing)
+            }
         }
         // Something that went wrong while this window is in front (a setting that couldn't be saved)
         // is said here too: the main window's own note is behind this one, or closed.

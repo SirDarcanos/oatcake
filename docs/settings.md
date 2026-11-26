@@ -72,6 +72,15 @@ Settings, with **Open notification settings**.
   Weekly sync"), or offering a new folder for a recurring event with none. **Join the call** opens
   its Meet, Zoom or Teams link (only links on those services' own domains count, so a look-alike
   address is never opened).
+- **Add from this Mac…** adds calendars that are already in this Mac's Calendar app (from iCloud,
+  Google, Exchange or any other account set up there) instead of by address. The first time,
+  macOS asks whether Oatcake may have full access to your calendars; then tick the ones you want
+  and choose **Add**. Each is named after the calendar and given a badge colour, which **Edit…**
+  changes, and is removed there like any other. Their events are read from this Mac whenever its
+  calendars change, as well as once an hour, and not kept in a file of their own. If access is
+  turned off, Settings says so, with **Open Privacy & Security** to turn it back on (System
+  Settings › Privacy & Security › Calendars). The same invitation on a private address and on
+  this Mac's calendar shows once, with both dots. Oatcake never changes your calendars.
 ### Reminders
 
 - **Remind me before calls** (on to start with): before each timed event, a notification with

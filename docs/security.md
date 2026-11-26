@@ -31,6 +31,13 @@
   your user account can read (mode 0600), and never in `config.json`. Badge colours are chosen in
   Oatcake, with no extra network requests. Call reminders show the title and time in Notification
   Center but don’t attach the invitation, attendee list or call link.
+- Calendars added from this Mac are read through macOS's own calendar store (EventKit). Oatcake
+  asks for access only when you choose **Add from this Mac…** in Settings › Calendars, reads only
+  the calendars you add (from a day ago to two weeks ahead), never changes them, and doesn't cache
+  their events on disk as it does a feed's: `private.json` holds only each one's name, colour and
+  identifier on this Mac. Nothing is fetched or sent for them over the network. Oatcake is signed
+  as using calendars (`Resources/Oatcake.entitlements`), which the hardened runtime needs before
+  macOS will ask.
 - Files Oatcake rewrites (meeting Markdown, config, voiceprints, calendar, the calendar address)
   are written to a new temporary file and renamed into place, never through an existing file or
   link.

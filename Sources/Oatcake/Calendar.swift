@@ -1,4 +1,5 @@
-// Calendar feeds are fetched and cached independently; every consumer gets the same merged events.
+// Calendar feeds are fetched and cached independently, and this Mac's own calendars read from its
+// store (MacCalendars); every consumer gets the same merged events.
 import Foundation
 import OatcakeCore
 import SwiftUI
@@ -15,6 +16,8 @@ final class CalendarController {
         let id: UUID
         let name: String
         let colour: SwatchColour
+        /// One of this Mac's calendars, which has no address.
+        var onThisMac = false
     }
 
     private var sources: [CalendarSource] = []
@@ -24,10 +27,14 @@ final class CalendarController {
     private var fetches: [UUID: Task<Void, Never>] = [:]
     private var reminded = SentReminders()
     private var timers: [Timer] = []
+    private let mac = MacCalendars()
+    /// Whether this Mac's calendars can be read, as last looked at.
+    private(set) var macAccess = MacCalendars.access
     var now = Date()
 
-    var calendars: [Label] { sources.map { Label(id: $0.id, name: $0.name, colour: $0.colour) } }
-    var hasCalendars: Bool { sources.contains { !$0.address.isEmpty } }
+    var calendars: [Label] { sources.map { Label(id: $0.id, name: $0.name, colour: $0.colour, onThisMac: $0.macCalendarID != nil) } }
+    var hasCalendars: Bool { sources.contains(where: \.isConnected) }
+    var hasMacCalendars: Bool { sources.contains { $0.macCalendarID != nil } }
     var fetching: Bool { !fetches.isEmpty }
     var hasUpdated: Bool { caches.values.contains { $0.updatedAt != nil } }
     var hasFailures: Bool { caches.values.contains { $0.error != nil } }
@@ -49,16 +56,19 @@ final class CalendarController {
 
     func status(for id: UUID) -> String {
         guard let source = sources.first(where: { $0.id == id }) else { return "Not fetched yet" }
-        guard !source.address.isEmpty else { return "No address saved. Choose Edit… and paste it again." }
+        guard source.isConnected else { return "No address saved. Choose Edit… and paste it again." }
         let fetchID = source.fetchID
         if fetches[fetchID] != nil { return "Updating…" }
         if let failure = caches[fetchID]?.failure { return failure }
+        // Read again whenever it changes, so when it was last read says nothing.
+        if source.macCalendarID != nil { return "On this Mac" }
         if let updated = parseISO(caches[fetchID]?.updatedAt) { return "Updated \(weekdayName(updated, short: true)) at \(timeOfDay(updated))" }
         return "Not fetched yet"
     }
 
     func start() {
         reminded = SentReminders.load()
+        mac.changed = { [weak self] in self?.readMacCalendars(force: true) }
         do {
             sources = try CalendarSource.load()
             caches.setSources(sources)
@@ -85,6 +95,44 @@ final class CalendarController {
                 if self.caches.receive(cache, from: id) { self.merge() }
             }
         }
+        readMacCalendars(force: force)
+    }
+
+    /// This Mac's calendars, on the feeds' schedule and whenever the Mac's store changes. Read on the
+    /// main actor, as EventKit's store is: it's this Mac's own database, two weeks of it.
+    private func readMacCalendars(force: Bool) {
+        macAccess = MacCalendars.access
+        var received = false
+        for source in sources {
+            guard let calendarID = source.macCalendarID else { continue }
+            let previous = caches[source.fetchID] ?? CalendarCache()
+            guard force || previous.isStale() else { continue }
+            let cache = macCalendarCache(mac.events(in: calendarID, around: Date()), previous: previous)
+            received = caches.receive(cache, from: source.fetchID) || received
+        }
+        if received { merge() }
+    }
+
+    /// Asks for access to this Mac's calendars the first time (macOS's own dialog); true once it's given.
+    func allowMacCalendars() async -> Bool {
+        let allowed = await mac.requestAccess()
+        macAccess = MacCalendars.access
+        if allowed { readMacCalendars(force: true) }
+        return allowed
+    }
+
+    /// This Mac's calendars that haven't been added yet.
+    func macCalendarChoices() -> [MacCalendars.Choice] {
+        let added = Set(sources.compactMap(\.macCalendarID))
+        return mac.choices().filter { !added.contains($0.id) }
+    }
+
+    func addFromThisMac(_ chosen: [MacCalendars.Choice]) throws {
+        var updated = sources
+        for choice in chosen {
+            updated.append(CalendarSource(name: choice.title, colour: CalendarSource.nextColour(updated), macCalendarID: choice.id))
+        }
+        try apply(updated)
     }
 
     func save(id: UUID?, name: String, colour: SwatchColour, address: String) throws {
