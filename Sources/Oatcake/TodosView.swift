@@ -104,7 +104,7 @@ struct TodosView: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 PageTitle(text: "To-dos")
-                Text("\(open.count) open\(overdue.isEmpty ? "" : " · \(overdue.count) overdue")\(sources.isEmpty ? "" : " · from \(sources)"). Ticking one updates that meeting’s todo.md.")
+                Text("\(open.count) open\(overdue.isEmpty ? "" : " · \(overdue.count) overdue")\(sources.isEmpty ? "" : " · from \(sources)"). Ticking one ticks it in its meeting too.")
                     .foregroundStyle(.secondary).padding(.top, 6)
                 addField.padding(.top, 22)
                 // How adding works, only while adding.
@@ -201,7 +201,7 @@ struct TodosView: View {
     private func row(_ item: TodoItem, today: Date, myName: String, showOwner: Bool) -> some View {
         let late = item.isOverdue(today: today)
         let folder = item.meeting.path.isEmpty ? "" : parentOf(item.meeting.path)
-        let date = item.meeting.startedAt.map(shortDate) ?? ""
+        let date = item.meeting.startedAt.map { compactDate($0) } ?? ""
         return HStack(alignment: homePreview ? .center : .top, spacing: 10) {
             TodoCheckbox(checked: item.todo.done, what: item.todo.text) { tick(item) }
                 .padding(.top, homePreview ? 0 : 1)
@@ -241,10 +241,16 @@ struct TodosView: View {
                 .font(.callout)
                 .frame(width: 150, alignment: homePreview ? .trailing : .leading)
             }
-            Text(dueLabel(item, today: today))
+            // Overdue says so in more than red.
+            HStack(spacing: 4) {
+                if late { Image(systemName: "exclamationmark.circle").accessibilityHidden(true) }
+                Text(dueLabel(item, today: today)).lineLimit(1)
+            }
+                .accessibilityLabel(late ? "Overdue, due \(dueLabel(item, today: today))" : dueLabel(item, today: today))
                 .font(.callout).monospacedDigit()
                 .foregroundStyle(late ? AnyShapeStyle(.red) : item.dueDate == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
-                .frame(width: 90, alignment: .trailing)
+                // Room for the overdue mark beside "Mon, Nov 23".
+                .frame(width: 112, alignment: .trailing)
         }
         .padding(.vertical, 7)
     }

@@ -204,7 +204,14 @@ private func inlineText(_ text: AttributedString, font: NSFont, color: NSColor =
             if !traits.isEmpty { runFont = NSFont(descriptor: font.fontDescriptor.withSymbolicTraits(font.fontDescriptor.symbolicTraits.union(traits)), size: font.pointSize) ?? font }
         }
         if intent.contains(.strikethrough) { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
-        if let link = run.link { attributes[.link] = link }
+        if let link = run.link {
+            attributes[.link] = link
+            // A link to a moment in a transcript looks like the time chips elsewhere: tinted behind, digits even.
+            if link.fragment?.isEmpty == false {
+                attributes[.backgroundColor] = NSColor.controlAccentColor.withAlphaComponent(0.12)
+                runFont = NSFont.monospacedDigitSystemFont(ofSize: font.pointSize - 1, weight: .medium)
+            }
+        }
         attributes[.font] = runFont
         out.append(NSAttributedString(string: String(text[run.range].characters), attributes: attributes))
     }

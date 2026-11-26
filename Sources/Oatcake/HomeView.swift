@@ -101,7 +101,8 @@ struct HomeView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 12)
-            if let link = event.callLink, let url = URL(string: link) {
+            // Joining and recording are for the call that's on now or next; later ones are only listed.
+            if first, let link = event.callLink, let url = URL(string: link) {
                 Button { NSWorkspace.shared.open(url) } label: {
                     Label("Join the call", systemImage: "video")
                 }
@@ -109,7 +110,7 @@ struct HomeView: View {
                 .controlSize(.large)
                 .accessibilityLabel("Join the call: \(event.title)")
             }
-            if model.recording.live == nil {
+            if first, model.recording.live == nil {
                 Button { model.newRecording(event) } label: {
                     Label("Start recording", systemImage: "circle.fill")
                         .padding(.horizontal, 6)
@@ -158,7 +159,7 @@ struct HomeView: View {
                                     .frame(maxWidth: 240, alignment: .trailing)
                                     .gridCellAnchor(.trailing)
                                 if let date = meetingDate(meeting) {
-                                    Text(date, format: .dateTime.year().month(.abbreviated).day())
+                                    Text(compactDate(date))
                                         .font(.callout).foregroundStyle(.secondary)
                                         .gridCellAnchor(.trailing)
                                 } else {

@@ -67,7 +67,7 @@ import Testing
         var config = Config.defaults()
         config.outputDir = meetings.root.path
         let empty = try await OatcakeCore.ask(config, meeting: nil, question: "What did we decide?")
-        #expect(empty == "There are no saved calls to search yet.")
+        #expect(empty == "There are no saved meetings to search yet.")
 
         let planning = "Team/2026-11-09 1000 Offsite planning"
         let unrelated = "Team/2026-11-10 1000 Design review"
@@ -93,7 +93,7 @@ import Testing
         let noMatch = try await StandIn.model { _ in #"{"beyond":true,"search":["zebra"]}"# }
         config.llm = noMatch.config.llm
         let missing = try await OatcakeCore.ask(config, meeting: nil, question: "What about the zebra?")
-        #expect(missing.contains("I couldn’t find a saved call"))
+        #expect(missing.contains("I couldn’t find a saved meeting"))
         #expect(noMatch.requests.count == 1)
     }
 

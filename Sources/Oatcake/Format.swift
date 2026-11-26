@@ -23,6 +23,11 @@ func weekday(_ d: Date) -> String { weekdays[cal.component(.weekday, from: d) - 
 func shortWeekday(_ d: Date) -> String { String(weekday(d).prefix(3)) }
 /// "Oct"
 func shortMonth(_ d: Date) -> String { String(months[cal.component(.month, from: d) - 1].prefix(3)) }
+/// "Oct 29", or "Oct 29, 2025" in another year: a day in a list or beside a name.
+func compactDate(_ d: Date, now: Date = Date()) -> String {
+    let day = "\(shortMonth(d)) \(cal.component(.day, from: d))"
+    return cal.component(.year, from: d) == cal.component(.year, from: now) ? day : "\(day), \(cal.component(.year, from: d))"
+}
 /// "16:30"
 func hhmm(_ d: Date) -> String { String(format: "%02d:%02d", cal.component(.hour, from: d), cal.component(.minute, from: d)) }
 
@@ -51,7 +56,7 @@ func ownerLabel(_ owner: String, _ myName: String) -> String { isMe(owner, myNam
 
 /// Said when a to-do that was ticked turns out to be worded differently in its file now (it was
 /// edited there since this was read): nothing is ticked, and what's shown is read again.
-let todoChangedMessage = "That to-do has changed in todo.md, so it wasn’t ticked. The list has been read again."
+let todoChangedMessage = "That to-do has changed in its meeting since this list was read, so it wasn’t ticked. The list has been read again."
 
 
 /// When a meeting happened: meeting.json, or the "2026-10-02 1400 Title" folder name.
@@ -219,7 +224,10 @@ struct Person {
 /// A person's avatar colour and initial: the same colour on every screen.
 func person(_ name: String, remember: Bool = true) -> Person {
     let clean = name.replacingOccurrences(of: "^Voice ", with: "", options: .regularExpression)
-    let initial = clean.first { $0.isLetter || $0.isNumber }.map { String($0).uppercased() } ?? "?"
+    // Two letters for a full name ("JD" for Jane Doe), so people who share a first name, and so a
+    // colour, can still be told apart.
+    let words = clean.split(whereSeparator: \.isWhitespace).compactMap { $0.first { $0.isLetter || $0.isNumber } }
+    let initial = (words.count > 1 ? String([words[0], words[words.count - 1]]) : words.first.map(String.init) ?? "?").uppercased()
     if name.trimmed.isEmpty || name.range(of: notAPerson, options: .regularExpression) != nil {
         return Person(initial: name.hasPrefix("Voice") ? String(clean.prefix(1)) : initial, color: Color(nsColor: .systemGray), isPerson: false)
     }

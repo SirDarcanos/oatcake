@@ -119,13 +119,13 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 
 ## Ask
 
-- Ask across your saved calls from Home, or start with the call you have open. Answers link to the
+- Ask across your saved meetings from Home, or start with the meeting you have open. Answers link to the
   meetings and times they draw on. [Ask](how-it-works.md#5-ask)
 - Follow-ups in the same conversation as you move between Home and meetings. [Ask](how-it-works.md#5-ask)
 
 ## Local MCP server
 
-[Turn it on in Settings](settings.md#local-mcp-server) to let an MCP app on the same Mac browse
+[Turn it on in Settings](settings.md#other-apps-local-mcp-server) to let an MCP app on the same Mac browse
 and search your Meetings folder, read summaries, transcripts, notes and to-dos, and list both open
 and completed to-dos. It only reads, and the app runs it itself, over its own input and output:
 nothing listens on the network.
