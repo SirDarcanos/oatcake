@@ -67,6 +67,13 @@ A development copy has the same bundle ID as an installed Oatcake, so macOS can 
 one of its notification buttons to the installed copy, which then acts on your own data. Leave a
 test copy's notifications alone.
 
+It also shares the installed copy's UserDefaults (the `local.oatcake` defaults domain), which
+`OATCAKE_DATA_DIR` doesn't move: the notes that the permissions given to versions before 0.5.0
+have been withdrawn (`earlierPermissionsWithdrawn`) and that the Electron version's files have
+been cleared away (`electronCleanUpDone`), the newest release the updater has been offered
+(`newestVersionOffered`), and small things like the sidebar's open folders. So a release-signed
+test copy on a Mac where Oatcake has never run 0.5.0 or later withdraws the installed copy's
+microphone and system-audio permissions too.
 
 ## Layout
 

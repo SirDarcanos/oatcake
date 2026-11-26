@@ -14,7 +14,8 @@ against the public keys it ships (`Update.publicKeys`), checks the zip's size an
 checksum, unpacks it with `ditto`, checks it's Oatcake at that version, and checks the new app
 is signed with the same certificate as the running one (`codesign --verify --deep --strict -R`
 with the running app's designated requirement). The new copy is staged next to the installed
-one; a small detached script waits for Oatcake to quit, swaps the two, and opens it. Its log is
+one (and removed again if the swap can't be started); a small detached script waits for Oatcake
+to quit, swaps the two, and opens it. Its log is
 `~/Library/Application Support/Oatcake/update.log`. The mechanics are in
 `Sources/OatcakeCore/Update.swift`.
 
