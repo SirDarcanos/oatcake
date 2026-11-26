@@ -50,16 +50,17 @@ struct NewRecordingView: View {
                         .tint(.red)
                         .controlSize(.large)
                         .disabled(starting)
-                        // Return starts the recording, except in the prep notes, where it adds the point typed.
-                        .keyboardShortcut(focus == .prep ? nil : .defaultAction)
+                        // Return starts the recording, except in the prep notes, where it adds the point typed,
+                        // and while search is open over the window: Return is search's then.
+                        .keyboardShortcut(focus == .prep || model.searching ? nil : .defaultAction)
                         if let link = event?.callLink, let url = URL(string: link) {
                             Button { NSWorkspace.shared.open(url) } label: { Label("Join the call", systemImage: "video") }
                                 .controlSize(.large)
                                 .help("Opens \(callApp(link) ?? "the call")")
                         }
-                        // Escape too. Back to where you were before.
+                        // Escape too (but not while search is open: Escape closes that). Back to where you were before.
                         Button("Cancel") { model.cancelNewRecording() }.controlSize(.large).buttonStyle(.borderless)
-                            .keyboardShortcut(.cancelAction)
+                            .keyboardShortcut(model.searching ? nil : .cancelAction)
                     }
                     VStack(alignment: .leading, spacing: 3) {
                         // Said before it happens: the first recording brings a download of several gigabytes with it.
