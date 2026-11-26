@@ -87,7 +87,7 @@ func listedIn(_ folder: TreeNode?) -> [TreeNode] {
 
 /// The first `count` of what `listedIn` gives, found without sorting the whole library for them.
 func newestIn(_ folder: TreeNode?, _ count: Int) -> [TreeNode] {
-    guard let folder else { return [] }
+    guard let folder, count > 0 else { return [] }
     var newest: [TreeNode] = []
     for m in folder.path.isEmpty ? folder.allMeetings : folder.meetings {
         guard newest.count < count || newestFirst(m, newest[newest.count - 1]) else { continue }
