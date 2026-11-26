@@ -71,7 +71,7 @@ struct AskBar: View {
         let question = (text ?? draft).trimmed
         guard !question.isEmpty, model.ask.running == nil else { return }
         draft = ""
-        model.ask.send(question, meeting: path, config: model.config, downloads: model.downloads)
+        model.ask.send(question, meeting: path, config: model.config, downloads: model.downloads, meetings: model.library.meetings)
     }
 
     private func panel(_ chat: AskChat) -> some View {

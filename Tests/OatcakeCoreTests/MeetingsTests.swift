@@ -209,6 +209,29 @@ import Testing
         try write(sync, .summary, "## Hiring\n\nThe zebra budget was agreed.\n")
         #expect(meetings.search("zebra", in: all).first?.line == "The zebra budget was agreed.")
         #expect(meetings.search("checklist", in: all).isEmpty)
+        // A meeting that has moved is found where it is now.
+        let moved = try meetings.move(sync, into: "Design")
+        _ = meetings.tree()
+        #expect(meetings.search("zebra", in: [(path: moved, label: "Weekly sync Design")]).map(\.path) == [moved])
+        #expect(meetings.search("zebra", in: all).isEmpty)
+    }
+
+    /// A search whose task has been cancelled (the words changed while it ran) stops.
+    @Test func cancelledSearchStops() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-cancel-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let dir = root.appendingPathComponent("2026-11-09 1000 Weekly sync")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try "{}".write(to: dir.appendingPathComponent("meeting.json"), atomically: true, encoding: .utf8)
+        try "Jane said the checklist is nearly done.\n".write(to: dir.appendingPathComponent("summary.md"), atomically: true, encoding: .utf8)
+        let meetings = Meetings(root: root)
+        let all = [(path: "2026-11-09 1000 Weekly sync", label: "Weekly sync")]
+        #expect(meetings.search("checklist", in: all).count == 1)
+        let search = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return meetings.search("checklist", in: all)
+        }
+        #expect(await search.value.isEmpty)
     }
 
     /// The tree is read again from meeting.json when it changes, though what it says is kept between reads.
