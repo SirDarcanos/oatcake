@@ -166,6 +166,9 @@ private struct LiveTranscriptPane: View {
     @Environment(AppModel.self) private var model
     let rec: Recording
     let knownVoices: [String]
+    /// New lines are followed while you're at the end; scrolled up to read back, or to say who a voice
+    /// is, the transcript stays where you are.
+    @ViewState private var following = true
 
     var body: some View {
         let lines = model.recording.liveShown
@@ -213,7 +216,23 @@ private struct LiveTranscriptPane: View {
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .onChange(of: lines.count) { withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
+            // Only scrolling decides: the transcript growing, or being taken to its end, leaves it as it was.
+            .onScrollPhaseChange { _, phase, context in
+                if phase != .animating { following = context.geometry.visibleRect.maxY >= context.geometry.contentSize.height - 30 }
+            }
+            .onChange(of: lines.count) { if following { withAnimation { proxy.scrollTo("end", anchor: .bottom) } } }
+            .overlay(alignment: .bottom) {
+                if !following {
+                    Button {
+                        following = true
+                        withAnimation { proxy.scrollTo("end", anchor: .bottom) }
+                    } label: {
+                        Label("Jump to latest", systemImage: "arrow.down")
+                    }
+                    .controlSize(.small)
+                    .padding(.bottom, 12)
+                }
+            }
         }
         .background(Color(nsColor: .windowBackgroundColor))
     }

@@ -136,6 +136,8 @@ helper, `Oatcake --live`, transcribes the audio as the recorder writes it). Your
 Each line from the call side gets a fingerprint, and the name of whoever it sounds like: someone
 Oatcake knows by voice, or someone you've named on another line. A line nobody can be sure of gets
 an obviously made-up name, a different one every time ("Mystery Guest", "Captain Placeholder"…).
+The transcript follows each new line while you're at its end. Scroll up to read back and it stays
+where you are, with **Jump to latest** to take you back down.
 
 Click a line's name to say who said it: the menu lists the people Oatcake knows by voice and the
 people on the calendar invite. Oatcake follows that voice for the rest of the call, and fills in
