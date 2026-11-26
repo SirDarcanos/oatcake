@@ -14,9 +14,12 @@ struct MeetingItem: Codable, Transferable {
     /// Relative to the Meetings folder.
     var path: String
     var folder: URL
+    /// The Meetings folder, so the summary given as text is read only if it's really inside it.
+    var root: URL
 
     init(_ path: String, in root: URL) {
         self.path = path
+        self.root = root
         folder = root.appendingPathComponent(path, isDirectory: true)
     }
 
@@ -24,7 +27,7 @@ struct MeetingItem: Codable, Transferable {
         CodableRepresentation(contentType: .oatcakeItem)
         ProxyRepresentation { $0.folder }
         DataRepresentation(exportedContentType: .utf8PlainText) { item in
-            Data(forReading(readText(item.folder.appendingPathComponent(MeetingFile.summary.rawValue))).trimmed.utf8)
+            Data(forReading(fileInside(item.root, item.folder, MeetingFile.summary.rawValue).map(readText) ?? "").trimmed.utf8)
         }
     }
 }
