@@ -15,7 +15,6 @@ struct SearchOverlay: View {
     /// The result Return opens: the first, then whichever ↑, ↓ or the pointer picks.
     @ViewState private var chosen = 0
     @ViewState private var listHeight: CGFloat = 0
-    @FocusState private var focused: Bool
 
     var body: some View {
         let search = query.trimmed
@@ -47,7 +46,6 @@ struct SearchOverlay: View {
             .padding(.top, 60)
         }
         .onExitCommand { close() }
-        .onAppear { DispatchQueue.main.async { focused = true } }
         .onChange(of: search) { chosen = 0 }
         // Searched again when the words change, and when a meeting does.
         .task(id: "\(model.library.diskVersion) \(search)") { await searchText(search) }
@@ -56,14 +54,12 @@ struct SearchOverlay: View {
     private func field(_ rows: [TreeNode], hits: [String: SearchHit]) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass").font(.title3).foregroundStyle(.secondary).accessibilityHidden(true)
-            TextField("Search meetings", text: $query)
-                .textFieldStyle(.plain)
-                .font(.title3)
-                .focused($focused)
-                .onSubmit { if rows.indices.contains(chosen) { open(rows[chosen], hit: hits[rows[chosen].path]) } }
-                .onKeyPress(.downArrow) { chosen = min(chosen + 1, max(rows.count - 1, 0)); return .handled }
-                .onKeyPress(.upArrow) { chosen = max(chosen - 1, 0); return .handled }
-                .onKeyPress(.escape) { close(); return .handled }
+            KeyedTextField(text: $query, placeholder: "Search meetings",
+                           font: .systemFont(ofSize: NSFont.preferredFont(forTextStyle: .title3).pointSize),
+                           onMove: { chosen = min(max(chosen + $0, 0), max(rows.count - 1, 0)) },
+                           onReturn: { if rows.indices.contains(chosen) { open(rows[chosen], hit: hits[rows[chosen].path]) } },
+                           onEscape: { close() })
+                .accessibilityLabel("Search meetings")
             if !query.isEmpty {
                 Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
                     .buttonStyle(.plain).help("Clear the search").accessibilityLabel("Clear the search")
@@ -78,7 +74,7 @@ struct SearchOverlay: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 2) {
-                    let words = query.trimmed.split(separator: " ").map(String.init)
+                    let words = searchWords(query)
                     ForEach(Array(rows.enumerated()), id: \.element.path) { i, m in
                         row(m, hit: hits[m.path], words: words, chosen: i == chosen)
                             .id(i)
@@ -100,15 +96,15 @@ struct SearchOverlay: View {
         let secondary = chosen ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary)
         return VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(marked(meetingTitle(m), words)).fontWeight(.semibold).lineLimit(1)
+                Text(markingFound(meetingTitle(m), words)).fontWeight(.semibold).lineLimit(1)
                 Spacer(minLength: 8)
                 if let date = meetingDate(m) { Text(compactDate(date)).foregroundStyle(secondary).monospacedDigit() }
             }
-            if !parent.isEmpty { Text(marked(folderPath(parent), words)).font(.callout).foregroundStyle(secondary).lineLimit(1) }
+            if !parent.isEmpty { Text(markingFound(folderPath(parent), words)).font(.callout).foregroundStyle(secondary).lineLimit(1) }
             if let hit, let file = hit.file, !hit.line.isEmpty {
                 // Found in the meeting's text: the line that has the words, and where it is.
                 let place = [MeetingFile.summary: "Summary", .todo: "To-dos", .notes: "My notes", .transcript: "Transcript"][file] ?? ""
-                (Text("\(place) · ").fontWeight(.medium) + Text(marked(hit.line, words)))
+                (Text("\(place) · ").fontWeight(.medium) + Text(markingFound(hit.line, words)))
                     .font(.callout).foregroundStyle(secondary).lineLimit(2)
             }
         }
@@ -119,21 +115,6 @@ struct SearchOverlay: View {
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(chosen ? Color.accentColor : .clear))
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
-    }
-
-    /// The text with each of the words searched for marked wherever it appears, as Find marks what it
-    /// finds: dark on yellow, which reads on a chosen row's blue too.
-    private func marked(_ text: String, _ words: [String]) -> AttributedString {
-        var out = AttributedString(text)
-        for word in words where !word.isEmpty {
-            var from = out.startIndex
-            while from < out.endIndex, let found = out[from...].range(of: word, options: [.caseInsensitive, .diacriticInsensitive]) {
-                out[found].backgroundColor = .yellow
-                out[found].foregroundColor = .black
-                from = found.upperBound
-            }
-        }
-        return out
     }
 
     /// What a meeting is found by, besides its text.
@@ -159,12 +140,13 @@ struct SearchOverlay: View {
         if !Task.isCancelled { found = (search, hits) }
     }
 
-    /// Opens a meeting, in the list of its folder; one found by its text opens where the words are.
+    /// Opens a meeting, in the list of its folder. One found by its text opens where the words are,
+    /// with them in Find and marked, as Mail marks a search's words in a message it opens.
     private func open(_ m: TreeNode, hit: SearchHit?) {
         close()
         guard let file = hit?.file else { return model.openMeeting(m.path) }
         let tab: MeetingTab = file == .transcript ? .transcript : file == .notes ? .notes : .summary
-        model.openMeeting(m.path, jump: Jump(tab: tab, stamp: hit?.stamp))
+        model.openMeeting(m.path, jump: Jump(tab: tab, stamp: hit?.stamp, words: searchWords(query)))
     }
 
     private func close() { model.searching = false }

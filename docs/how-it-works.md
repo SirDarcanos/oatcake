@@ -75,9 +75,10 @@ tick off to-dos on Home, or choose **View all to-dos** to manage the full list.
 
 ⌘N starts a new recording, and ⌥⌘F (or the search button over the meeting list) opens search over
 the window. It finds meetings by their title, folder, summary, to-dos, notes and transcript as you
-type, newest first; one found by its text shows the line with the words. ↑ and ↓ choose a meeting,
-Return or a click opens it there, and Escape closes search. ⌘F finds words in the transcript
-you're reading. ⇧⌘N makes a
+type, newest first, with the words marked; one found by its text shows the line with them. ↑ and
+↓ choose a meeting, Return or a click opens it on the tab where the words are, with them in Find and
+marked, and Escape closes search. ⌘F finds words in the transcript you're reading: lines with every
+word, one after another. ⇧⌘N makes a
 folder and ⌘R refreshes the calendar; all of these are in the File and Edit menus. View › Bigger
 Text (⌘+), Smaller Text (⌘-) and Actual Size (⌘0) change the size of what you read and type:
 summaries, transcripts, notes and answers.

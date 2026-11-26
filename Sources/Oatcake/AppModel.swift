@@ -22,6 +22,8 @@ enum Selection: Equatable {
 struct Jump: Equatable {
     var tab: MeetingTab
     var stamp: String?
+    /// Words a search found the meeting by: the meeting opens with them in Find, marked.
+    var words: [String] = []
     var nonce = UUID()
 }
 
