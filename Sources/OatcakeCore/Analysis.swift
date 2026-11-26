@@ -233,9 +233,18 @@ public func analyse(_ dir: URL, config: Config = Config.load(), voiceprints file
 
     let analysis = Analysis(title: call.title, startedAt: meta.startedAt, endedAt: meta.endedAt, lines: lines,
                             speakers: speakers.sorted { $0.seconds > $1.seconds },
-                            echoLinesRemoved: micLines.count - keptMic.count, me: meInfo, warnings: [],
+                            echoLinesRemoved: micLines.count - keptMic.count, me: meInfo, warnings: warnings(meta),
                             embeddingModel: voiceprintModel)
+    // Before analysis.json, so a quit can't leave the app's part (Recordings.lastStepFile) unmarked.
+    FileManager.default.createFile(atPath: dir.appendingPathComponent(Recordings.lastStepFile).path, contents: nil)
     try writeAtomic(dir.appendingPathComponent("analysis.json"), try encodeJSON(analysis))
+}
+
+/// What Who's who says about the recording itself.
+func warnings(_ meta: RecorderMeta) -> [String] {
+    meta.interrupted == true
+        ? ["The recording stopped unexpectedly, so your lines may be slightly out of step with the call’s."]
+        : []
 }
 
 /**

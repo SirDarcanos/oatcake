@@ -134,6 +134,13 @@ import Testing
         #expect(analysisFailure(OatcakeError("anything else")) == .other)
     }
 
+    /// A recording whose recorder went without saying where a track starts says so in Who's who.
+    @Test func interruptedRecordingsWarn() {
+        let finished = RecorderMeta(startedAt: "2026-11-10T14:00:00Z", endedAt: "2026-11-10T14:30:00Z", micOffset: 0.2, systemOffset: 0.1)
+        #expect(warnings(finished).isEmpty)
+        #expect(warnings(with(finished) { $0.interrupted = true }).count == 1)
+    }
+
     /// A voice with only a few seconds of speech goes to the voice with more that it sounds most like;
     /// with nobody speaking that long, every voice stays.
     @Test func smallVoicesFold() {

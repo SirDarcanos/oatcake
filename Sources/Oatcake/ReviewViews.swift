@@ -27,7 +27,7 @@ struct ProcessingView: View {
     var body: some View {
         let progress = model.jobs.progress[rec.id]
         let stage = progress?.stage
-        let step = stage?.title ?? "Starting"
+        let step = progress?.waiting == true ? "Waiting for another recording to be processed" : stage?.title ?? "Starting"
         let n = stage?.number ?? 1
         let within = progress?.fraction ?? (stage?.isStep == true ? 0.5 : 0.1)
         // The first recording on a Mac fetches the speech models before anything can be transcribed.

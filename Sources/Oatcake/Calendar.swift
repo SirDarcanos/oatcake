@@ -65,7 +65,7 @@ final class CalendarController {
         }
         refresh()
         checkReminders()
-        timers.append(Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in Task { @MainActor in self.refresh() } })
+        timers.append(Timer.common(every: 300) { _ in Task { @MainActor in self.refresh() } })
     }
 
     func refresh(force: Bool = false) {
