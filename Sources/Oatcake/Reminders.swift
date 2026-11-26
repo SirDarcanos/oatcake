@@ -85,6 +85,14 @@ enum Reminders {
         post(content, id: "call-ended")
     }
 
+    /// A call has been processed and waits in Who's who. No sound: it can wait until you're back.
+    @MainActor static func readyToCheck(_ title: String, id: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Ready to check who’s who"
+        content.body = "“\(title)” is waiting under Needs review."
+        post(content, id: "review-\(id)")
+    }
+
     @MainActor static func show(_ event: CalendarEvent) {
         lastSound = Date()
         Task {

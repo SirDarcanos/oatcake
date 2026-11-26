@@ -162,6 +162,9 @@ final class Jobs {
             if let outcome { apply(id, outcome) }
             // Settings › General › After a call: saved now, rather than waiting under Needs review.
             if outcome?.done == true, config.afterCall != .review { autoSave(id) }
+            // Waiting under Needs review. Away from Oatcake (its window closed, say) the Dock badge may
+            // not be there to see, so it's said.
+            if outcome?.done == true, config.afterCall == .review, !NSApp.isActive { Reminders.readyToCheck(rec.title, id: id) }
         }
     }
 

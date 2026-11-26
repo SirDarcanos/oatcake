@@ -191,7 +191,8 @@ the lines it said most of); known voices are recognised from saved voiceprints; 
 suggested from the conversation by the summary model, quoting the words that gave it away (not when
 After a call is set to save the transcript only: see
 [Saving without Who's who](#saving-without-whos-who)). The recording waits under
-Needs review with its step (1–5), and the Dock icon's badge counts the recordings waiting there. A
+Needs review with its step (1–5), and the Dock icon's badge counts the recordings waiting there.
+When one is ready for Who's who and Oatcake isn't in front, a notification says so. A
 failure shows the reason, with **Try again** and **Discard…**; **Discard…** is in the toolbar while
 it's processing and on Who's who as well.
 
