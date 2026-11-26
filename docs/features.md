@@ -26,6 +26,8 @@ Everything Oatcake does today, with a link to where each is described. Planned w
   screen and as notifications; what was recorded is kept. [Record](how-it-works.md#1-record)
 - An offer to record when a calling app starts using the microphone, and an automatic stop when
   the call ends, with **Keep recording**. [Calls are noticed](how-it-works.md#calls-are-noticed)
+- An option to keep call notices working after you close the window. Reopen or quit Oatcake from
+  its menu bar icon. [The menu bar](how-it-works.md#the-menu-bar)
 - The running time and **Stop Recording…** in the menu bar, including over full-screen apps.
   [The menu bar](how-it-works.md#the-menu-bar)
 - A recording carries on if Oatcake crashes, and is picked up if it opens again within ten minutes.
@@ -104,6 +106,8 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 - Summary, Transcript and My notes tabs (and Draft for Sharing where there's one), each rendered or
   as editable Markdown.
   [Reading and editing](how-it-works.md#reading-and-editing)
+- Play and pause a saved call recording, and jump to a time from the slider or the transcript.
+  [Listening to the recording](how-it-works.md#listening-to-the-recording)
 - **Copy** and **Share**, formatted for documents and mail and as Markdown.
   [Reading and editing](how-it-works.md#reading-and-editing)
 - Folders within folders, meetings dragged between them, several at a time; rename, Show in
@@ -115,9 +119,9 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 
 ## Ask
 
-- Questions about the meeting you have open or across all of them, answered by the model on this
-  Mac, with links to the meetings and times it drew on. [Ask](how-it-works.md#5-ask)
-- Follow-ups in the same conversation, as you move between meetings. [Ask](how-it-works.md#5-ask)
+- Ask across your saved calls from Home, or start with the call you have open. Answers link to the
+  meetings and times they draw on. [Ask](how-it-works.md#5-ask)
+- Follow-ups in the same conversation as you move between Home and meetings. [Ask](how-it-works.md#5-ask)
 
 ## Local MCP server
 

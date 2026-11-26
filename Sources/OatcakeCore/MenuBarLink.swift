@@ -6,6 +6,8 @@ import Foundation
 
 /// What the menu bar item shows.
 public enum MenuBarContent: Codable, Equatable, Sendable {
+    /// Just the app icon, without recording or calendar details.
+    case idle
     /// `elapsed` is nil until audio arrives.
     case recording(title: String, elapsed: Double?)
     /// Timed events that haven't ended, soonest first.
@@ -17,6 +19,7 @@ public enum MenuBarAction: Codable, Equatable, Sendable {
     case stop
     case open
     case record
+    case settings
     case openEvent(CalendarEvent)
     case quit
 }

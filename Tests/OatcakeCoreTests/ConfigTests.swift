@@ -70,6 +70,15 @@ import Testing
         #expect(try JSONDecoder().decode(Config.self, from: Data(#"{"myName":"John"}"#.utf8)).todoInstructions == "")
     }
 
+    @Test func backgroundPreference() throws {
+        #expect(Config.defaults().runInBackground)
+        let existing = try JSONDecoder().decode(Config.self, from: Data("{}".utf8))
+        #expect(existing.runInBackground)
+        let disabled = with(existing) { $0.runInBackground = false }
+        let saved = try JSONDecoder().decode(Config.self, from: JSONEncoder().encode(disabled))
+        #expect(!saved.runInBackground)
+    }
+
     @Test func olderConfig() throws {
         let old = #"{"myName":"John","outputDir":"/tmp/m","asrModel":"parakeet-unified-en","keepAudio":false,"mic":null,"callReminders":false,"updateCheck":true}"#
         let config = try JSONDecoder().decode(Config.self, from: Data(old.utf8))

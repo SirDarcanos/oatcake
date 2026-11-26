@@ -61,6 +61,42 @@ import Testing
         #expect(answer.hasSuffix("Question: What was the budget for the offsite?"))
     }
 
+    @Test func askFromHome() async throws {
+        let meetings = TestMeetings()
+        defer { meetings.remove() }
+        var config = Config.defaults()
+        config.outputDir = meetings.root.path
+        let empty = try await OatcakeCore.ask(config, meeting: nil, question: "What did we decide?")
+        #expect(empty == "There are no saved calls to search yet.")
+
+        let planning = "Team/2026-11-09 1000 Offsite planning"
+        let unrelated = "Team/2026-11-10 1000 Design review"
+        try meetings.write(planning, .transcript, "**[12:34] Jane Doe:** The café booking is confirmed.\n",
+                           meta: #"{"title":"Offsite planning","startedAt":"2026-11-09T10:00:00.000Z"}"#)
+        try meetings.write(unrelated, .summary, "New colours agreed.")
+        let server = try await StandIn.model {
+            $0.json["response_format"] != nil ? #"{"beyond":true,"search":["offsite"]}"#
+                : "The café booking is confirmed [M1 12:34]."
+        }
+        config.llm = server.config.llm
+        let history = [AskExchange(question: "What about the offsite?", answer: "We discussed booking a café.")]
+        let answer = try await OatcakeCore.ask(config, meeting: nil, question: "Was it confirmed?", history: history)
+        #expect(answer == "The café booking is confirmed [Offsite planning · Nov 9 · 12:34](Team/2026-11-09%201000%20Offsite%20planning#12:34).")
+        let requests = server.requests
+        try #require(requests.count == 2)
+        #expect(requests[0].messages.user.contains("No meeting is open."))
+        #expect(requests[0].messages.user.contains("Question: What about the offsite?"))
+        #expect(requests[1].messages.user.hasPrefix("[M1] Offsite planning"))
+        #expect(requests[1].messages.user.contains("The café booking is confirmed."))
+        #expect(!requests[1].messages.user.contains("Design review"))
+
+        let noMatch = try await StandIn.model { _ in #"{"beyond":true,"search":["zebra"]}"# }
+        config.llm = noMatch.config.llm
+        let missing = try await OatcakeCore.ask(config, meeting: nil, question: "What about the zebra?")
+        #expect(missing.contains("I couldn’t find a saved call"))
+        #expect(noMatch.requests.count == 1)
+    }
+
     /// To-dos turned off: Ask isn't given them, in the open meeting or in the others it looks through.
     @Test func askWithoutTodos() async throws {
         let meetings = TestMeetings()

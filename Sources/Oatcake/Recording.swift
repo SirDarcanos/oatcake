@@ -632,17 +632,18 @@ final class RecordingController {
 
     // MARK: - Menu bar
 
-    /// The menu bar shows the call being recorded (with Stop) or, with a calendar connected and the
-    /// setting on, the time until the next call.
-    var showsNextCallInMenuBar: Bool { config.menuBarNextCall && calendar.hasCalendars }
-
+    /// The menu bar shows the call being recorded (with Stop); otherwise, with a calendar connected and
+    /// the setting on, the time until the next call; otherwise, with Run in the background on, just
+    /// Oatcake's icon, so that Oatcake can be reopened with its window closed.
     func updateMenuBar() {
         // A call that couldn't be recorded isn't shown as one that is.
         if let live, recorderFailure == nil {
             menuBar.show(.recording(title: live.title, elapsed: status.state == .recording ? status.elapsed ?? 0 : nil))
-        } else if showsNextCallInMenuBar {
+        } else if config.menuBarNextCall && calendar.hasCalendars {
             let now = Date()
             menuBar.show(.upcoming(calendar.events.filter { !$0.allDay && $0.endDate > now }))
+        } else if config.runInBackground {
+            menuBar.show(.idle)
         } else {
             menuBar.hide()
         }

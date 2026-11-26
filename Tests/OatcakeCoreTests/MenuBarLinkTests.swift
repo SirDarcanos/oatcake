@@ -12,13 +12,13 @@ import Testing
         let events = try JSONDecoder().decode([CalendarEvent].self, from: Data(contentsOf: fixture("calendar-expected.json")))
         let event = try #require(events.first)
         let shown: [MenuBarContent] = [.recording(title: "Weekly sync", elapsed: nil), .recording(title: "A “quoted”\nname", elapsed: 12.5),
-                                       .upcoming(Array(events.prefix(3))), .upcoming([])]
+                                       .upcoming(Array(events.prefix(3))), .upcoming([]), .idle]
         for content in shown {
             let line = String(decoding: MenuBarLink.line(content), as: UTF8.self)
             #expect(line.hasSuffix("\n") && !line.dropLast().contains("\n"))
             #expect(MenuBarLink.read(MenuBarContent.self, String(line.dropLast())) == content)
         }
-        let chosen: [MenuBarAction] = [.stop, .open, .record, .openEvent(event), .quit]
+        let chosen: [MenuBarAction] = [.stop, .open, .record, .settings, .openEvent(event), .quit]
         for action in chosen {
             #expect(MenuBarLink.read(MenuBarAction.self, String(decoding: MenuBarLink.line(action).dropLast(), as: UTF8.self)) == action)
         }

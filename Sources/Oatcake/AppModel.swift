@@ -90,6 +90,7 @@ final class AppModel {
     private var refreshing = false
     private var refreshWanted = false
     var openMainWindow: (() -> Void)?
+    var openSettingsWindow: (() -> Void)?
 
     init() {
         let (config, problem) = Config.loadWithProblem()
@@ -190,6 +191,7 @@ final class AppModel {
         recording.menuBar.stop = { [weak self] in self?.stopFromMenuBar() }
         recording.menuBar.open = { [weak self] in self?.showWindow() }
         recording.menuBar.record = { [weak self] in self?.newRecording() }
+        recording.menuBar.settings = { [weak self] in self?.showSettings() }
         recording.menuBar.openEvent = { [weak self] event in self?.openEvent(event) }
         recording.updateMenuBar()
         updater.start(autoCheck: { [weak self] in self?.config.updateCheck ?? false },
@@ -395,6 +397,8 @@ final class AppModel {
     }
 
     func showWindow() {
+        // Restore the Dock icon and app menus when coming back from menu-bar-only mode.
+        if NSApp.activationPolicy() == .accessory { NSApp.setActivationPolicy(.regular) }
         NSApp.activate()
         if let window = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" && $0.isVisible }) {
             if window.isMiniaturized { window.deminiaturize(nil) }
@@ -402,6 +406,14 @@ final class AppModel {
         } else {
             openMainWindow?()
         }
+    }
+
+    /// Menu bar › Settings: the Settings window, without the main one. Oatcake may be running in the
+    /// menu bar only, out of the Dock: its Dock icon and menus come back first, as they do for its window.
+    func showSettings() {
+        if NSApp.activationPolicy() == .accessory { NSApp.setActivationPolicy(.regular) }
+        NSApp.activate()
+        openSettingsWindow?()
     }
 
     private var mainWindowIsUp: Bool { NSApp.windows.contains { $0.identifier?.rawValue == "main" && $0.isVisible } }
@@ -434,8 +446,10 @@ final class AppModel {
 
     // MARK: - Status
 
-    /// Work that closing the window shouldn't end: anything an update waits for, and a model on its way down.
-    var hasWorkInFlight: Bool { busyReason != nil || downloads.isDownloading }
+    /// Work that closing the window shouldn't end: anything an update waits for, a model on its way
+    /// down, and a read of the recordings under way (a call that has just stopped is no longer being
+    /// recorded, but isn't being analysed until that read finds it).
+    var hasWorkInFlight: Bool { refreshing || busyReason != nil || downloads.isDownloading }
 
     /// What quitting now would interrupt, as a question to ask first; nil when it would interrupt
     /// nothing. (The updater's own quit never gets here with one: it checks `busyReason`, which

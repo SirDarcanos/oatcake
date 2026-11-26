@@ -76,10 +76,11 @@ folder and ⌘R refreshes the calendar; all of these are in the File and Edit me
 Text (⌘+), Smaller Text (⌘-) and Actual Size (⌘0) change the size of what you read and type:
 summaries, transcripts, notes and answers.
 
-Closing the window quits Oatcake, unless a call is being recorded or the menu bar is showing your
-next call: then it stays in the menu bar. Work that's still going (a call being analysed, a summary
-being written, an import, a model downloading) keeps it open until it's done, and then it quits.
-The Dock icon brings the window back.
+By default, closing the window keeps Oatcake running in the background, checking for calls and
+sending reminders. It stops appearing as a running app in the Dock and stays in the menu bar.
+Choose **Open Oatcake** there to bring back the window and Dock icon. Turn off **Run in the
+background** in Settings › General to quit when the last window closes, once any recording or work
+has finished. **Quit Oatcake** (⌘Q) stops Oatcake and its call checks regardless of this setting.
 
 ## 1. Record
 
@@ -156,10 +157,13 @@ switches in Settings › General.
 ### The menu bar
 
 While a call is being recorded the menu bar shows its running time, with **Stop Recording…**
-(which asks first) in its menu. Otherwise, with a calendar connected, it shows the time until your
-next call (Settings › Calendars › Reminders › Show my next call in the menu bar), and its menu lists up to six calls
-coming up today and tomorrow (click one for its New recording screen), **New Recording…**, **Open
-Oatcake** and **Quit Oatcake**. The menu bar item is drawn by a third helper, `Oatcake
+(which asks first) in its menu. When not recording, the Oatcake icon is there if **Run in the
+background** is on or calendar details are shown. **Show my next call in the menu bar** in Settings
+› Calendars › Reminders adds the time until your next call and lists up to six calls today and
+tomorrow (click one to open its New recording screen). The menu offers **New Recording…** when not
+recording, then
+**Settings** in its own section, then **Open Oatcake** and **Quit Oatcake**. The menu bar item is
+drawn by a third helper, `Oatcake
 --menu-bar`, a menu-bar-only app: macOS doesn't show a Dock app's menu bar menu while another app
 is in full screen.
 
@@ -238,19 +242,29 @@ she/her/hers it writes is changed to they/them/their afterwards, with the verb a
 
 ### Reading and editing
 
-Tabs: Summary (with the meeting's to-dos at the top), Transcript and My notes (⌘1–⌘3), and Draft
-for Sharing (⌘4) in a meeting that has [one](#draft-for-sharing), each
+Tabs, at the left of the toolbar: Summary (with the meeting's to-dos at the top), Transcript and
+My notes (⌘1–⌘3), and Draft for Sharing (⌘4) in a meeting that has [one](#draft-for-sharing), each
 Rendered or as editable Markdown from the switch at the top right of the note (saved as you type;
-Summary shows `todo.md` and `summary.md`). **Copy** puts the tab you're on (the summary with its
+Summary shows `todo.md` and `summary.md`). Everything else that can be done to the meeting is in
+the **⋯** menu at the right of the toolbar. **Copy** puts the tab you're on (the summary with its
 to-dos, the transcript, or your notes) on the clipboard under the meeting's title and date,
 formatted for Google Docs, Pages or mail and as Markdown for anything that only takes plain text,
 and **Share** sends the same text with Mail, Messages or another app.
 
+### Listening to the recording
+
+If a meeting has saved audio, a player sits below its title, with the recording's length. Use the
+slider or click a time in the rendered transcript to jump to that point in the recording, before or
+after pressing play. If playback is paused, it
+stays paused at the new time. Playback stops when you leave the meeting. For calls recorded in
+Oatcake, turn on [Keep call audio after saving](settings.md#storage) to make audio available for
+future meetings.
+
 ### Regenerate and summary templates
 
 To write a summary or its to-dos again (after changing the instructions in Settings › Summaries,
-say), choose **Regenerate › Regenerate summary** or **Regenerate to-dos** in the Summary tab's
-toolbar and confirm. With [summary templates](settings.md#summaries) set up, Regenerate summary
+say), choose **Regenerate Summary** or **Regenerate To-dos** from the **⋯** menu on the Summary
+tab and confirm. With [summary templates](settings.md#summaries) set up, Regenerate Summary
 lists them: the meeting's summary is written with the one you pick, and the meeting keeps it for
 any summary written of it later. Only that part is asked for and replaced, edits and ticks
 included; the rest of the meeting stays as it is. The old one stays until the new one is ready,
@@ -258,7 +272,8 @@ and stays if it fails or is changed somewhere else meanwhile.
 
 ### Draft for sharing
 
-**Draft for Sharing…** in the Summary tab's toolbar has the model write the meeting's summary and
+**Draft for Sharing…** in the **⋯** menu on the Summary tab has the model write the meeting's
+summary and
 to-dos again for other people to read, following your
 [draft for sharing instructions](settings.md#summaries), plus anything you ask for that draft alone
 ("shorter, and leave out the budget"). It's given the summary and to-dos as they are, with your
@@ -286,15 +301,17 @@ your tasks somewhere else, turn off [Collect to-dos](settings.md#general) in Set
 
 Organise meetings by dragging them onto folders; ⌘-click or ⇧-click selects several, and they all
 move. Right-click a meeting for **Rename…**, **Show in Finder** or **Move to Trash**, or several for
-**Show in Finder** or **Move to Trash** (⌘⌫ in the File menu does the same); **Show in Finder** is in the meeting's toolbar too. Renaming
+**Show in Finder** or **Move to Trash** (⌘⌫ in the File menu does the same); **Show in Finder** is in the meeting's **⋯** menu too. Renaming
 a meeting changes its title (in `meeting.json`) and its folder's name, which keeps its date.
-Folders can hold folders: right-click one for **New Folder Inside…**, **Rename…**, **Show in
-Finder** or **Move to Trash** (which asks first if it holds meetings). Finder and the app stay in
-step. The middle column's width drags, like the sidebar's.
+Folders can hold folders. Click the arrow next to a folder's name to show or hide its subfolders.
+Right-click a folder for **New Folder Inside…**, **Rename…**, **Show in Finder** or **Move to
+Trash** (which asks first if it holds meetings). Finder and the app stay in step. The middle
+column's width drags, like the sidebar's.
 
 ### Rename Speakers
 
-**Rename Speakers** in a meeting's toolbar puts a wrong name right after the meeting is saved, or
+**Rename Speakers…** in a meeting's **⋯** menu puts a wrong name right after the meeting is saved,
+or
 names a "Voice 2": it lists the transcript's speakers, each with their first words, and a field for
 another name. Only that meeting changes: the transcript's labels (never what was said), the names
 in its summary and to-dos, and its people in `meeting.json`. Two names can swap, and giving two
@@ -306,17 +323,17 @@ who's who has **Name voices…** instead.
 
 ## 5. Ask
 
-The lozenge at the bottom of a meeting takes questions about it ("what did we decide about
-hiring?") or across meetings ("when did Jane first raise the launch date?"); an empty chat offers
-three to start with. The model on your Mac is given the meeting you have open: its summary,
-to-dos, your notes and the transcript (all of it, or for a call too long for that, the parts
-nearest the question). It's first asked whether the question reaches beyond that meeting. When it
-does, Oatcake searches your other meetings for the names and topics the model gives, favours the
-other meetings in the same folder, and adds their summaries, to-dos and the transcript lines that
-match. The model never opens a file or runs anything itself. Answers link to the meetings they
+Use **Ask about your calls…** at the bottom of Home to search across saved calls without opening
+one first ("when did Jane Doe first raise the launch date?"). On a meeting page, Ask starts with
+that call, so you can ask "what did we decide about hiring?" without naming the meeting. The model
+gets the open call’s summary, to-dos, notes and transcript (or the closest parts of a long transcript).
+If the question reaches beyond the open call, Oatcake also searches other meetings and favours ones
+in the same folder. From Home it searches the whole library without favouring a folder. Search results
+include summaries, to-dos and matching transcript lines. The model never opens a file or runs
+anything itself. Answers link to the meetings they
 draw on, and a time in an answer opens the transcript at that moment. An answer is one piece of
 text: select any stretch of it, or all of it, and copy. Web links in an answer are shown as text,
-not made clickable. Follow-ups continue the same conversation, which stays open as you move
-between meetings, until **New chat**. **Stop** ends an answer early, and Esc or **Hide** puts the
+not made clickable. Follow-ups continue the same conversation as you move between Home and meetings.
+Choose **New chat** to start over. **Stop** ends an answer early, and Esc or **Hide** puts the
 chat away. The first question about a call takes longest, while the model reads it; follow-ups
 about the same call are quicker.

@@ -142,6 +142,18 @@ public final class Meetings: @unchecked Sendable {
                             meta: tryJSON(MeetingMeta.self, dir.appendingPathComponent("meeting.json")) ?? MeetingMeta())
     }
 
+    /// The saved recording, not the temporary tracks or speaker clips used to process a call.
+    public func recordingAudio(_ rel: String) -> URL? {
+        guard !rel.isEmpty, let dir = try? resolveInside(root, rel) else { return nil }
+        let base = root.resolvingSymlinksInPath().standardizedFileURL
+        let folder = dir.resolvingSymlinksInPath().standardizedFileURL
+        guard folder.path.hasPrefix(base.path + "/") else { return nil }
+        let file = folder.appendingPathComponent("audio.m4a")
+        guard let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+              values.isRegularFile == true, values.isSymbolicLink != true else { return nil }
+        return file
+    }
+
     private func searchable(_ file: URL) -> (text: String, folded: String) {
         guard let modified = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date else { return ("", "") }
         if let cached = lock.withLock({ texts[file.path] }), cached.modified == modified { return (cached.text, cached.folded) }

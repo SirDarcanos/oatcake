@@ -14,7 +14,7 @@ struct AskTurn: Identifiable {
 }
 
 /// One conversation for as long as the app is open. It carries on as you move between meetings, so
-/// following a link in an answer doesn't lose it. Each question is asked about the meeting that's open.
+/// following a link in an answer doesn't lose it. From Home there's no open meeting to start with.
 @MainActor @Observable
 final class AskChat {
     var turns: [AskTurn] = []
@@ -23,7 +23,7 @@ final class AskChat {
 
     var running: AskTurn? { turns.first(where: \.running) }
 
-    func send(_ question: String, meeting: String, config: Config, downloads: ModelDownloads) {
+    func send(_ question: String, meeting: String?, config: Config, downloads: ModelDownloads) {
         let history = turns.compactMap { turn in turn.answer.map { AskExchange(question: turn.question, answer: $0) } }
         let turn = AskTurn(question: question)
         turns.append(turn)
