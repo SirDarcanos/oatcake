@@ -148,7 +148,8 @@ public let modelNotDownloadedMessage = "The language model isn’t downloaded ye
 /// Downloads a model's file, carrying on from where an earlier attempt stopped, and checks it's the
 /// file that was expected before putting it in place.
 // Sendable by arrangement: its state is set up before the download is resumed and after that is only
-// touched from the session's own delegate queue, which runs one callback at a time.
+// touched from the session's own delegate queue, which runs one callback at a time. The continuation
+// is the exception, set from the task that waits: it's behind a lock, and whoever takes it resumes it.
 public final class ModelDownload: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     private let model: LocalModel
     private let part: URL
@@ -157,7 +158,14 @@ public final class ModelDownload: NSObject, URLSessionDataDelegate, @unchecked S
     private var received: Int64 = 0
     private var reported = -1.0
     private var failure: Error?
+    private let lock = NSLock()
     private var continuation: CheckedContinuation<Void, Error>?
+    private func takeContinuation() -> CheckedContinuation<Void, Error>? {
+        lock.withLock {
+            defer { continuation = nil }
+            return continuation
+        }
+    }
 
     private init(_ model: LocalModel, part: URL, progress: @escaping @Sendable (Double) -> Void) {
         self.model = model
@@ -205,8 +213,14 @@ public final class ModelDownload: NSObject, URLSessionDataDelegate, @unchecked S
         let task = session.dataTask(with: request)
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
-                continuation = c
-                task.resume()
+                lock.withLock { continuation = c }
+                // Stopped before it began: the cancel may have come before there was anything for
+                // it to finish, so it's finished here and never started.
+                if Task.isCancelled {
+                    takeContinuation()?.resume(throwing: CancellationError())
+                } else {
+                    task.resume()
+                }
             }
         } onCancel: {
             task.cancel()
@@ -255,6 +269,7 @@ public final class ModelDownload: NSObject, URLSessionDataDelegate, @unchecked S
     public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         try? handle?.close()
         handle = nil
+        let continuation = takeContinuation()
         if let failure {
             continuation?.resume(throwing: failure)
         } else if let error {
@@ -265,7 +280,6 @@ public final class ModelDownload: NSObject, URLSessionDataDelegate, @unchecked S
         } else {
             continuation?.resume()
         }
-        continuation = nil
     }
 
     static func sha256(of file: URL) throws -> String {

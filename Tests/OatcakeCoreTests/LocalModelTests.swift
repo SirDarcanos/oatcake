@@ -200,6 +200,15 @@ import Testing
         await #expect(throws: OatcakeError.self) { try await ModelDownload.fetch(model(sha256: String(repeating: "0", count: 64)), to: file) { _ in } }
         #expect(!FileManager.default.fileExists(atPath: file.path) && !FileManager.default.fileExists(atPath: part.path))
         #expect(server.requests.last?.headers["range"] == nil)
+
+        // Stopped before it began: it ends, and nothing is asked for.
+        let asked = server.requests.count
+        let stopped = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            try await ModelDownload.fetch(good, to: file) { _ in }
+        }
+        await #expect(throws: CancellationError.self) { try await stopped.value }
+        #expect(server.requests.count == asked)
     }
 
     /// The model's file is read again before it's started only when its size or modification date
