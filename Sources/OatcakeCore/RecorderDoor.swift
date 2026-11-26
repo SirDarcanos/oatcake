@@ -34,6 +34,7 @@ public final class RecorderDoor: @unchecked Sendable {
         try lock.withLock {
             wanted[dir.standardizedFileURL.path] = Date()
             if let listening { return listening.path }
+            Self.removeLeftovers(in: directory)
             let path = directory.appendingPathComponent("oatcake-\(getpid())-\(UUID().uuidString.prefix(8)).sock").path
             let fd = try Self.listen(at: path)
             listening = (fd, path)
@@ -54,6 +55,20 @@ public final class RecorderDoor: @unchecked Sendable {
                 }
             }
             return path
+        }
+    }
+
+    /**
+     * The sockets of copies of Oatcake that have gone. Each makes one at its first recording, and the
+     * door it belongs to lasts as long as Oatcake does (it's a static), so it's still there after a
+     * quit or a crash. A running copy's (a test copy, say) is left alone.
+     */
+    static func removeLeftovers(in directory: URL) {
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        where name.hasPrefix("oatcake-") && name.hasSuffix(".sock") {
+            guard let pid = name.dropFirst("oatcake-".count).split(separator: "-").first.flatMap({ pid_t($0) }), pid != getpid(),
+                  !isRunning(pid, program: ProgramName.app) else { continue }
+            unlink(directory.appendingPathComponent(name).path)
         }
     }
 

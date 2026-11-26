@@ -122,7 +122,7 @@ public enum AnalysisStage: String, Codable, CaseIterable, Sendable {
 public enum AnalysisFailure: String, Codable, Sendable {
     /// call.json or meta.json couldn't be read.
     case unreadableRecording
-    /// A file the analysis needed wasn't there.
+    /// A file the analysis needed wasn't there (one of the tracks).
     case missingAudio
     /// The speech models couldn't be downloaded or loaded.
     case speechModels
@@ -173,6 +173,12 @@ public func analyse(_ dir: URL, config: Config = Config.load(), voiceprints file
     let (call, meta) = try await during(.unreadableRecording) {
         (try readJSON(CallInfo.self, dir.appendingPathComponent("call.json")), try readJSON(RecorderMeta.self, dir.appendingPathComponent("meta.json")))
     }
+    // A track that can't be read stops the analysis (missingAudio, when it isn't there): taken for
+    // silence, the call would come out with no lines and could be saved that way, its audio deleted.
+    // Mapped, not read: the microphone's floats are let go before the call audio's are made, and its
+    // clips are cut from the mapped samples at the end.
+    let micTrack = try PcmFile(dir.appendingPathComponent(RecorderFile.micTrack))
+    let systemTrack = try PcmFile(dir.appendingPathComponent(RecorderFile.systemTrack))
 
     report(.init(stage: SpeechModels.needsDownload(config.asrModel) ? .downloadingModels : .loadingModels))
     let (transcriber, diarizer) = try await during(.speechModels) {
@@ -180,12 +186,11 @@ public func analyse(_ dir: URL, config: Config = Config.load(), voiceprints file
     }
 
     report(.init(stage: .transcribingMic, fraction: 0))
-    let mic = readPcm(dir.appendingPathComponent("mic.pcm"))
-    let micLines = try await transcriber.transcribe(mic) { report(.init(stage: .transcribingMic, fraction: $0)) }
+    let micLines = try await transcriber.transcribe(micTrack.samples()) { report(.init(stage: .transcribingMic, fraction: $0)) }
         .map { Line(speaker: me, start: $0.start + meta.micOffset, end: $0.end + meta.micOffset, text: $0.text) }
 
     report(.init(stage: .transcribingCall, fraction: 0))
-    let system = readPcm(dir.appendingPathComponent("system.pcm"))
+    let system = systemTrack.samples()
     let systemUtterances = try await transcriber.transcribe(system) { report(.init(stage: .transcribingCall, fraction: $0)) }
 
     report(.init(stage: .tellingVoicesApart))
@@ -212,7 +217,7 @@ public func analyse(_ dir: URL, config: Config = Config.load(), voiceprints file
         let own = turns.filter { letters[$0.speaker] == id }
         let embedding = byLetter[id].flatMap { prints[$0] }
         let voice = embedding.flatMap { voiceprints.match($0) }
-        let quotes = try clipsFor(systemLines.filter { $0.speaker == id }, prefix: id, audio: system, offset: meta.systemOffset, into: clips)
+        let quotes = try clipsFor(systemLines.filter { $0.speaker == id }, prefix: id, offset: meta.systemOffset, into: clips) { slice(system, $0, $1) }
         let seconds = own.isEmpty
             ? systemLines.filter { $0.speaker == id }.reduce(0) { $0 + $1.end - $1.start }
             : own.reduce(0) { $0 + $1.end - $1.start }
@@ -224,13 +229,22 @@ public func analyse(_ dir: URL, config: Config = Config.load(), voiceprints file
 
     // A few clips of your own voice, for review.
     let meInfo = Analysis.Me(seconds: keptMic.reduce(0) { $0 + $1.end - $1.start },
-                             quotes: try clipsFor(keptMic, prefix: "me", audio: mic, offset: meta.micOffset, into: clips))
+                             quotes: try clipsFor(keptMic, prefix: "me", offset: meta.micOffset, into: clips) { ArraySlice(micTrack.samples($0, $1)) })
 
     let analysis = Analysis(title: call.title, startedAt: meta.startedAt, endedAt: meta.endedAt, lines: lines,
                             speakers: speakers.sorted { $0.seconds > $1.seconds },
-                            echoLinesRemoved: micLines.count - keptMic.count, me: meInfo, warnings: [],
+                            echoLinesRemoved: micLines.count - keptMic.count, me: meInfo, warnings: warnings(meta),
                             embeddingModel: voiceprintModel)
+    // Before analysis.json, so a quit can't leave the app's part (Recordings.lastStepFile) unmarked.
+    FileManager.default.createFile(atPath: dir.appendingPathComponent(Recordings.lastStepFile).path, contents: nil)
     try writeAtomic(dir.appendingPathComponent("analysis.json"), try encodeJSON(analysis))
+}
+
+/// What Who's who says about the recording itself.
+func warnings(_ meta: RecorderMeta) -> [String] {
+    meta.interrupted == true
+        ? ["The recording stopped unexpectedly, so your lines may be slightly out of step with the call’s."]
+        : []
 }
 
 /**
@@ -258,12 +272,14 @@ func liveNameSuggestions(_ given: [LiveName], turns: [Turn], letters: [String: S
 }
 
 /// The three longest lines of at least 1.5 s, in time order, each with a clip of up to 10 s.
-private func clipsFor(_ lines: [Line], prefix: String, audio: [Float], offset: Double, into dir: URL) throws -> [Quote] {
+/// `audio` gives the track's samples between two times in seconds.
+private func clipsFor(_ lines: [Line], prefix: String, offset: Double, into dir: URL,
+                      audio: (Double, Double) -> ArraySlice<Float>) throws -> [Quote] {
     let chosen = lines.filter { $0.end - $0.start >= 1.5 }.sorted { $0.text.count > $1.text.count }.prefix(3).sorted { $0.start < $1.start }
     return try chosen.enumerated().map { i, line in
         let clip = dir.appendingPathComponent("\(prefix)-\(i + 1).wav")
         let from = line.start - offset
-        try writeWav(clip, slice(audio, from, min(from + 10, line.end - offset)))
+        try writeWav(clip, audio(from, min(from + 10, line.end - offset)))
         return Quote(text: line.text, start: line.start, end: line.end, clip: clip.path)
     }
 }

@@ -248,27 +248,65 @@ public final class Meetings: @unchecked Sendable {
         }
     }
 
+    /// One change to a meeting's files at a time, whichever `Meetings` makes it: a file that's read,
+    /// changed and written back mustn't have another change land in between (the summary's to-dos
+    /// arriving as one is ticked, say).
+    private static let changing = NSLock()
+
     /// Saves an edit made in the app. Only the meeting's Markdown files can be written.
     public func write(_ rel: String, _ file: MeetingFile, _ content: String) throws {
         let target = try resolveInside(root, rel).appendingPathComponent(file.rawValue)
         if content.isEmpty && !FileManager.default.exists(target) { return }
-        try writeAtomic(target, content)
+        try Self.changing.withLock { try writeAtomic(target, content) }
+    }
+
+    /// Saves typing from the app, but only over the file as it was when `loaded` was read from it. If
+    /// it has changed since (its summary arrived, or it was edited somewhere else), nothing is written
+    /// and this returns false.
+    @discardableResult
+    public func write(_ rel: String, _ file: MeetingFile, _ content: String, ifUnchangedFrom loaded: String) throws -> Bool {
+        try update(rel, file) { $0 == loaded ? content : nil }
+    }
+
+    /// Keeps an edit whose file had changed beside that file, for you to take what you want from:
+    /// "summary.md" goes to "summary (your version).md", or "… 2" and on if that's taken. Returns the name.
+    public func setAside(_ rel: String, _ file: MeetingFile, _ content: String) throws -> String {
+        let dir = try resolveInside(root, rel)
+        let base = (file.rawValue as NSString).deletingPathExtension
+        return try Self.changing.withLock {
+            var n = 1
+            while FileManager.default.exists(dir.appendingPathComponent(asideName(base, n))) { n += 1 }
+            try writeAtomic(dir.appendingPathComponent(asideName(base, n)), content)
+            return asideName(base, n)
+        }
+    }
+
+    private func asideName(_ base: String, _ n: Int) -> String { "\(base) (your version\(n > 1 ? " \(n)" : "")).md" }
+
+    /// Reads one of a meeting's files and writes back what `change` makes of it, with no other change to
+    /// a meeting's files in between. nil from `change` leaves the file as it is, and returns false.
+    @discardableResult
+    func update(_ rel: String, _ file: MeetingFile, _ change: (String) throws -> String?) throws -> Bool {
+        let target = try resolveInside(root, rel).appendingPathComponent(file.rawValue)
+        return try Self.changing.withLock {
+            let now = readText(target)
+            guard let changed = try change(now) else { return false }
+            // Unchanged is left alone: an empty file isn't made where there was none.
+            if changed != now { try writeAtomic(target, changed) }
+            return true
+        }
     }
 
     /// Ticks or unticks a to-do in a meeting's todo.md ("" is the Meetings folder's own), read afresh:
     /// what's on screen may be older than the file, which the summary's to-dos are also added to.
     @discardableResult
     public func toggleTodo(_ rel: String, line: Int, text: String) throws -> Bool {
-        let file = try resolveInside(root, rel).appendingPathComponent(MeetingFile.todo.rawValue)
-        guard let changed = OatcakeCore.toggleTodo(readText(file), line: line, text: text) else { return false }
-        try writeAtomic(file, changed)
-        return true
+        try update(rel, .todo) { OatcakeCore.toggleTodo($0, line: line, text: text) }
     }
 
     /// Adds a to-do to the end of a meeting's todo.md ("" is the Meetings folder's own), read afresh.
     public func addTodo(_ rel: String, _ text: String) throws {
-        let file = try resolveInside(root, rel).appendingPathComponent(MeetingFile.todo.rawValue)
-        try writeAtomic(file, OatcakeCore.addTodo(readText(file), text))
+        try update(rel, .todo) { OatcakeCore.addTodo($0, text) }
     }
 
     private func checkName(_ name: String) throws -> String {

@@ -87,8 +87,9 @@ public func ask(_ config: Config, meeting rel: String?, question: String, histor
                     found = otherMeetings(meetings, others: others, besides: rel, phrases: route.search, tokens: extra, todos: config.todosEnabled)
                 }
             } catch {
-                // With no open meeting there's nothing to fall back on if the search request fails.
-                if rel == nil || isCancellation(error) { throw error }
+                // With no open meeting there's nothing to fall back on if the search request fails. A
+                // reply cut off for room is like one that can't be read: the question's own words are searched.
+                if (rel == nil && !(error is ModelOutOfRoom)) || isCancellation(error) { throw error }
             }
             if rel == nil, found.isEmpty {
                 found = otherMeetings(meetings, others: others, besides: nil, phrases: questionWords(question), tokens: extra, todos: config.todosEnabled)

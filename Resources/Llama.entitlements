@@ -3,7 +3,9 @@
 <plist version="1.0">
 <dict>
 	<!-- llama.cpp's server loads its own libraries from beside itself. The release certificate has no
-	     Apple team behind it, so the hardened runtime wouldn't otherwise let it load them. -->
+	     Apple team behind it, so the hardened runtime wouldn't otherwise let it load them. It would
+	     load any other library put there too: Oatcake checks its own signature over the app before
+	     each start (ModelServer.checkSealed). -->
 	<key>com.apple.security.cs.disable-library-validation</key>
 	<true/>
 </dict>

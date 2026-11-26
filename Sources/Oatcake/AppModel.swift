@@ -52,6 +52,8 @@ struct AppServices {
     var withdraw: @MainActor (Confirmation.ID) -> Void = { _ in }
     /// Something on disk has changed: read the Meetings folder and the recordings again.
     var refresh: @MainActor () -> Void = {}
+    /// The same, returning once what was read is in place.
+    var refreshed: @MainActor () async -> Void = {}
     var showWindow: @MainActor () -> Void = {}
     var selection: @MainActor () -> Selection? = { nil }
     var select: @MainActor (Selection?) -> Void = { _ in }
@@ -78,6 +80,9 @@ final class AppModel {
     /// The folder the middle column lists.
     var folder = ""
     var confirmation: Confirmation?
+    /// Markdown typed in meetings and not written yet, kept here rather than by the meeting's view so
+    /// that quitting and updating can write it too (saveEdits).
+    var edits = MeetingEdits()
     var toastText: String?
     /// The toast showing says something went wrong: it stays longer, and goes when it's clicked.
     var toastIsError = false
@@ -92,6 +97,8 @@ final class AppModel {
     /// A read of the Meetings folder is under way, and another has been asked for since it began.
     private var refreshing = false
     private var refreshWanted = false
+    /// Waiting for a read that starts after they asked (refreshed()).
+    private var waitingForRead: [CheckedContinuation<Void, Never>] = []
     var openMainWindow: (() -> Void)?
     var openSettingsWindow: (() -> Void)?
 
@@ -114,6 +121,7 @@ final class AppModel {
                               confirm: { [unowned self] in self.confirmation = $0 },
                               withdraw: { [unowned self] id in if self.confirmation?.id == id { self.confirmation = nil } },
                               refresh: { [unowned self] in self.refresh() },
+                              refreshed: { [unowned self] in await self.refreshed() },
                               showWindow: { [unowned self] in self.showWindow() },
                               selection: { [unowned self] in self.selection },
                               select: { [unowned self] in self.selection = $0 },
@@ -125,7 +133,11 @@ final class AppModel {
         calendar.app = app
         library.whenMoved = { [unowned self] from, to in self.moved(from: from, to: to) }
         // A meeting saved without checking who's who keeps voice clips in Oatcake's own folder: they go with it.
-        library.whenTrashed = { [unowned self] in self.jobs.tidySavedRecordings() }
+        // Edits still waiting for them have nowhere to go.
+        library.whenTrashed = { [unowned self] paths in
+            self.jobs.tidySavedRecordings()
+            self.edits.discard(paths)
+        }
         calendar.changed = { [unowned self] in self.recording.updateMenuBar() }
         recording.folderForEvent = { [unowned self] title, recurring in
             try self.library.meetings.folderForEvent(title: title, recurring: recurring, in: self.library.tree)
@@ -174,13 +186,13 @@ final class AppModel {
         recording.resumeRecordings()
         library.watchMeetings()
         // The library is read by refresh() below, off the main thread, so a big one doesn't hold up the window.
-        jobs.pending = Recordings.list().filter { $0.state == .recorded || $0.state == .processed }
+        jobs.pending = Recordings.waiting(except: recording.activeIDs)
         jobs.unchecked = Recordings.unchecked()
         // A recording picked up again above has opened its live view: Home only when nothing has.
         if selection == nil { selection = .home }
         refresh()
         calendar.start()
-        timers.append(Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
+        timers.append(Timer.common(every: 30) { _ in
             Task { @MainActor in
                 self.calendar.now = Date()
                 self.library.countTodosIfNewDay()
@@ -198,7 +210,7 @@ final class AppModel {
         recording.menuBar.openEvent = { [weak self] event in self?.openEvent(event) }
         recording.updateMenuBar()
         updater.start(autoCheck: { [weak self] in self?.config.updateCheck ?? false },
-                      busy: { [weak self] in self?.busyReason })
+                      busy: { [weak self] in self?.whyUpdateWaits() })
     }
 
     // MARK: - Meetings folder
@@ -213,17 +225,22 @@ final class AppModel {
         }
         refreshing = true
         let meetings = library.meetings
+        // This read sees everything those waiting asked for; anyone asking from now on waits for the next.
+        let waiting = waitingForRead
+        waitingForRead = []
+        let live = recording.activeIDs
         let shown = library.tree
         let changedOnDisk = library.takeChangedOnDisk()
         Task {
             let (tree, pending, unchecked, todos) = await Task.detached {
                 // The folder is walked once: the to-dos are read from the tree just built.
                 let tree = meetings.tree()
-                return (tree == shown ? nil : tree, Recordings.list().filter { $0.state == .recorded || $0.state == .processed }, Recordings.unchecked(),
+                return (tree == shown ? nil : tree, Recordings.waiting(except: live), Recordings.unchecked(),
                         meetings.allTodos(in: tree))
             }.value
             refreshing = false
             defer {
+                for continuation in waiting { continuation.resume() }
                 if refreshWanted {
                     refreshWanted = false
                     refresh()
@@ -244,6 +261,26 @@ final class AppModel {
             jobs.startWaiting()
             jobs.updateBadge()
         }
+    }
+
+    /// Reads the Meetings folder and the recordings again, and returns once what's read is in place.
+    func refreshed() async {
+        await withCheckedContinuation { continuation in
+            waitingForRead.append(continuation)
+            refresh()
+        }
+    }
+
+    /// Writes the Markdown edits waiting to be saved, in one meeting or in all. An edit whose file was
+    /// changed meanwhile is put beside it, and that's said; one that can't be written stays waiting.
+    @discardableResult
+    func saveEdits(in meeting: String? = nil) -> [MeetingEdits.Outcome] {
+        let outcomes = edits.save(to: library.meetings, in: meeting)
+        for case .setAside(let key, let name) in outcomes {
+            toast("\(key.file.rawValue) changed while you were typing in it, so Oatcake didn’t save over it. What you typed is in “\(name)”, beside it in the meeting’s folder.",
+                  isError: true)
+        }
+        return outcomes
     }
 
     func openMeeting(_ path: String, jump: Jump? = nil) {
@@ -279,6 +316,7 @@ final class AppModel {
         let remap = { (p: String) in p == from ? to : p.hasPrefix(from + "/") ? to + p.dropFirst(from.count) : p }
         folder = remap(folder)
         jobs.moved(remap)
+        edits.moved(remap)
         switch selection {
         case .meeting(let p, let jump): selection = .meeting(remap(p), jump: jump)
         case .folder(let p): selection = .folder(remap(p))
@@ -375,6 +413,8 @@ final class AppModel {
         panel.canCreateDirectories = true
         panel.prompt = "Choose"
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        // Into the folder they were typed in, before it's another.
+        saveEdits()
         config.outputDir = url.path
         config.mcpApprovedRoot = config.mcpEnabled ? try? MCPServer.RootIdentity.approve(config.meetingsRoot) : nil
         persistSettings(movingLibrary: true)
@@ -451,9 +491,10 @@ final class AppModel {
     /// recorded, but isn't being analysed until that read finds it).
     var hasWorkInFlight: Bool { refreshing || busyReason != nil || downloads.isDownloading }
 
-    /// What quitting now would interrupt, as a question to ask first; nil when it would interrupt
-    /// nothing. (The updater's own quit never gets here with one: it checks `busyReason`, which
-    /// covers the same things, just before it quits.)
+    /// What quitting now would interrupt or lose, as a question to ask first; nil when it would do
+    /// neither. Edits waiting to be saved are written before this is asked (saveEdits), so only those
+    /// that couldn't be are counted. (The updater's own quit never gets here with one: it checks
+    /// `whyUpdateWaits`, which covers the rest, just before it quits.)
     var quitQuestion: (title: String, text: String, ok: String)? {
         if let live = recording.live, recording.recorderFailure == nil {
             return ("Stop recording and quit?",
@@ -470,13 +511,36 @@ final class AppModel {
             doing.append("writing a summary")
             after.append("A summary that isn’t finished can be written later, with Write summary in its meeting.")
         }
+        if !jobs.drafting.isEmpty {
+            doing.append("writing a draft for sharing")
+            after.append("A draft that isn’t finished can be written later, with Draft for Sharing… in its meeting.")
+        }
+        if ask.running != nil {
+            doing.append("answering a question")
+            after.append("You can ask it again the next time you open Oatcake.")
+        }
         if let importing = library.importing {
             doing.append("importing from \(importing)")
             after.append("Importing again carries on with the meetings that didn’t come in.")
         }
-        guard !doing.isEmpty else { return nil }
-        let what = doing.count > 1 ? doing.dropLast().joined(separator: ", ") + " and " + doing.last! : doing[0]
-        return ("Quit Oatcake?", "Oatcake is \(what). \(after.joined(separator: " "))", "Quit")
+        // Typed, and kept nowhere that outlasts Oatcake.
+        var lost: [String] = []
+        if let title = notesOfCallNotRecorded { lost.append("the notes you’ve typed for “\(title)”, a call that wasn’t recorded") }
+        if edits.hasFailed(in: library.meetings) { lost.append("edits that couldn’t be saved") }
+        // Not while an update is under way: it said so before it started, and its quit isn't asked again.
+        if updater.installing == nil, jobs.hasNamesTyped { lost.append("the names you’ve typed in Who’s who") }
+        guard !doing.isEmpty || !lost.isEmpty else { return nil }
+        func listed(_ items: [String]) -> String { items.count > 1 ? items.dropLast().joined(separator: ", ") + " and " + items.last! : items[0] }
+        let text = [doing.isEmpty ? nil : "Oatcake is \(listed(doing)).", lost.isEmpty ? nil : "Quitting loses \(listed(lost))."].compactMap { $0 } + after
+        return ("Quit Oatcake?", text.joined(separator: " "), "Quit")
+    }
+
+    /// The title of the call on the live screen that couldn't be recorded, when notes have been typed
+    /// for it: quitting deletes it, notes and all, as Close does.
+    private var notesOfCallNotRecorded: String? {
+        guard let live = recording.live, recording.recorderFailure != nil,
+              recording.liveNotes[live.id]?.contains(where: { !$0.text.trimmed.isEmpty }) == true else { return nil }
+        return live.title
     }
 
     /// Why an update has to wait, if it does.
@@ -484,7 +548,22 @@ final class AppModel {
         if recording.isRecording { return "Oatcake is recording a call. Install the update after you stop." }
         if jobs.isAnalysingAny { return "Oatcake is analysing a call. Install the update when it's done." }
         if !jobs.summarising.isEmpty { return "Oatcake is writing a summary. Try again in a moment." }
+        if !jobs.drafting.isEmpty { return "Oatcake is writing a draft for sharing. Try again in a moment." }
+        if ask.running != nil { return "Oatcake is answering a question. Try again in a moment." }
         if library.importing != nil { return "Oatcake is importing meetings. Install the update when it's done." }
         return nil
+    }
+
+    /// The updater asks this as it starts and again just before it quits. Edits waiting to be saved are
+    /// written first. Any that can't be, and notes typed for a call that wasn't recorded, would be lost,
+    /// so they're reasons to wait too: unlike `busyReason`, they don't end by themselves, so closing the
+    /// window doesn't wait for them (quitting asks instead).
+    private func whyUpdateWaits() -> String? {
+        saveEdits()
+        if edits.hasFailed(in: library.meetings) { return "Oatcake couldn’t save some edits to a meeting. Choose Try again in the meeting, then install the update." }
+        if let title = notesOfCallNotRecorded {
+            return "Installing the update would delete the notes you’ve typed for “\(title)”, a call that wasn’t recorded. Copy them somewhere else and close the call first."
+        }
+        return busyReason
     }
 }

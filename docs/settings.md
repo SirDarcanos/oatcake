@@ -184,6 +184,8 @@ keeps its lowest level; one on Ollama that can't reason at all is asked again wi
   doesn't move anything: meetings already in the old one stay where they are.
 - **Keep call audio after saving** (off to start with): audio is deleted once a meeting is saved.
   When on, the call's audio (both sides, mixed) is saved in the meeting's folder as `audio.m4a`.
+  If it can't be written there, Oatcake says why and tries again after the next save or launch. A
+  meeting deleted before its audio was written sends that audio to the Trash.
 - **Import from Granola** and **Import from Quill:** **Import…** picks an export (see
   [Importing](importing.md)).
 
