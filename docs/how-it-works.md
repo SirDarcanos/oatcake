@@ -246,6 +246,15 @@ to-dos, the transcript, or your notes) on the clipboard under the meeting's titl
 formatted for Google Docs, Pages or mail and as Markdown for anything that only takes plain text,
 and **Share** sends the same text with Mail, Messages or another app.
 
+### Listening to the recording
+
+If a meeting has saved audio, a player sits below its title, with the recording's length. Use the
+slider or click a time in the rendered transcript to jump to that point in the recording, before or
+after pressing play. If playback is paused, it
+stays paused at the new time. Playback stops when you leave the meeting. For calls recorded in
+Oatcake, turn on [Keep call audio after saving](settings.md#storage) to make audio available for
+future meetings.
+
 ### Regenerate and summary templates
 
 To write a summary or its to-dos again (after changing the instructions in Settings › Summaries,

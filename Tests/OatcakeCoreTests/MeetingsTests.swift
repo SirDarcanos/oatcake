@@ -6,6 +6,33 @@ import Network
 import Testing
 
 @Suite struct MeetingsTests {
+    @Test func savedRecordingAudio() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-playback-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let root = tmp.appendingPathComponent("Meetings")
+        let rel = "Team/Weekly sync"
+        let dir = root.appendingPathComponent(rel)
+        let audio = dir.appendingPathComponent("audio.m4a")
+        let outside = tmp.appendingPathComponent("audio.m4a")
+        let meetings = Meetings(root: root)
+        let fm = FileManager.default
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data().write(to: outside)
+
+        #expect(meetings.recordingAudio(rel) == nil)
+        try fm.createDirectory(at: audio, withIntermediateDirectories: false)
+        #expect(meetings.recordingAudio(rel) == nil)
+        try fm.removeItem(at: audio)
+        try fm.createSymbolicLink(at: audio, withDestinationURL: outside)
+        try fm.createSymbolicLink(at: root.appendingPathComponent("Outside"), withDestinationURL: tmp)
+        #expect(meetings.recordingAudio(rel) == nil)
+        #expect(meetings.recordingAudio("Outside") == nil)
+        #expect(meetings.recordingAudio("..") == nil)
+        try fm.removeItem(at: audio)
+        try Data().write(to: audio)
+        #expect(meetings.recordingAudio(rel)?.path == audio.resolvingSymlinksInPath().path)
+    }
+
     @Test func folderNames() {
         var c = DateComponents()
         (c.year, c.month, c.day, c.hour, c.minute) = (2026, 11, 5, 14, 0)

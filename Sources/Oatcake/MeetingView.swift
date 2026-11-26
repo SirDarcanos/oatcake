@@ -45,6 +45,8 @@ struct MeetingView: View {
     let jump: Jump?
 
     @ViewState private var files: [FileKey: String]?
+    @ViewState private var recordingAudio: URL?
+    @ViewState private var playback = RecordingPlayback()
     @ViewState private var meta = MeetingMeta()
     @ViewState private var loadError = ""
     @ViewState private var tab = Remembered.tab
@@ -133,6 +135,7 @@ struct MeetingView: View {
     /// A change on disk (Finder, another editor, our own save) only replaces the text when nothing
     /// typed here is still waiting to be saved.
     private func load() {
+        recordingAudio = model.library.meetings.recordingAudio(path)
         guard pending.isEmpty else { return }
         do {
             let m = try model.library.readMeeting(path)
@@ -396,7 +399,7 @@ struct MeetingView: View {
         transcriptLines = lines
         speakers = meetingSpeakers(text)
         rows = lines.isEmpty ? text.components(separatedBy: "\n").map(\.trimmed).filter { !$0.isEmpty }.map { Row(text: $0) }
-            : lines.map { Row(speaker: $0.speaker, stamp: $0.stamp, text: $0.text) }
+            : lines.map { Row(speaker: $0.speaker, stamp: $0.stamp, at: $0.at, text: $0.text) }
     }
 
     private func content(_ files: [FileKey: String]) -> some View {
@@ -420,6 +423,7 @@ struct MeetingView: View {
                         viewSwitch.padding(.top, 5)
                     }
                     Text(metaLine).foregroundStyle(.secondary).padding(.top, 8)
+                    RecordingPlayerView(url: recordingAudio, playback: playback) { model.library.reveal(path) }
                     if granola {
                         Notice(tone: .grey) { Text(granolaNotice(files)) }.padding(.top, 14)
                     }
@@ -735,6 +739,7 @@ struct MeetingView: View {
     private struct Row {
         var speaker: String?
         var stamp = ""
+        var at: Double?
         var text: String
     }
 
@@ -810,7 +815,7 @@ struct MeetingView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 8) {
                                 if !continued { Text(speaker).fontWeight(.semibold) }
-                                Text(row.stamp).foregroundStyle(.tertiary).monospacedDigit()
+                                transcriptTime(row)
                             }
                             .font(.callout)
                             Text(marked(row.text)).font(.system(size: 14 * scale)).lineSpacing(3).textSelection(.enabled)
@@ -826,6 +831,19 @@ struct MeetingView: View {
                 .id(i)
             }
             if rows.isEmpty { Text("transcript.md is empty.").foregroundStyle(.secondary) }
+        }
+    }
+
+    @ViewBuilder private func transcriptTime(_ row: Row) -> some View {
+        if let at = row.at, recordingAudio != nil, at < playback.duration {
+            Button { playback.seek(to: at) } label: {
+                Text(row.stamp).foregroundStyle(Color.accentColor).underline().monospacedDigit()
+            }
+            .buttonStyle(.borderless)
+            .help("Jump to \(row.stamp) in the recording")
+            .accessibilityLabel("Jump to \(row.stamp) in the recording")
+        } else {
+            Text(row.stamp).foregroundStyle(.tertiary).monospacedDigit()
         }
     }
 

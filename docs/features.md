@@ -104,6 +104,8 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 - Summary, Transcript and My notes tabs (and Draft for Sharing where there's one), each rendered or
   as editable Markdown.
   [Reading and editing](how-it-works.md#reading-and-editing)
+- Play and pause a saved call recording, and jump to a time from the slider or the transcript.
+  [Listening to the recording](how-it-works.md#listening-to-the-recording)
 - **Copy** and **Share**, formatted for documents and mail and as Markdown.
   [Reading and editing](how-it-works.md#reading-and-editing)
 - Folders within folders, meetings dragged between them, several at a time; rename, Show in
