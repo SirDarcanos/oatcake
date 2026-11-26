@@ -296,11 +296,22 @@ struct DetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// An empty folder says so (with Record here) in the middle column; this pane stays blank.
+    /// An empty folder has its name here, and the same Record here as the middle column, rather than
+    /// leaving most of the window blank.
     private var blank: some View {
-        Text(listedIn(model.library.tree?.find(model.folder) ?? model.library.tree).isEmpty ? "" : "Select a meeting")
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .toolbar { EmptyPaneToolbar() }
+        let folder = model.library.tree.map { $0.find(model.folder) ?? $0 }
+        let everything = folder?.path.isEmpty ?? true
+        return ZStack {
+            if let folder, listedIn(folder).isEmpty {
+                VStack(spacing: 14) {
+                    PageTitle(text: everything ? "All meetings" : baseName(folder.path))
+                    Button { model.newRecording() } label: { Label(everything ? "New recording" : "Record here", systemImage: "circle.fill") }
+                }
+            } else if folder != nil {
+                Text("Select a meeting").foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .toolbar { EmptyPaneToolbar() }
     }
 }

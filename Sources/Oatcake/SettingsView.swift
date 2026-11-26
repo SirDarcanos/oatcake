@@ -64,7 +64,8 @@ struct SettingsView: View {
 
         Section("Recording") {
             LabeledContent {
-                MicPicker(devices: devices ?? []).frame(width: 270)
+                // At the right-hand edge, where the switches and After a call's pop-up end.
+                MicPicker(devices: devices ?? []).frame(width: 270, alignment: .trailing)
             } label: {
                 Text("Microphone")
                 if let devices {
@@ -189,7 +190,7 @@ struct SettingsView: View {
         } header: {
             Text("Calendars")
         } footer: {
-            Text("In Google Calendar, open Settings, pick a calendar under “Settings for my calendars”, then copy its “Secret address in iCal format” from Integrate calendar. Repeat for each calendar you want in Upcoming.")
+            Text("In Google Calendar, open Settings, pick a calendar under “Settings for my calendars”, then copy its “Secret address in iCal format” from Integrate calendar. Any other calendar that gives you an iCal (.ics) address, starting https:// or webcal://, works the same way. Repeat for each calendar you want in Upcoming.")
                 .settingsHint()
         }
         Section("Reminders") {
@@ -205,9 +206,9 @@ struct SettingsView: View {
         }
         // Typed as one comma-separated line, like Jargon; kept as a list.
         Section {
+            // Named on the left with the field on the right, as Your name is: alone, the line read as a sentence.
             TextField("Leave out", text: $ignoredEvents, prompt: Text("Focus time, Out of office"), axis: .vertical)
                 .lineLimit(1...4)
-                .labelsHidden()
                 .onChange(of: ignoredEvents) {
                     let titles = ignoredEvents.split(whereSeparator: { $0 == "," || $0.isNewline }).map { String($0).trimmed }.filter { !$0.isEmpty }
                     if titles != model.config.ignoredEvents { model.saveConfig(with(model.config) { $0.ignoredEvents = titles }) }
@@ -330,6 +331,15 @@ struct SettingsView: View {
             }
             .pickerStyle(.radioGroup)
             .labelsHidden()
+        } header: {
+            Text("Language model")
+        } footer: {
+            Text("Writes summaries, to-dos and drafts for sharing, suggests names and answers questions. It runs on this Mac; nothing from your calls is sent anywhere.")
+                .settingsHint()
+        }
+        // The chosen model's download (or the server's details) and Test, in a group under the list:
+        // in the same group as the models, its status read as one more model to choose.
+        Section {
             if let chosen = LocalModels.find(llm.model) {
                 ModelRow(chosen: chosen)
             } else {
@@ -373,11 +383,6 @@ struct SettingsView: View {
                 }
             }
             TestRow(missing: testBlocker(llm)).id(llm.model)
-        } header: {
-            Text("Language model")
-        } footer: {
-            Text("Writes summaries, to-dos and drafts for sharing, suggests names and answers questions. It runs on this Mac; nothing from your calls is sent anywhere.")
-                .settingsHint()
         }
     }
 

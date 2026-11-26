@@ -7,7 +7,8 @@ private let meetingSuggestions = [
     "Who said they’d follow up, and on what?",
 ]
 
-/// The floating "ask about your meetings" lozenge; the conversation opens above it.
+/// The "ask about your meetings" lozenge, in a bar across the bottom of the pane; the conversation
+/// opens above it.
 struct AskBar: View {
     @Environment(AppModel.self) private var model
     let path: String?
@@ -34,7 +35,7 @@ struct AskBar: View {
     var body: some View {
         let chat = model.ask
         VStack(spacing: 10) {
-            if chat.open { panel(chat) }
+            if chat.open { panel(chat).padding(.horizontal, 24) }
             HStack(spacing: 8) {
                 TextField(placeholder, text: $draft)
                     .textFieldStyle(.plain)
@@ -53,11 +54,15 @@ struct AskBar: View {
             .frame(height: 40)
             .background(.regularMaterial, in: Capsule())
             .overlay(Capsule().strokeBorder(Color.line))
-            .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
             .frame(maxWidth: 560)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 9)
+            // A bar of its own across the pane, which the text scrolls under, so no line shows half
+            // above the lozenge and half through it.
+            .frame(maxWidth: .infinity)
+            .background(.bar)
+            .overlay(alignment: .top) { Divider() }
         }
-        .padding(.horizontal, 24)
-        .padding(.bottom, 18)
         .onChange(of: focused) { if focused, !chat.turns.isEmpty { chat.open = true } }
         .onKeyPress(.escape) {
             guard chat.open else { return .ignored }

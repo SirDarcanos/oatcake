@@ -39,6 +39,14 @@ struct NewRecordingView: View {
                 prepNotes
                 if !error.isEmpty { Notice(tone: .red) { Text(error) } }
                 VStack(alignment: .leading, spacing: 10) {
+                    // Said before it happens, where it's read before Start recording: the first recording
+                    // brings a download of several gigabytes with it.
+                    let _ = model.downloads.modelsVersion
+                    if let chosen = model.downloads.chosenModel, !LocalModels.isDownloaded(chosen), model.downloads.modelDownloads[chosen.id] == nil {
+                        Label("The language model that writes summaries (\(chosen.downloadSize)) starts downloading when you start recording.",
+                              systemImage: "arrow.down.circle")
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     HStack(spacing: 10) {
                         Button(action: start) {
                             Label(starting ? "Starting…" : "Start recording", systemImage: "circle.fill")
@@ -55,16 +63,9 @@ struct NewRecordingView: View {
                         }
                         Button("Cancel") { model.openFolder(model.folder) }.controlSize(.large).buttonStyle(.borderless)
                     }
-                    VStack(alignment: .leading, spacing: 3) {
-                        // Said before it happens: the first recording brings a download of several gigabytes with it.
-                        let _ = model.downloads.modelsVersion
-                        if let chosen = model.downloads.chosenModel, !LocalModels.isDownloaded(chosen), model.downloads.modelDownloads[chosen.id] == nil {
-                            Text("The language model that writes summaries (\(chosen.downloadSize)) starts downloading when you start recording.")
-                        }
-                        Text("Let the people on the call know you’re recording.")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    Text("Let the people on the call know you’re recording.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             .padding(.horizontal, 40)
