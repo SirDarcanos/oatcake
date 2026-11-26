@@ -1,12 +1,32 @@
 import OatcakeCore
 import SwiftUI
+import UniformTypeIdentifiers
 
-/// What a drag from the meeting list or the folder tree carries: an item's path in the Meetings folder.
-let dragPrefix = "oatcake-item:"
+extension UTType {
+    /// A meeting or folder dragged within Oatcake, to move it. Declared in Oatcake's Info.plist.
+    static let oatcakeItem = UTType(exportedAs: "local.oatcake.item")
+}
 
-/// The paths in a drop. Dragging several meetings picked in the list brings one item for each.
-func droppedPaths(_ items: [String]) -> [String] {
-    items.filter { $0.hasPrefix(dragPrefix) }.map { String($0.dropFirst(dragPrefix.count)) }
+/// What a drag from the meeting list or the folder tree carries. Dropped inside Oatcake, the item's
+/// path, to move it; on another app, the folder itself (Finder, Mail), or, where only text goes, the
+/// meeting's summary. Dragging several meetings picked in the list brings one item for each.
+struct MeetingItem: Codable, Transferable {
+    /// Relative to the Meetings folder.
+    var path: String
+    var folder: URL
+
+    init(_ path: String, in root: URL) {
+        self.path = path
+        folder = root.appendingPathComponent(path, isDirectory: true)
+    }
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .oatcakeItem)
+        ProxyRepresentation { $0.folder }
+        DataRepresentation(exportedContentType: .utf8PlainText) { item in
+            Data(forReading(readText(item.folder.appendingPathComponent(MeetingFile.summary.rawValue))).trimmed.utf8)
+        }
+    }
 }
 
 enum SidebarItem: Hashable {
@@ -65,9 +85,8 @@ struct SidebarView: View {
                 }
                 .padding(.trailing, headerButtonInset)
                 .contentShape(Rectangle())
-                .onTapGesture { model.openFolder("") }
-                .help("All meetings")
-                .dropDestination(for: String.self) { items, _ in drop(items, on: "") } isTargeted: { dropTarget = $0 ? "" : nil }
+                // Dropped on the heading: to the top level of the Meetings folder.
+                .dropDestination(for: MeetingItem.self) { items, _ in drop(items, on: "") } isTargeted: { dropTarget = $0 ? "" : nil }
             }
         }
         .listStyle(.sidebar)
@@ -161,10 +180,9 @@ struct SidebarView: View {
         for i in parts.indices.dropLast() { open.insert(parts[...i].joined(separator: "/")) }
     }
 
-    private func drop(_ items: [String], on target: String) -> Bool {
-        let paths = droppedPaths(items)
-        guard !paths.isEmpty else { return false }
-        model.library.move(paths, into: target)
+    private func drop(_ items: [MeetingItem], on target: String) -> Bool {
+        guard !items.isEmpty else { return false }
+        model.library.move(items.map(\.path), into: target)
         return true
     }
 
@@ -198,7 +216,7 @@ struct SidebarView: View {
             Spacer()
             if let date = meetingDate(m) { Text(compactDate(date)).foregroundStyle(.secondary).monospacedDigit() }
         }
-        .draggable(dragPrefix + m.path)
+        .draggable(MeetingItem(m.path, in: model.library.meetings.root))
     }
 
     private var todosRow: some View {
@@ -376,11 +394,10 @@ private struct FolderRow: View {
         .padding(.leading, CGFloat(depth) * 14)
         .background(RoundedRectangle(cornerRadius: 5).fill(dropTarget == node.path ? Color.accentColor.opacity(0.25) : .clear).padding(-3))
         .tag(SidebarItem.folder(node.path))
-        .draggable(dragPrefix + node.path)
-        .dropDestination(for: String.self) { items, _ in
-            let paths = droppedPaths(items)
-            guard !paths.isEmpty else { return false }
-            model.library.move(paths, into: node.path)
+        .draggable(MeetingItem(node.path, in: model.library.meetings.root))
+        .dropDestination(for: MeetingItem.self) { items, _ in
+            guard !items.isEmpty else { return false }
+            model.library.move(items.map(\.path), into: node.path)
             return true
         } isTargeted: { dropTarget = $0 ? node.path : (dropTarget == node.path ? nil : dropTarget) }
         .contextMenu {

@@ -137,6 +137,6 @@ struct MeetingListView: View {
             }
         }
         .padding(.vertical, 4)
-        .draggable(dragPrefix + m.path)
+        .draggable(MeetingItem(m.path, in: model.library.meetings.root))
     }
 }
