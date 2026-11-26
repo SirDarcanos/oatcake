@@ -267,7 +267,7 @@ final class AppModel {
 
     func openFolder(_ path: String) {
         folder = path
-        if let first = listedIn(library.tree?.find(path)).first {
+        if let first = newestIn(library.tree?.find(path), 1).first {
             selection = .meeting(first.path)
         } else {
             selection = .folder(path)

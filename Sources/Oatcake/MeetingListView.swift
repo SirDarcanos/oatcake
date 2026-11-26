@@ -35,8 +35,10 @@ struct MeetingListView: View {
                 // Picking a meeting leaves this list as it is, rather than swapping it for the meeting's folder.
                 // Picking several (⌘- or ⇧-click) leaves the open meeting open, for acting on them all at once.
                 let listed = Set(rows.map(\.path))
-                let chosen = rows.filter { selected(in: listed).contains($0.path) }
-                List(selection: Binding(get: { selected(in: listed) }, set: { paths in
+                // Worked out once, not again for each row.
+                let shown = selected(in: listed)
+                let chosen = rows.filter { shown.contains($0.path) }
+                List(selection: Binding(get: { shown }, set: { paths in
                     picked = paths
                     if paths.count == 1, let p = paths.first { model.selectMeeting(p) }
                 })) {

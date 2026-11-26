@@ -52,7 +52,8 @@ struct LiveView: View {
         }
         .toolbar { toolbar }
         .onDisappear { model.recording.saveLiveNotes(rec.id) }
-        .task { knownVoices = knownPeople() }
+        // The voiceprints file is read off the main thread.
+        .task { knownVoices = await Task.detached { knownPeople() }.value }
     }
 
     // MARK: Header

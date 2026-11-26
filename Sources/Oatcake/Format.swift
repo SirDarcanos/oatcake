@@ -85,6 +85,18 @@ func listedIn(_ folder: TreeNode?) -> [TreeNode] {
     return (folder.path.isEmpty ? folder.allMeetings : folder.meetings).sorted(by: newestFirst)
 }
 
+/// The first `count` of what `listedIn` gives, found without sorting the whole library for them.
+func newestIn(_ folder: TreeNode?, _ count: Int) -> [TreeNode] {
+    guard let folder else { return [] }
+    var newest: [TreeNode] = []
+    for m in folder.path.isEmpty ? folder.allMeetings : folder.meetings {
+        guard newest.count < count || newestFirst(m, newest[newest.count - 1]) else { continue }
+        newest.insert(m, at: newest.firstIndex { newestFirst(m, $0) } ?? newest.count)
+        if newest.count > count { newest.removeLast() }
+    }
+    return newest
+}
+
 // MARK: - People
 
 /// "Jane Doe" from an attendee, or from "jane.doe@…" when the invite has no name.

@@ -180,13 +180,14 @@ struct ReviewView: View {
         }
         .onAppear(perform: load)
         .onDisappear { player.stop() }
+        // The voiceprints file is read off the main thread.
+        .task { people = await Task.detached { knownPeople() }.value }
     }
 
     private func load() {
         do {
             let a = try loadAnalysis(rec)
             analysis = a
-            people = knownPeople()
             if model.jobs.reviewDrafts[rec.id] == nil {
                 draft = ReviewDraft(title: rec.title, folder: rec.folder ?? "",
                                     voices: Dictionary(uniqueKeysWithValues: a.speakers.map { ($0.id, Voice(name: $0.suggestion?.name ?? "")) }))
