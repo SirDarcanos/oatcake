@@ -114,8 +114,39 @@ import Testing
         } catch {
             #expect(analysisFailure(error) == .unreadableRecording && !error.localizedDescription.isEmpty)
         }
-        #expect(analysisFailure(CocoaError(.fileReadNoSuchFile)) == .missingAudio)
+        // Its details are there and its tracks aren't: missing audio, found before any model is loaded,
+        // where it used to be taken for silence and come out as a call with nothing said.
+        try encodeJSON(CallInfo(title: "Weekly sync", startedAt: "2026-11-10T14:00:00.000Z")).write(to: empty.appendingPathComponent("call.json"), atomically: true, encoding: .utf8)
+        try encodeJSON(RecorderMeta(startedAt: "2026-11-10T14:00:00Z", endedAt: "2026-11-10T14:30:00Z", micOffset: 0, systemOffset: 0))
+            .write(to: empty.appendingPathComponent("meta.json"), atomically: true, encoding: .utf8)
+        for track in ["mic.pcm", "system.pcm"] {
+            do {
+                try await analyse(empty, config: Config.defaults(), voiceprints: empty.appendingPathComponent("voiceprints.json")) { _ in }
+                Issue.record("An analysis without its \(track) should fail")
+            } catch {
+                #expect(analysisFailure(error) == .missingAudio)
+            }
+            // The microphone's track turns up; the call audio's is still missing.
+            try Data(count: 3200).write(to: empty.appendingPathComponent(track))
+            if track == "system.pcm" { break }
+        }
+        #expect(!FileManager.default.fileExists(atPath: empty.appendingPathComponent("analysis.json").path))
         #expect(analysisFailure(OatcakeError("anything else")) == .other)
+    }
+
+    /// A voice with only a few seconds of speech goes to the voice with more that it sounds most like;
+    /// with nobody speaking that long, every voice stays.
+    @Test func smallVoicesFold() {
+        let turns = [Turn(start: 0, end: 30, speaker: "s1"), Turn(start: 30, end: 33, speaker: "s2"), Turn(start: 33, end: 60, speaker: "s3"),
+                     Turn(start: 60, end: 61, speaker: "s2"), Turn(start: 61, end: 63, speaker: "s4"), Turn(start: 63, end: 64, speaker: "s5")]
+        // s2 sounds like s3 and s4 like s1; s5 has no fingerprint, so there's nothing to match it by.
+        let prints: [String: [Float]] = ["s1": [1, 0, 0], "s2": normalise([0.1, 0.9, 0]), "s3": [0, 1, 0], "s4": normalise([0.9, 0.2, 0.1])]
+        let (folded, kept) = foldSmallVoices(turns, prints: prints)
+        #expect(folded.map(\.speaker) == ["s1", "s3", "s3", "s3", "s1", "s5"])
+        #expect(folded.map(\.start) == turns.map(\.start) && Set(kept.keys) == ["s1", "s3"])
+        let short = turns.filter { $0.end - $0.start < 5 }
+        let (unchanged, all) = foldSmallVoices(short, prints: prints)
+        #expect(unchanged.map(\.speaker) == short.map(\.speaker) && all.count == prints.count)
     }
 
     /// An analysis.json written by 0.4.1 has no nameSuggestionError; it said the same as a warning.

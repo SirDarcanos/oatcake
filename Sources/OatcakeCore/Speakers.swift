@@ -27,10 +27,16 @@ func diarize(_ samples: [Float], diarizer: OfflineDiarizerManager) async throws 
         // background noise): the call audio is one voice, as when nobody else spoke.
         return ([], [:])
     }
-    var turns = result.segments.map { Turn(start: Double($0.startTimeSeconds), end: Double($0.endTimeSeconds), speaker: $0.speakerId) }
-    var prints = (result.speakerDatabase ?? [:]).mapValues(normalise)
+    let turns = result.segments.map { Turn(start: Double($0.startTimeSeconds), end: Double($0.endTimeSeconds), speaker: $0.speakerId) }
+    return foldSmallVoices(turns, prints: (result.speakerDatabase ?? [:]).mapValues(normalise))
+}
 
-    // A voice with only a few seconds of speech is usually a stray piece of someone else's.
+/// A voice with only a few seconds of speech is usually a stray piece of someone else's: its turns go
+/// to the voice with more that it sounds most like, and its fingerprint goes. When no voice has that
+/// much, they're all kept.
+func foldSmallVoices(_ turns: [Turn], prints: [String: [Float]]) -> (turns: [Turn], prints: [String: [Float]]) {
+    var turns = turns
+    var prints = prints
     let seconds = Dictionary(turns.map { ($0.speaker, $0.end - $0.start) }, uniquingKeysWith: +)
     let main = prints.filter { (seconds[$0.key] ?? 0) >= minSpeakerSeconds }
     guard !main.isEmpty else { return (turns, prints) }
