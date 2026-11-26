@@ -8,7 +8,7 @@ import Testing
 @Suite struct ProcessTests {
     /// Oatcake's helpers (and the language model's server) don't get the calendar's private address.
     @Test func childEnvironments() {
-        let name = "OATCAKE_CALENDAR_URL"
+        let name = CalendarSource.environmentVariable
         let before = ProcessInfo.processInfo.environment[name]
         setenv(name, "https://calendar.example.com/private.ics", 1)
         defer { if let before { setenv(name, before, 1) } else { unsetenv(name) } }

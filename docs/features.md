@@ -45,7 +45,8 @@ Everything Oatcake does today, with a link to where each is described. Planned w
   folder named like it or a new one for a recurring meeting. [Calendar settings](settings.md#calendars)
 - **Join the call** on Home opens a Meet, Zoom or Teams call without starting a recording.
   [Calendar settings](settings.md#calendars)
-- A reminder 5 minutes before each call, whose button opens the call and starts recording.
+- Reminders before each call (5 minutes before, or as many as you like at the times you choose),
+  whose button opens the call and starts recording.
   [Calendar settings](settings.md#calendars)
 - Your next call in the menu bar, with what's coming up in its menu.
   [The menu bar](how-it-works.md#the-menu-bar)
@@ -96,7 +97,8 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 - To-dos with owners and due dates, ticked off in the meeting; a to-do's time opens the transcript
   there. [To-dos](how-it-works.md#to-dos)
 - A To-dos page gathering every meeting's, by due date, folder or owner, with your own list
-  besides. [To-dos](how-it-works.md#to-dos)
+  besides, whose to-dos can be edited or deleted there. ⌘Z undoes a tick.
+  [To-dos](how-it-works.md#to-dos)
 - To-dos can be turned off altogether. [General](settings.md#general)
 - Qwen3 8B or 4B, downloaded and run by Oatcake, or a model server of your own on your Mac or
   network, sent as much at once as its context holds. [Language model](models.md#language-model)

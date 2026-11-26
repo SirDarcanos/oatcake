@@ -75,6 +75,14 @@ import Testing
         try meetings.addTodo("", "Of my own")
         try meetings.toggleTodo("", line: 0, text: "Of my own")
         #expect(readText(root.appendingPathComponent("todo.md")) == "- [x] Of my own\n")
+        // Your own list's to-dos can be put right, keeping their tick, or deleted; only todo.md is read for them.
+        try meetings.addTodo("", "Renew the domian — John")
+        #expect(try meetings.editTodo("", line: 1, text: "Renew the domian", to: typedTodo("Renew the domain - John - due Fri")))
+        #expect(try meetings.editTodo("", line: 0, text: "Of my own", to: "Of my own, done — John"))
+        #expect(try meetings.readTodo("") == "- [x] Of my own, done — John\n- [ ] Renew the domain — John — due Fri\n")
+        #expect(try meetings.editTodo("", line: 0, text: "Of my own, done", to: nil))
+        #expect(try !meetings.editTodo("", line: 0, text: "Gone since", to: nil))
+        #expect(try meetings.readTodo("") == "- [ ] Renew the domain — John — due Fri\n" && meetings.readTodo("Team").isEmpty)
         // A file with a byte that isn't text (another editor's doing) still reads, so it isn't taken for empty and saved over.
         try Data([0x2D, 0x20, 0x5B, 0x20, 0x5D, 0x20, 0xFF, 0x4F, 0x6E, 0x65, 0x0A]).write(to: file)
         #expect(parseTodos(readText(file)).count == 1 && readText(file).contains("One"))

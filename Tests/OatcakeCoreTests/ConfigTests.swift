@@ -11,6 +11,16 @@ import Testing
         #expect(config.jargonLine.isEmpty)
         config.jargon = ["Automattic", " ", "WooCommerce"]
         #expect(config.jargonLine.hasSuffix("Automattic, WooCommerce."))
+        // Typed in Settings as one line, separated by commas or new lines.
+        #expect(commaList(" Focus time,Out of office ,\n, Task\n") == ["Focus time", "Out of office", "Task"] && commaList(" , ").isEmpty)
+    }
+
+    /// The templates offered for a meeting: those with a name and instructions.
+    @Test func summaryTemplateChoices() {
+        var config = Config.defaults()
+        config.summaryTemplates = [SummaryTemplate(name: "1:1", instructions: "Wins."), SummaryTemplate(name: " ", instructions: "Unnamed."),
+                                   SummaryTemplate(name: "Empty", instructions: "  ")]
+        #expect(config.summaryTemplateChoices.map(\.name) == ["1:1"])
     }
 
     /// A server of your own's context, as you've told Oatcake: none to start with (Qwen3's native
@@ -104,6 +114,60 @@ import Testing
         #expect(config.todosEnabled)
         let noTodos = try JSONDecoder().decode(Config.self, from: Data(encodeJSON(with(config) { $0.todosEnabled = false }).utf8))
         #expect(!noTodos.todosEnabled)
+    }
+
+    /// Every setting is saved and read back: a Config with each one changed from what Oatcake comes
+    /// with, encoded and decoded, comes back the same. A setting left out of `encode` would never be
+    /// saved, and nothing else would say so. Each property is checked to have been changed here, so
+    /// a new setting fails this test until it's added to it.
+    @Test func everySettingIsSavedAndReadBack() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-every-setting-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        var changed = Config.defaults()
+        changed.myName = "Jane Doe"
+        changed.outputDir = "/tmp/Somewhere else"
+        changed.asrModel = "sensevoice"
+        changed.llm = with(LlmConfig(model: LlmConfig.ownServer)) {
+            $0.own.baseUrl = "http://localhost:11434/v1"
+            $0.own.model = "llama3.1"
+            $0.own.context = 65_536
+            $0.own.reasoningControl = .ollama
+            $0.reasoning.todos = true
+            $0.reasoning.sharing = false
+        }
+        changed.keepAudio = true
+        changed.mic = MicChoice(uid: "usb-1", name: "Desk microphone")
+        changed.callReminders = false
+        changed.updateCheck = false
+        changed.runInBackground = false
+        changed.callNotice = false
+        changed.autoStop = false
+        changed.liveTranscript = false
+        changed.liveVoices = false
+        changed.afterCall = .saveTranscript
+        changed.jargon = ["Oatcake"]
+        changed.menuBarNextCall = false
+        changed.summaryInstructions = "Three bullet points."
+        changed.todoInstructions = "Only my own action items."
+        changed.summaryTemplates = [SummaryTemplate(name: "1:1", instructions: "Wins and blockers.")]
+        changed.sharingInstructions = "Write it in French."
+        changed.ignoredEvents = ["Lunch"]
+        changed.todosEnabled = false
+        changed.mcpEnabled = true
+        changed.mcpApprovedRoot = try MCPServer.RootIdentity.approve(dir)
+        changed.ignoredCalendarEvents = [IgnoredEvent(id: "e", series: true, title: "Weekly sync", start: nil, end: nil)]
+        changed.reminderMinutes = [10, 1]
+
+        let defaults = Mirror(reflecting: Config.defaults()).children.map { "\($0.value)" }
+        for (setting, value) in zip(Mirror(reflecting: changed).children, defaults) {
+            #expect("\(setting.value)" != value, "\(setting.label ?? "A setting") isn't changed from its default here: add it to this test")
+        }
+        #expect(try JSONDecoder().decode(Config.self, from: Data(encodeJSON(changed).utf8)) == changed)
+        // Reminder times as Settings offers them: one at least, each from a minute to an hour before, each once.
+        let reminders = { (json: String) in try JSONDecoder().decode(Config.self, from: Data(json.utf8)).reminderMinutes }
+        #expect(try reminders(#"{"reminderMinutes":[]}"#) == [5] && reminders(#"{"reminderMinutes":"soon"}"#) == [5])
+        #expect(try reminders(#"{"reminderMinutes":[0,90,5,-3,5,60]}"#) == [1, 60, 5])
     }
 
     /// Settings that can't be read aren't quietly replaced by the first change made after them.

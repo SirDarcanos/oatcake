@@ -139,6 +139,7 @@ final class AppModel {
             self.edits.discard(paths)
         }
         calendar.changed = { [unowned self] in self.recording.updateMenuBar() }
+        calendar.recordingEvent = { [unowned self] in self.recording.live?.eventId }
         recording.folderForEvent = { [unowned self] title, recurring in
             try self.library.meetings.folderForEvent(title: title, recurring: recurring, in: self.library.tree)
         }
@@ -231,12 +232,15 @@ final class AppModel {
         let live = recording.activeIDs
         let shown = library.tree
         let changedOnDisk = library.takeChangedOnDisk()
+        let previousItems = library.todoItems
         Task {
-            let (tree, pending, unchecked, todos) = await Task.detached {
-                // The folder is walked once: the to-dos are read from the tree just built.
+            let (tree, pending, unchecked, todos, items) = await Task.detached {
+                // The folder is walked once: the to-dos are read from the tree just built, and only
+                // the meetings whose to-dos changed have their due dates worked out again.
                 let tree = meetings.tree()
+                let todos = meetings.allTodos(in: tree)
                 return (tree == shown ? nil : tree, Recordings.waiting(except: live), Recordings.unchecked(),
-                        meetings.allTodos(in: tree))
+                        todos, allTodoItems(todos, reusing: previousItems))
             }.value
             refreshing = false
             defer {
@@ -256,7 +260,7 @@ final class AppModel {
                 self.library.landed(tree, changedOnDisk: changedOnDisk)
                 self.jobs.pending = pending
                 self.jobs.unchecked = unchecked
-                self.library.setTodos(todos)
+                self.library.setTodos(todos, items: items)
             }
             jobs.startWaiting()
             jobs.updateBadge()

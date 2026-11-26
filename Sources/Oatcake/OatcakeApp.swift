@@ -214,6 +214,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard let event = currentEvent(forReminder: id, in: model.calendar.events) else {
             // The invite may have moved, been ignored or lost its last connected calendar.
             model.showWindow()
+            if action == Reminders.startAction {
+                model.toast("That call isn’t on your calendar any more, so nothing was opened or recorded.", isError: true)
+            }
             return
         }
         if action == Reminders.startAction {

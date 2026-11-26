@@ -224,7 +224,7 @@ func otherMeetings(_ meetings: Meetings, others: [TreeNode], besides rel: String
             return (matched[node.path] ?? []).contains { phrase in
                 foldedForSearch(phrase).split(whereSeparator: \.isWhitespace).allSatisfy { folded.contains($0) }
             }
-        }.prefix(8).map { String($0.trimmed.prefix(700)) }
+        }.prefix(8).map { $0.trimmed.prefix(utf8: 700) }
         let transcript: String?
         if rel == nil, lines.isEmpty {
             // A match on the title or participants alone can still have the answer in the transcript.
@@ -239,8 +239,8 @@ func otherMeetings(_ meetings: Meetings, others: [TreeNode], besides rel: String
             todos ? section("To-dos ([x] = done)", files.todo) : nil,
             transcript,
         ].compactMap { $0 }.joined(separator: "\n\n")
-        // Cut to its share of the room.
-        found.append((node.path, String(text.prefix(LocalModels.bytes(forTokens: each)))))
+        // Cut to its share of the room, which is counted in bytes.
+        found.append((node.path, text.prefix(utf8: LocalModels.bytes(forTokens: each))))
     }
     return found
 }

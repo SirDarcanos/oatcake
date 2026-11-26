@@ -309,6 +309,21 @@ public final class Meetings: @unchecked Sendable {
         try update(rel, .todo) { OatcakeCore.addTodo($0, text) }
     }
 
+    /// Rewrites a to-do in a meeting's todo.md ("" is the Meetings folder's own), read afresh, or
+    /// takes it out when `body` is nil. False when it isn't in the file any more: nothing was written.
+    public func editTodo(_ rel: String, line: Int, text: String, to body: String?) throws -> Bool {
+        let file = try resolveInside(root, rel).appendingPathComponent(MeetingFile.todo.rawValue)
+        guard let changed = OatcakeCore.editTodo(readText(file), line: line, text: text, to: body) else { return false }
+        try writeAtomic(file, changed)
+        return true
+    }
+
+    /// A meeting's todo.md on its own ("" is the Meetings folder's own), without the rest of the
+    /// meeting: "" when it has none.
+    public func readTodo(_ rel: String) throws -> String {
+        readText(try resolveInside(root, rel).appendingPathComponent(MeetingFile.todo.rawValue))
+    }
+
     private func checkName(_ name: String) throws -> String {
         let clean = name.trimmed
         if clean.isEmpty || clean.contains("/") || clean.contains(":") {

@@ -7,7 +7,7 @@ import Foundation
 public enum ShellEnvironment {
     public static func childEnvironment() -> [String: String] {
         var env = ProcessInfo.processInfo.environment
-        env.removeValue(forKey: "OATCAKE_CALENDAR_URL")
+        env.removeValue(forKey: CalendarSource.environmentVariable)
         return env
     }
 }

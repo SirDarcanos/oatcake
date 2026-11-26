@@ -195,9 +195,12 @@ struct SettingsView: View {
         Section("Reminders") {
             Toggle(isOn: bind(\.callReminders)) {
                 Text("Remind me before calls")
-                Text("5 minutes before each call, a notification with a button that opens the call and starts recording, ready for notes.")
+                Text("Before each call, a notification with a button that opens the call and starts recording, ready for notes.")
             }
-            if model.config.callReminders { notificationsHint }
+            if model.config.callReminders {
+                ReminderTimesRows(minutes: bind(\.reminderMinutes))
+                notificationsHint
+            }
             Toggle(isOn: bind(\.menuBarNextCall)) {
                 Text("Show my next call in the menu bar")
                 Text("The time until it starts, with what’s coming up in its menu.")
@@ -209,7 +212,7 @@ struct SettingsView: View {
                 .lineLimit(1...4)
                 .labelsHidden()
                 .onChange(of: ignoredEvents) {
-                    let titles = ignoredEvents.split(whereSeparator: { $0 == "," || $0.isNewline }).map { String($0).trimmed }.filter { !$0.isEmpty }
+                    let titles = commaList(ignoredEvents)
                     if titles != model.config.ignoredEvents { model.saveConfig(with(model.config) { $0.ignoredEvents = titles }) }
                 }
         } header: {
@@ -282,7 +285,7 @@ struct SettingsView: View {
                 .lineLimit(2...5)
                 .labelsHidden()
                 .onChange(of: jargon) {
-                    let terms = jargon.split(whereSeparator: { $0 == "," || $0.isNewline }).map { String($0).trimmed }.filter { !$0.isEmpty }
+                    let terms = commaList(jargon)
                     if terms != model.config.jargon { model.saveConfig(with(model.config) { $0.jargon = terms }) }
                 }
         } header: {

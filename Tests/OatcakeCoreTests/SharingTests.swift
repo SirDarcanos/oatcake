@@ -14,7 +14,7 @@ import Testing
                            meta: #"{"title":"Weekly sync","participants":["John Doe","Jane Doe"]}"#)
         try meetings.write(rel, .notes, "- [00:03] Private aside\n")
         try meetings.write(rel, .summary, "## Deck\n- Jane Doe will send the deck on Friday.\n")
-        try meetings.write(rel, .todo, "- [ ] Send the deck — Jane Doe — due Friday — [00:04]\n- [x] Book a room — John Doe\n")
+        try meetings.write(rel, .todo, "- [ ] Send the deck — draft two — Jane Doe — due Friday — [00:04]\n- [x] Book a room — John Doe\n")
         let server = try await StandIn.model { _ in "```markdown\n## Decided\n- The deck goes out on Friday.\n```" }
         var config = server.config
         config.outputDir = meetings.root.path
@@ -26,7 +26,7 @@ import Testing
         #expect(sent.user.hasPrefix("Meeting: Weekly sync\nParticipants: John Doe, Jane Doe\n") && sent.user.contains("WooCommerce"))
         #expect(sent.user.contains("Summary:\n## Deck\n- Jane Doe will send the deck on Friday.\n"))
         // To-dos as people read them: no times in the call, and the done one says so.
-        #expect(sent.user.contains("To-dos:\n- Send the deck — Jane Doe — due Friday\n- Book a room — John Doe — done\n"))
+        #expect(sent.user.contains("To-dos:\n- Send the deck — draft two — Jane Doe — due Friday\n- Book a room — John Doe — done\n"))
         #expect(sent.user.hasSuffix(defaultSharingInstructions + "\n\nFor this draft only: Keep it to three bullets."))
         #expect(!sent.user.contains("off the record") && !sent.user.contains("Private aside") && !sent.user.contains("[00:04]"))
         // A server of your own keeps its own sampling.
