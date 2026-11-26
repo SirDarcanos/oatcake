@@ -47,6 +47,7 @@ struct SidebarView: View {
     @ViewState private var draft = ""
     @ViewState private var newFolderIn: String?
     @ViewState private var dropTarget: String?
+    @FocusState private var hasKeyboard: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -98,6 +99,14 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .focused($hasKeyboard)
+        // Made again after choosing a screen with the other number of columns: the keyboard comes
+        // back, so ↑ and ↓ carry on from the row just chosen. A moment later, once it's in the window.
+        .onAppear {
+            guard model.sidebarKeepsKeyboard else { return }
+            model.sidebarKeepsKeyboard = false
+            DispatchQueue.main.async { hasKeyboard = true }
+        }
         // The folder tree from the keyboard, as in Finder: → opens a folder, ← closes it (or goes up
         // to the folder it's in), Return renames, and ⌘⌫ (File › Move to Trash) moves it to the Trash.
         .onKeyPress(.rightArrow) { showFolders(true) }
@@ -179,6 +188,7 @@ struct SidebarView: View {
             // one, it could open All meetings before the Meetings folder had been read, and Oatcake then
             // left the window there rather than putting back the screen it was on.
             guard item != highlighted else { return }
+            let listShown = model.listShown
             switch item {
             case .home: model.selection = .home
             case .live: model.selection = .live
@@ -188,6 +198,9 @@ struct SidebarView: View {
             case .meeting(let path): model.openMeeting(path)
             case nil: break
             }
+            // Only the list itself chooses here, by the arrow keys or a click, either of which leaves
+            // it with the keyboard. ⌘N, the menus and the meeting list don't come this way.
+            if model.listShown != listShown { model.sidebarKeepsKeyboard = true }
         }
     }
 

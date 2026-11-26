@@ -105,6 +105,9 @@ final class AppModel {
     /// File › New Folder: the sidebar asks for the new top-level folder's name. It waits here until the
     /// sidebar takes it, which is after the window has opened if it was closed.
     var wantsNewFolder = false
+    /// The sidebar chose a screen with the other number of columns: the window's split view, and the
+    /// sidebar in it, are made again, and the new sidebar takes the keyboard the old one had.
+    @ObservationIgnored var sidebarKeepsKeyboard = false
     var selection: Selection? {
         didSet {
             // The window's split view is about to be made again with the other number of columns: what
