@@ -73,6 +73,9 @@ final class Jobs {
     var todoProblems: [String: String] = [:]
     /// Meetings whose draft for sharing is being written now, and why the last attempt failed, by path.
     var drafting = Set<String>()
+    /// Meetings being written from a call now that the work is off the main thread: quitting part-way
+    /// would leave one half written.
+    var saving = 0
     var draftErrors: [String: String] = [:]
     /// What was asked for a draft alone, by path: kept after a failure, so Try again asks the same.
     var draftRequests: [String: String] = [:]
@@ -234,6 +237,8 @@ final class Jobs {
         do {
             // Off the main thread: with Keep call audio off it deletes the call's tracks, and it writes
             // the transcript and voiceprints.
+            saving += 1
+            defer { saving -= 1 }
             let path = try await Task.detached {
                 try saveMeeting(config, rec, decisions: suggestedDecisions(analysis), folder: folder, title: rec.title, unchecked: true)
             }.value
@@ -253,6 +258,8 @@ final class Jobs {
     /// written again in place, and the new names are put into its summary and to-dos. Returns its path.
     func updateMeeting(_ rec: Recording, decisions: [String: Decision]) async throws -> String {
         let config = config
+        saving += 1
+        defer { saving -= 1 }
         // Off the main thread: a meeting that has been moved is looked for through the whole Meetings folder.
         guard let path = await Task.detached(operation: { Recordings.meetingPath(rec, meetingsRoot: config.meetingsRoot) }).value else {
             throw OatcakeError("The meeting saved from this call couldn’t be found. It may have been deleted.")
@@ -339,6 +346,8 @@ final class Jobs {
     /// Saves a reviewed recording as a meeting and starts writing its summary. Returns the meeting's path.
     func saveRecording(_ rec: Recording, decisions: [String: Decision], folder: String, title: String) async throws -> String {
         let config = config
+        saving += 1
+        defer { saving -= 1 }
         // Off the main thread, as when a call is saved by itself (autoSave).
         let path = try await Task.detached {
             try saveMeeting(config, rec, decisions: decisions, folder: folder, title: title)

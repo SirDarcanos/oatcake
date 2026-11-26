@@ -701,6 +701,7 @@ final class AppModel {
         }
         var doing: [String] = []
         var after: [String] = []
+        if jobs.saving > 0 { doing.append("saving a meeting") }
         if jobs.isAnalysingAny {
             doing.append("transcribing a call")
             after.append("Transcribing starts again the next time you open Oatcake.")
@@ -744,6 +745,7 @@ final class AppModel {
     /// Why an update has to wait, if it does.
     var busyReason: String? {
         if recording.isRecording { return "Oatcake is recording a call. Install the update after you stop." }
+        if jobs.saving > 0 { return "Oatcake is saving a meeting. Try again in a moment." }
         if jobs.isAnalysingAny { return "Oatcake is transcribing a call. Install the update when it’s done." }
         if !jobs.summarising.isEmpty { return "Oatcake is writing a summary. Try again in a moment." }
         if !jobs.drafting.isEmpty { return "Oatcake is writing a draft for sharing. Try again in a moment." }
