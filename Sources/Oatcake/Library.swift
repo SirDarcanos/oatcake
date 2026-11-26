@@ -118,7 +118,7 @@ final class Library {
         // Put back into the Meetings folder they came from, even if another has been chosen since.
         let from = meetings
         defer {
-            whenTrashed(nodes.prefix(moved).map(\.path))
+            whenTrashed(gone)
             refresh()
             if !inTrash.isEmpty, let undo = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" })?.undoManager {
                 let items = inTrash

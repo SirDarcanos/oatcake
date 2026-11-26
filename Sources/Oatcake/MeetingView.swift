@@ -379,14 +379,14 @@ struct MeetingView: View {
         case .draftForSharing:
             // Edits to the summary, to-dos or draft are saved first: the draft is written from them.
             flush()
-            guard pending.isEmpty else { return }
+            guard !model.edits.isWaiting(in: path) else { return }
             askingForDraft = true
         case .regenerate(let part, let template):
             regenerate(part, template: template)
         case .renameSpeakers:
             // A failed save keeps its text pending; renaming then would have it written back over the new names.
             flush()
-            guard pending.isEmpty else { return }
+            guard !model.edits.isWaiting(in: path) else { return }
             renamingSpeakers = true
         case .copy:
             copy(tab.contents(todos: model.config.todosEnabled))

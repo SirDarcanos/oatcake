@@ -79,7 +79,7 @@ struct MeetingMenuItems: View {
         let todos = model.config.todosEnabled
         let canDraft = open.map { ($0.tab == .summary || $0.tab == .draft) && $0.hasSummary } ?? false
         let canRegenerate = open.map { $0.tab == .summary && $0.hasSummary && $0.hasTranscript } ?? false
-        let templates = model.config.summaryTemplates.filter { model.config.summaryTemplate(named: $0.name) != nil }
+        let templates = model.config.summaryTemplateChoices
 
         // Writing it again first, then taking it elsewhere, then the meeting itself.
         Button { perform(.draftForSharing) } label: { Label("Draft for Sharing…", systemImage: "square.and.pencil") }

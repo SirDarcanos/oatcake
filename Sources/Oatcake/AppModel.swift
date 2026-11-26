@@ -120,6 +120,8 @@ final class AppModel {
     /// The meeting last open, kept while another screen shows: a recording discarded or cancelled comes back to it.
     private(set) var lastMeeting: String? { didSet { UserDefaults.standard.set(lastMeeting, forKey: "lastMeeting") } }
     private var history = History<Place>()
+    /// The first read of the Meetings folder has put back where Oatcake was when it last closed.
+    private var placeRestored = false
     var confirmation: Confirmation?
     /// Markdown typed in meetings and not written yet, kept here rather than by the meeting's view so
     /// that quitting and updating can write it too (saveEdits).
@@ -231,7 +233,7 @@ final class AppModel {
         // The library is read by refresh() below, off the main thread, so a big one doesn't hold up the window.
         jobs.pending = Recordings.waiting(except: recording.activeIDs)
         jobs.unchecked = Recordings.unchecked()
-        restorePlace(in: tree)
+        // Where Oatcake was is put back once that read is in (restorePlace).
         refresh()
         calendar.start()
         timers.append(Timer.common(every: 30) { _ in
@@ -304,7 +306,13 @@ final class AppModel {
                 self.jobs.unchecked = unchecked
                 self.library.setTodos(todos, items: items)
             }
-            keepPlace(previous: previous, tree: tree)
+            if !placeRestored, let tree = library.tree {
+                placeRestored = true
+                restorePlace(in: tree)
+            } else if let tree {
+                // nil: the same tree as before, so nothing has gone.
+                keepPlace(previous: previous, tree: tree)
+            }
             jobs.startWaiting()
             jobs.updateBadge()
         }
