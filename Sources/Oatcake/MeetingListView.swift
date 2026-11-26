@@ -23,12 +23,10 @@ struct MeetingListView: View {
         let subtitle = "\(everything || parentOf(folder!.path).isEmpty ? "" : folderPath(parentOf(folder!.path)) + " · ")\(rows.count) meeting\(rows.count == 1 ? "" : "s")"
         Group {
             if rows.isEmpty {
-                VStack(spacing: 10) {
-                    Text(everything ? "No meetings yet." : "No meetings in this folder yet.")
-                        .foregroundStyle(.secondary)
-                    Button { model.newRecording() } label: { Label(everything ? "New recording" : "Record here", systemImage: "circle.fill") }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Record here is in the main pane beside this, which an empty folder leaves free.
+                Text(everything ? "No meetings yet." : "No meetings in this folder yet.")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 // Picking a meeting leaves this list as it is, rather than swapping it for the meeting's folder.
                 // Picking several (⌘- or ⇧-click) leaves the open meeting open, for acting on them all at once.

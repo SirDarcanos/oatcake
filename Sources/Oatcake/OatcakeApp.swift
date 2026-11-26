@@ -296,8 +296,8 @@ struct DetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// An empty folder has its name here, and the same Record here as the middle column, rather than
-    /// leaving most of the window blank.
+    /// An empty folder has its name here, with Record here, rather than leaving most of the window
+    /// blank. The middle column then only says the folder is empty, so the button isn't there twice.
     private var blank: some View {
         let folder = model.library.tree.map { $0.find(model.folder) ?? $0 }
         let everything = folder?.path.isEmpty ?? true

@@ -63,7 +63,7 @@ buttons, hides the sidebar.
 The sidebar has a recording in progress, Home, To-dos, Upcoming, Needs review, folders, and any
 meetings at the top level. A one-off call with no folder of its own is saved at the top level;
 drag it onto a folder to file it. Clicking the Meetings heading lists every meeting, and an empty
-folder offers **Record here**, in the list and under the folder's name beside it. Drag the divider
+folder offers **Record here** under the folder's name, beside the list. Drag the divider
 to resize the meeting list; it keeps that width when you switch screens. Settings (⌘, or the menu bar item) is its own window, in panes; changes
 apply as you make them (see [Settings](settings.md)).
 
