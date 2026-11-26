@@ -306,6 +306,7 @@ struct SidebarView: View {
                     .font(.caption).foregroundStyle(job.status == .failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
             }
         }
+        .contextMenu { Button("Discard…") { model.jobs.discard(job.rec) } }
     }
 
     private func jobStatus(_ job: Jobs.Job) -> String {

@@ -174,12 +174,45 @@ struct ReviewView: View {
                 }
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { paneWidth = $0 }
                 .toolbar { toolbar(analysis) }
+            } else if !error.isEmpty {
+                unreadable
             } else {
-                Text(error).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Until load() has run: something has to be here for onAppear to be called.
+                Color.clear
             }
         }
         .onAppear(perform: load)
         .onDisappear { player.stop() }
+    }
+
+    /// Its analysis couldn't be read (damaged, or cut short): it can be analysed again, or discarded.
+    /// A meeting already saved has nothing to analyse again (its tracks are with the meeting).
+    private var unreadable: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Notice(tone: .red) {
+                Text("Who’s who couldn’t be opened").fontWeight(.semibold)
+                Text(error)
+            }
+            if !rechecking {
+                HStack {
+                    Button("Try again") { model.jobs.retry(rec) }.buttonStyle(.borderedProminent)
+                    Button("Discard…") { model.jobs.discard(rec) }
+                }
+            }
+        }
+        .frame(maxWidth: 440)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                (Text("Who’s who").fontWeight(.semibold) + Text(" · \(title)").foregroundStyle(.secondary)).lineLimit(1)
+                    .toolbarStatusPadding()
+            }
+            .withoutCapsule()
+            if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
+            if !rechecking {
+                ToolbarItem(placement: .automatic) { Button("Discard…") { model.jobs.discard(rec) } }
+            }
+        }
     }
 
     private func load() {
