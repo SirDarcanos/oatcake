@@ -109,35 +109,66 @@ final class Library {
         return made
     }
 
-    /// Moves meetings or folders to the Trash. One that can't be moved stops the rest, and the toast
-    /// says how many went before it and why.
-    func trash(_ nodes: [TreeNode]) {
-        var moved = 0
+    /// Moves meetings or folders to the Trash, and returns the paths that went. One that can't be moved
+    /// stops the rest, and the toast says how many went before it and why. Edit › Undo (⌘Z) puts them back.
+    @discardableResult
+    func trash(_ nodes: [TreeNode]) -> [String] {
+        var gone: [String] = []
+        var inTrash: [(node: TreeNode, url: URL)] = []
+        // Put back into the Meetings folder they came from, even if another has been chosen since.
+        let from = meetings
         defer {
-            whenTrashed(nodes.prefix(moved).map(\.path))
+            whenTrashed(gone)
             refresh()
+            if !inTrash.isEmpty, let undo = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" })?.undoManager {
+                let items = inTrash
+                undo.registerUndo(withTarget: self) { $0.putBack(items, into: from) }
+                undo.setActionName("Move to Trash")
+            }
         }
         do {
             for node in nodes {
-                try meetings.trash(node.path)
-                moved += 1
+                if let url = try from.trash(node.path) { inTrash.append((node, url)) }
+                gone.append(node.path)
             }
         } catch {
             toast(nodes.count == 1 ? error.localizedDescription
-                                   : "Moved \(moved) of \(nodes.count) meetings to the Trash — \(error.localizedDescription)", isError: true)
-            return
+                                   : "Moved \(gone.count) of \(nodes.count) meetings to the Trash — \(error.localizedDescription)", isError: true)
+            return gone
         }
         if nodes.count == 1, let node = nodes.first {
-            toast("Moved “\(node.kind == .meeting ? meetingTitle(node) : node.name)” to the Trash")
+            toast("Moved “\(name(node))” to the Trash")
         } else if !nodes.isEmpty {
             toast("Moved \(nodes.count) meetings to the Trash")
         }
+        return gone
     }
+
+    /// Undo for Move to Trash: back from the Trash to where they were, the last to go first.
+    private func putBack(_ items: [(node: TreeNode, url: URL)], into meetings: Meetings) {
+        defer { refresh() }
+        var back = 0
+        do {
+            for item in items.reversed() {
+                try meetings.putBack(item.url, to: item.node.path)
+                back += 1
+            }
+        } catch {
+            toast("Couldn’t put “\(name(items[items.count - 1 - back].node))” back: \(error.localizedDescription). It’s still in the Trash.", isError: true)
+            return
+        }
+        toast(items.count == 1 ? "Put “\(name(items[0].node))” back from the Trash" : "Put \(items.count) meetings back from the Trash")
+    }
+
+    private func name(_ node: TreeNode) -> String { node.kind == .meeting ? meetingTitle(node) : node.name }
 
     /// A folder's Move to Trash. One with meetings in it asks first: it takes them all with it.
     func trashFolder(_ node: TreeNode) {
         let count = node.allMeetings.count
-        guard count > 0 else { return trash([node]) }
+        guard count > 0 else {
+            trash([node])
+            return
+        }
         app.confirm(Confirmation(title: "Move “\(node.name)” to the Trash?",
                                     text: "It holds \(count == 1 ? "1 meeting, which goes" : "\(count) meetings, which go") with it. You can put \(count == 1 ? "it" : "them") back from the Trash in Finder.",
                                     ok: "Move to Trash", cancel: "Cancel") { [self] in trash([node]) })

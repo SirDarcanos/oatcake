@@ -36,5 +36,19 @@
 	<!-- Call reminders stay on screen with their button until dealt with, like Calendar's alerts. -->
 	<key>NSUserNotificationAlertStyle</key>
 	<string>alert</string>
+	<!-- What a meeting or folder dragged within Oatcake carries, to move it (MeetingItem). -->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>local.oatcake.item</string>
+			<key>UTTypeDescription</key>
+			<string>Oatcake meeting or folder</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

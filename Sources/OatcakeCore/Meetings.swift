@@ -224,6 +224,7 @@ public final class Meetings: @unchecked Sendable {
         guard !words.isEmpty else { return [] }
         let order: [MeetingFile] = todos ? [.summary, .todo, .notes, .transcript] : [.summary, .notes, .transcript]
         return meetings.compactMap { meeting in
+            // Words typed since: what's found from here on would be thrown away.
             guard !Task.isCancelled, let dir = try? resolveInside(root, meeting.path) else { return nil }
             let label = foldedForSearch(meeting.label)
             let files = order.map { ($0, searchable(dir.appendingPathComponent($0.rawValue))) }
@@ -417,9 +418,24 @@ public final class Meetings: @unchecked Sendable {
         return relativePath(target, to: root)
     }
 
-    public func trash(_ rel: String) throws {
+    /// Moves a meeting or folder to the Trash. Returns where it is in the Trash, to put it back from.
+    @discardableResult
+    public func trash(_ rel: String) throws -> URL? {
         guard !rel.isEmpty else { throw OatcakeError("The Meetings folder itself can't be moved to the Trash") }
-        try FileManager.default.trashItem(at: try resolveInside(root, rel), resultingItemURL: nil)
+        var inTrash: NSURL?
+        try FileManager.default.trashItem(at: try resolveInside(root, rel), resultingItemURL: &inTrash)
+        return inTrash as URL?
+    }
+
+    /// Undo for Move to Trash: puts `trashed` back at `rel`, unless something else has taken its place
+    /// meanwhile or the folder it was in has gone.
+    public func putBack(_ trashed: URL, to rel: String) throws {
+        let target = try resolveInside(root, rel)
+        try ensureFree(target)
+        guard FileManager.default.isDirectory(target.deletingLastPathComponent()) else {
+            throw OatcakeError("The folder “\(((rel as NSString).deletingLastPathComponent as NSString).lastPathComponent)” isn't there any more")
+        }
+        try FileManager.default.moveItem(at: trashed, to: target)
     }
 
     /**
@@ -597,6 +613,13 @@ func plainLine(_ line: String) -> String {
 /// Text with case and accents folded away, so a search for "cafe" finds "Café".
 func foldedForSearch(_ text: String) -> String {
     text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+}
+
+/// Whether `text` has every word of `query`, folded as `Meetings.search` folds them: how search
+/// matches a meeting's title and folder before every meeting's text has been looked through.
+public func hasEveryWord(of query: String, in text: String) -> Bool {
+    let folded = foldedForSearch(text)
+    return foldedForSearch(query).split(whereSeparator: \.isWhitespace).allSatisfy { folded.contains($0) }
 }
 
 /// The time a transcript line starts with: "**[12:34] Jane:** …".

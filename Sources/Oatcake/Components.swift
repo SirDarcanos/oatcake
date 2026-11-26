@@ -157,7 +157,7 @@ extension View {
 func sidePanelWidth(in paneWidth: CGFloat) -> CGFloat { min(340, max(220, paneWidth - 380)) }
 
 /// The toolbar over a screen that has nothing of its own up there (Home, New recording): a space, so
-/// the search field stays over the meeting list rather than sliding along to the window's end.
+/// the search button stays over the meeting list rather than sliding along to the window's end.
 struct EmptyPaneToolbar: ToolbarContent {
     var body: some ToolbarContent {
         if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
@@ -279,11 +279,16 @@ enum TextScale {
     static func clamped(_ scale: Double) -> Double { min(steps.last!, max(steps.first!, scale)) }
 }
 
-/// Opens Settings on one of its panes ("summaries", "updates"…), however it's pressed: a click, the
-/// keyboard or VoiceOver.
+/// Settings' panes, as Settings is opened on them and remembers the last one shown.
+enum SettingsPane: String {
+    case general, calendar, people, models, summaries, storage, updates
+    static let key = "settingsPane"
+}
+
+/// Opens Settings on one of its panes, however it's pressed: a click, the keyboard or VoiceOver.
 struct SettingsPaneLink: View {
     @Environment(\.openSettings) private var openSettings
-    let pane: String
+    let pane: SettingsPane
     let title: String
 
     var body: some View {
@@ -292,8 +297,8 @@ struct SettingsPaneLink: View {
 }
 
 /// The one place that says which pane Settings opens on.
-@MainActor func showSettingsPane(_ pane: String, _ open: OpenSettingsAction) {
-    UserDefaults.standard.set(pane, forKey: "settingsPane")
+@MainActor func showSettingsPane(_ pane: SettingsPane, _ open: OpenSettingsAction) {
+    UserDefaults.standard.set(pane.rawValue, forKey: SettingsPane.key)
     open()
 }
 
@@ -322,8 +327,9 @@ func markingFound(_ text: AttributedString, _ words: [String]) -> AttributedStri
 
 func markingFound(_ text: String, _ words: [String]) -> AttributedString { markingFound(AttributedString(text), words) }
 
-/// A text field that leaves ↑, ↓, Return and Escape to the view around it, and takes the keyboard
-/// when it appears. In a SwiftUI TextField the field editor gets those keys first.
+/// A text field that leaves ↑, ↓, Return and Escape to the view around it, takes the keyboard when it
+/// appears, and gives it back to what had it when it goes. In a SwiftUI TextField the field editor
+/// gets those keys first.
 struct KeyedTextField: NSViewRepresentable {
     @Binding var text: String
     var placeholder: String
@@ -333,12 +339,26 @@ struct KeyedTextField: NSViewRepresentable {
     var onEscape: () -> Void = {}
 
     final class Field: NSTextField {
+        /// What had the keyboard before this field took it.
+        private weak var before: NSResponder?
+
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             DispatchQueue.main.async { [weak self] in
                 guard let self, let window = self.window else { return }
+                // Another field being typed in has the field editor as the responder: that field is what had it.
+                let had = window.firstResponder
+                if let editor = had as? NSText, editor.isFieldEditor { before = editor.delegate as? NSResponder } else { before = had }
                 window.makeFirstResponder(self)
             }
+        }
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            // Going: the keyboard goes back, unless what had it has gone too (a meeting closed by opening another).
+            if newWindow == nil, let window, let before, before === window || (before as? NSView)?.window === window {
+                window.makeFirstResponder(before)
+            }
+            super.viewWillMove(toWindow: newWindow)
         }
     }
 
@@ -365,7 +385,7 @@ struct KeyedTextField: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
-    final class Coordinator: NSObject, NSTextFieldDelegate {
+    @MainActor final class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: KeyedTextField
         init(parent: KeyedTextField) { self.parent = parent }
 

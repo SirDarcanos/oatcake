@@ -52,6 +52,7 @@ recording's permissions and the model downloads, and what to tell the people on 
   and each step: [record](docs/how-it-works.md#1-record),
   [process](docs/how-it-works.md#2-process), [review](docs/how-it-works.md#3-review-whos-who),
   [save](docs/how-it-works.md#4-save) and [ask](docs/how-it-works.md#5-ask).
+- [Keyboard shortcuts](docs/keyboard-shortcuts.md), and the menus they're in.
 - [Settings](docs/settings.md), pane by pane: [General](docs/settings.md#general),
   [Calendars](docs/settings.md#calendars), [People](docs/settings.md#people),
   [Models](docs/settings.md#models), [Summaries](docs/settings.md#summaries),

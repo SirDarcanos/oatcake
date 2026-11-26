@@ -27,6 +27,8 @@ struct NewRecordingView: View {
     @ViewState private var previous: (path: String, date: Date?, todo: String)?
     @ViewState private var ticked = Set<Int>()
     @ViewState private var ready = false
+    private enum Field { case title, prep }
+    @FocusState private var focus: Field?
 
     var body: some View {
         ScrollView {
@@ -49,12 +51,17 @@ struct NewRecordingView: View {
                         .tint(.red)
                         .controlSize(.large)
                         .disabled(starting)
+                        // Return starts the recording, except in the prep notes, where it adds the point typed,
+                        // and while search is open over the window: Return is search's then.
+                        .keyboardShortcut(focus == .prep || model.searching ? nil : .defaultAction)
                         if let link = event?.callLink, let url = URL(string: link) {
                             Button { NSWorkspace.shared.open(url) } label: { Label("Join the call", systemImage: "video") }
                                 .controlSize(.large)
                                 .help("Opens \(callApp(link) ?? "the call")")
                         }
-                        Button("Cancel") { model.openFolder(model.folder) }.controlSize(.large).buttonStyle(.borderless)
+                        // Escape too (but not while search is open: Escape closes that). Back to where you were before.
+                        Button("Cancel") { model.cancelNewRecording() }.controlSize(.large).buttonStyle(.borderless)
+                            .keyboardShortcut(model.searching ? nil : .cancelAction)
                     }
                     VStack(alignment: .leading, spacing: 3) {
                         // Said before it happens: the first recording brings a download of several gigabytes with it.
@@ -74,7 +81,10 @@ struct NewRecordingView: View {
             .frame(maxWidth: .infinity)
         }
         .task {
-            if !ready { setUp() }
+            if !ready {
+                setUp()
+                focus = .title
+            }
             await refreshDevices()
         }
         .task(id: candidateKey) { await loadPrevious() }
@@ -148,7 +158,7 @@ struct NewRecordingView: View {
                 TextField("Leave blank to use “\(folderName.isEmpty ? (folder == newFolder ? "the new folder’s name" : "Untitled meeting") : folderName)”", text: $title)
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 360)
-                    .onSubmit(start)
+                    .focused($focus, equals: .title)
             }
             let templates = model.config.summaryTemplateChoices
             if !templates.isEmpty {
@@ -300,6 +310,7 @@ struct NewRecordingView: View {
                 TextField("An agenda point or question, then Return. Or paste a list.", text: $prepDraft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .lineLimit(1...8)
+                    .focused($focus, equals: .prep)
                     .onSubmit { addPrep(prepDraft) }
                     .onChange(of: prepDraft) { if prepDraft.contains(where: \.isNewline) { addPrep(prepDraft) } }
             }

@@ -13,8 +13,10 @@ enum Selection: Equatable {
     /// A meeting, optionally opened on a tab at a transcript time (the nonce makes a repeat jump count).
     case meeting(String, jump: Jump? = nil)
     case todos
-    case folder(String)
-    case new(CalendarEvent?, key: UUID = UUID())
+    /// The meeting list (`AppModel.folder`), with no meeting open.
+    case folder
+    /// New recording, for a calendar event or none. Choosing the same again keeps what's been typed.
+    case new(CalendarEvent?)
     case live
     case job(String)
 }
@@ -28,7 +30,21 @@ struct Jump: Equatable {
 }
 
 /// `draft` is shown only in meetings with a draft for sharing (or one on its way).
-enum MeetingTab: String, CaseIterable { case summary, transcript, notes, draft }
+enum MeetingTab: String, CaseIterable {
+    case summary, transcript, notes, draft
+
+    /// The tab meetings open on: the one last chosen, kept from one launch to the next.
+    static var last: MeetingTab {
+        get { UserDefaults.standard.string(forKey: "meetingTab").flatMap(MeetingTab.init(rawValue:)) ?? .summary }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "meetingTab") }
+    }
+}
+
+/// Where you were, for Back and Forward: the screen, and the folder the meeting list showed.
+struct Place: Equatable {
+    var selection: Selection
+    var folder: String
+}
 
 /// "Stop recording?" and the like: a question with a destructive answer.
 struct Confirmation: Identifiable {
@@ -57,7 +73,7 @@ struct AppServices {
     var showWindow: @MainActor () -> Void = {}
     var selection: @MainActor () -> Selection? = { nil }
     var select: @MainActor (Selection?) -> Void = { _ in }
-    /// Back to the meeting list, on the folder it was showing.
+    /// Back from a screen that's done with: to the meeting that was open, or the meeting list.
     var showFolder: @MainActor () -> Void = {}
 }
 
@@ -69,16 +85,43 @@ final class AppModel {
     let jobs: Jobs
     let downloads: ModelDownloads
     let calendar: CalendarController
-    /// Bumped by ⌘F: the open meeting shows Find.
-    var findRequest = 0
+    /// A command from a menu for the open meeting (Find, a tab, Copy…), which acts on it.
+    var meetingRequest: MeetingRequest?
+    /// What the open meeting last said it can do, for the menus outside it. See `meetingInView`.
+    var meetingShowing: OpenMeeting?
+    /// Bumped by Edit › Ask About Your Meetings: the Ask field takes the keyboard.
+    var askRequest = 0
+    /// Rename… for a meeting, from any of its menus: the window asks for the new title.
+    var renaming: TreeNode?
     /// Search (⌥⌘F, or its button over the meeting list) is open over the window.
     var searching = false
+    /// Search's words and what they found, kept while it's closed: opening it again brings them back.
+    var search = SearchState()
     /// File › New Folder: the sidebar asks for the new top-level folder's name. It waits here until the
     /// sidebar takes it, which is after the window has opened if it was closed.
     var wantsNewFolder = false
-    var selection: Selection?
+    var selection: Selection? {
+        didSet {
+            // Kept for the next launch: Home, To-dos or a meeting. The other screens don't last.
+            let screen: String?
+            switch selection {
+            case .meeting(let path, _):
+                lastMeeting = path
+                screen = "meeting"
+            case .home: screen = "home"
+            case .todos: screen = "todos"
+            default: screen = nil
+            }
+            if let screen { UserDefaults.standard.set(screen, forKey: "lastScreen") }
+        }
+    }
     /// The folder the middle column lists.
-    var folder = ""
+    var folder = "" { didSet { UserDefaults.standard.set(folder, forKey: "lastFolder") } }
+    /// The meeting last open, kept while another screen shows: a recording discarded or cancelled comes back to it.
+    private(set) var lastMeeting: String? { didSet { UserDefaults.standard.set(lastMeeting, forKey: "lastMeeting") } }
+    private var history = History<Place>()
+    /// The first read of the Meetings folder has put back where Oatcake was when it last closed.
+    private var placeRestored = false
     var confirmation: Confirmation?
     /// Markdown typed in meetings and not written yet, kept here rather than by the meeting's view so
     /// that quitting and updating can write it too (saveEdits).
@@ -99,8 +142,9 @@ final class AppModel {
     private var refreshWanted = false
     /// Waiting for a read that starts after they asked (refreshed()).
     private var waitingForRead: [CheckedContinuation<Void, Never>] = []
-    var openMainWindow: (() -> Void)?
-    var openSettingsWindow: (() -> Void)?
+    // Set by the menus as they're built; nothing on screen shows them.
+    @ObservationIgnored var openMainWindow: (() -> Void)?
+    @ObservationIgnored var openSettingsWindow: (() -> Void)?
 
     init() {
         let (config, problem) = Config.loadWithProblem()
@@ -125,7 +169,7 @@ final class AppModel {
                               showWindow: { [unowned self] in self.showWindow() },
                               selection: { [unowned self] in self.selection },
                               select: { [unowned self] in self.selection = $0 },
-                              showFolder: { [unowned self] in self.openFolder(self.folder) })
+                              showFolder: { [unowned self] in self.backToMeetings() })
         library.app = app
         recording.app = app
         jobs.app = app
@@ -189,8 +233,7 @@ final class AppModel {
         // The library is read by refresh() below, off the main thread, so a big one doesn't hold up the window.
         jobs.pending = Recordings.waiting(except: recording.activeIDs)
         jobs.unchecked = Recordings.unchecked()
-        // A recording picked up again above has opened its live view: Home only when nothing has.
-        if selection == nil { selection = .home }
+        // Where Oatcake was is put back once that read is in (restorePlace).
         refresh()
         calendar.start()
         timers.append(Timer.common(every: 30) { _ in
@@ -252,6 +295,7 @@ final class AppModel {
             }
             // Another Meetings folder was chosen while this one was being read: its read is on its way.
             guard library.meetings === meetings else { return }
+            let previous = library.tree
             // Without animation: the sidebar's outline animates rows in when a section (Needs review)
             // appears, and leaves a stray copy of an expanded folder's selected row behind.
             var quiet = Transaction()
@@ -261,6 +305,13 @@ final class AppModel {
                 self.jobs.pending = pending
                 self.jobs.unchecked = unchecked
                 self.library.setTodos(todos, items: items)
+            }
+            if !placeRestored, let tree = library.tree {
+                placeRestored = true
+                restorePlace(in: tree)
+            } else if let tree {
+                // nil: the same tree as before, so nothing has gone.
+                keepPlace(previous: previous, tree: tree)
             }
             jobs.startWaiting()
             jobs.updateBadge()
@@ -287,10 +338,94 @@ final class AppModel {
         return outcomes
     }
 
+    /// Where Oatcake was when it last closed: the folder listed, and Home, To-dos or the meeting that
+    /// was open (on the tab last chosen). One that has gone since gives way to the nearest folder, or Home.
+    private func restorePlace(in tree: TreeNode) {
+        let defaults = UserDefaults.standard
+        folder = nearestFolder(defaults.string(forKey: "lastFolder") ?? "", in: tree)
+        lastMeeting = defaults.string(forKey: "lastMeeting").flatMap { tree.find($0)?.kind == .meeting ? $0 : nil }
+        // A recording picked up again has opened its live view already.
+        guard selection == nil else { return }
+        switch defaults.string(forKey: "lastScreen") {
+        case "todos" where config.todosEnabled: selection = .todos
+        case "meeting": selection = lastMeeting.map { .meeting($0) } ?? .home
+        default: selection = .home
+        }
+    }
+
+    /// After a new read of the Meetings folder: a folder or meeting that was there before and has gone
+    /// (moved to the Trash, renamed or deleted in Finder, another Meetings folder chosen) isn't kept as
+    /// if it were still there. One that isn't there yet (just saved, renamed in Oatcake) is left: the
+    /// read that has it is on its way.
+    private func keepPlace(previous: TreeNode?, tree: TreeNode) {
+        let gone = { (path: String) in previous?.find(path) != nil && tree.find(path) == nil }
+        if gone(folder) { folder = nearestFolder(folder, in: tree) }
+        if let meeting = lastMeeting, gone(meeting) { lastMeeting = nil }
+        if case .meeting(let path, _) = selection, gone(path) { selection = .folder }
+    }
+
+    /// Follows a link to a meeting (a to-do's, a citation in Ask, a search result…), into its folder's
+    /// list. Back (⌘[) returns to where you were.
     func openMeeting(_ path: String, jump: Jump? = nil) {
         guard library.tree?.find(path)?.kind == .meeting else { return }
+        if let here { history.leave(here) }
         folder = parentOf(path)
         selection = .meeting(path, jump: jump)
+    }
+
+    /// Where you are, as Back and Forward keep it: a meeting without the jump it was opened with.
+    private var here: Place? {
+        guard var selection else { return nil }
+        if case .meeting(let path, _) = selection { selection = .meeting(path) }
+        return Place(selection: selection, folder: folder)
+    }
+
+    private func stillThere(_ place: Place) -> Bool {
+        switch place.selection {
+        case .meeting(let path, _): library.tree?.find(path)?.kind == .meeting
+        case .home: true
+        case .todos: config.todosEnabled
+        case .folder: library.tree?.find(place.folder)?.kind == .folder
+        case .live: recording.live != nil
+        case .job(let id): jobs.pending.contains { $0.id == id } || jobs.unchecked.contains { $0.id == id }
+        // A New recording gone back to would be a new one.
+        case .new: false
+        }
+    }
+
+    var canGoBack: Bool { here.map { history.canGoBack(from: $0, where: stillThere) } ?? false }
+    var canGoForward: Bool { here.map { history.canGoForward(from: $0, where: stillThere) } ?? false }
+
+    func goBack() {
+        guard let here, let place = history.goBack(from: here, where: stillThere) else { return }
+        go(to: place)
+    }
+
+    func goForward() {
+        guard let here, let place = history.goForward(from: here, where: stillThere) else { return }
+        go(to: place)
+    }
+
+    private func go(to place: Place) {
+        showWindow()
+        // The folder may have gone since, though the meeting is still there.
+        folder = library.tree.map { nearestFolder(place.folder, in: $0) } ?? place.folder
+        selection = place.selection
+    }
+
+    /// New recording's Cancel: back to where you were before it (Home, a meeting…), as Back goes.
+    func cancelNewRecording() {
+        if canGoBack { goBack() } else { backToMeetings() }
+    }
+
+    /// Back from a screen that's done with (a recording discarded or cancelled): to the meeting that
+    /// was open, in the list that was showing; failing that, the list's newest.
+    func backToMeetings() {
+        if let lastMeeting, library.tree?.find(lastMeeting)?.kind == .meeting {
+            selection = .meeting(lastMeeting)
+        } else {
+            openFolder(folder)
+        }
     }
 
     /// Opens a meeting picked in the middle column, which stays as it is (all meetings, a folder, or
@@ -306,27 +441,46 @@ final class AppModel {
         searching = true
     }
 
+    /// What the open meeting said it can do, while it's still the one open.
+    var meetingInView: OpenMeeting? {
+        guard case .meeting(let path, _) = selection, meetingShowing?.path == path else { return nil }
+        return meetingShowing
+    }
+
+    /// Asks the open meeting to do something chosen from a menu outside it.
+    func request(_ command: MeetingCommand) {
+        showWindow()
+        meetingRequest = MeetingRequest(command: command)
+    }
+
     func openFolder(_ path: String) {
         folder = path
         if let first = newestIn(library.tree?.find(path), 1).first {
             selection = .meeting(first.path)
         } else {
-            selection = .folder(path)
+            selection = .folder
         }
     }
 
     /// A folder or meeting now lives at `to` (renamed or moved).
     func moved(from: String, to: String) {
-        let remap = { (p: String) in p == from ? to : p.hasPrefix(from + "/") ? to + p.dropFirst(from.count) : p }
+        let remap = { (p: String) in remapped(p, from: from, to: to) }
         folder = remap(folder)
+        lastMeeting = lastMeeting.map(remap)
         jobs.moved(remap)
         edits.moved(remap)
-        switch selection {
-        case .meeting(let p, let jump): selection = .meeting(remap(p), jump: jump)
-        case .folder(let p): selection = .folder(remap(p))
-        default: break
-        }
+        if case .meeting(let p, let jump) = selection { selection = .meeting(remap(p), jump: jump) }
         refresh()
+    }
+
+    /// Move to Trash, from the meeting list or any meeting's menu. When the open meeting goes, the next
+    /// one in the list opens, as in Mail, so the keyboard carries on from there.
+    func trash(_ nodes: [TreeNode]) {
+        let listed = listedIn(library.tree?.find(folder) ?? library.tree).map(\.path)
+        let gone = Set(library.trash(nodes))
+        if case .meeting(let open, _) = selection, gone.contains(open) {
+            selection = rowAfterRemoving(gone, from: listed).map { .meeting($0) } ?? .folder
+        }
     }
 
     /// A passing note at the bottom of the window. One that says something went wrong stays for
@@ -437,14 +591,15 @@ final class AppModel {
     /// A clicked reminder: New recording for its event, unless a call is already being recorded.
     func openEvent(_ event: CalendarEvent) {
         showWindow()
-        selection = recording.live != nil ? .live : .new(event)
+        leave(for: recording.live != nil ? .live : .new(event))
     }
 
     func showWindow() {
         // Restore the Dock icon and app menus when coming back from menu-bar-only mode.
         if NSApp.activationPolicy() == .accessory { NSApp.setActivationPolicy(.regular) }
         NSApp.activate()
-        if let window = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" && $0.isVisible }) {
+        // A window in the Dock isn't visible, but it's there to bring back.
+        if let window = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" && ($0.isVisible || $0.isMiniaturized) }) {
             if window.isMiniaturized { window.deminiaturize(nil) }
             window.makeKeyAndOrderFront(nil)
         } else {
@@ -462,11 +617,12 @@ final class AppModel {
 
     private var mainWindowIsUp: Bool { NSApp.windows.contains { $0.identifier?.rawValue == "main" && $0.isVisible } }
 
-    /// Menu bar › Stop Recording…: asks first, as the window's Stop does, and the question is asked in
-    /// the window, which comes forward. A window that was closed has to be there before anything can
-    /// be asked in it, so the question waits for it. If no window comes, the recording is stopped:
-    /// that's what was chosen, and it mustn't carry on with you thinking it had ended.
-    private func stopFromMenuBar() {
+    /// Stop Recording…, in the menu bar item or the Recording menu: asks first, as the window's Stop
+    /// does, and the question is asked in the window, which comes forward. A window that was closed
+    /// has to be there before anything can be asked in it, so the question waits for it. If no window
+    /// comes, the recording is stopped: that's what was chosen, and it mustn't carry on with you
+    /// thinking it had ended.
+    func stopFromMenuBar() {
         let wasUp = mainWindowIsUp
         showWindow()
         if wasUp { return recording.confirmStop() }
@@ -485,7 +641,13 @@ final class AppModel {
     /// New recording (⌘N, the sidebar button, the menu bar): the screen to start one, or the call already being recorded.
     func newRecording(_ event: CalendarEvent? = nil) {
         showWindow()
-        selection = recording.live != nil ? .live : .new(event)
+        leave(for: recording.live != nil ? .live : .new(event))
+    }
+
+    /// To another screen, which Back (and New recording's Cancel) comes back from.
+    private func leave(for screen: Selection) {
+        if screen != selection, let here { history.leave(here) }
+        selection = screen
     }
 
     // MARK: - Status
