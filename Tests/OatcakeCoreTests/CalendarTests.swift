@@ -341,8 +341,14 @@ import Testing
     @Test func staleAndChanged() {
         let now = parseISO("2026-11-10T12:00:00Z")!
         #expect(CalendarCache().isStale(now: now))
-        #expect(!CalendarCache(checkedAt: "2026-11-10T11:30:00Z").isStale(now: now))
-        #expect(CalendarCache(checkedAt: "2026-11-10T10:59:59Z").isStale(now: now))
+        #expect(!CalendarCache(checkedAt: "2026-11-10T11:30:00Z", updatedAt: "2026-11-10T11:30:00Z").isStale(now: now))
+        #expect(CalendarCache(checkedAt: "2026-11-10T10:59:59Z", updatedAt: "2026-11-10T10:59:59Z").isStale(now: now))
+        // One that failed is tried again a minute later, then after a wait that doubles, up to the hour.
+        let failed = { (at: String, failures: Int?) in CalendarCache(checkedAt: at, updatedAt: "2026-11-10T08:00:00Z", error: "x", failures: failures) }
+        #expect(!failed("2026-11-10T11:59:30Z", 1).isStale(now: now) && failed("2026-11-10T11:59:00Z", 1).isStale(now: now))
+        #expect(failed("2026-11-10T11:59:00Z", nil).isStale(now: now))
+        #expect(!failed("2026-11-10T11:57:00Z", 3).isStale(now: now) && failed("2026-11-10T11:56:00Z", 3).isStale(now: now))
+        #expect(!failed("2026-11-10T11:01:00Z", 12).isStale(now: now) && failed("2026-11-10T11:00:00Z", 12).isStale(now: now))
 
         let event = { (reply: String) in
             parseCalendar(self.feed("DTSTART:20261110T100000Z", "DTEND:20261110T103000Z", "ATTENDEE;CN=Jane Doe;PARTSTAT=\(reply):mailto:jane@example.com"),
@@ -379,5 +385,33 @@ import Testing
         let saved = try encodeJSON(event)
         #expect(!saved.contains("startDate") && !saved.contains("endDate") && saved.contains("2026-11-10T09:00:00.000Z"))
         #expect(try JSONDecoder().decode(CalendarEvent.self, from: Data(saved.utf8)) == event)
+    }
+
+    /// Why a fetch failed, said plainly from what the connection reported; each failure in a row
+    /// counts towards the wait before the next try, and one that works starts the count again.
+    @Test func whyAFetchFailed() async throws {
+        #expect(fetchFailure(.notConnectedToInternet) == "this Mac isn’t connected to the internet")
+        #expect(fetchFailure(.cannotFindHost) == "the calendar’s server couldn’t be found")
+        #expect(fetchFailure(.serverCertificateUntrusted) == "a secure connection to the calendar’s server couldn’t be made")
+        #expect(fetchFailure(.timedOut) == "the calendar took too long to answer")
+        #expect(fetchFailure(.badServerResponse) == "Oatcake couldn’t reach the calendar" && fetchFailure(nil) == "Oatcake couldn’t reach the calendar")
+        // Nothing listens on port 1 of this Mac.
+        let first = await fetchCalendar("http://127.0.0.1:1/calendar.ics", previous: CalendarCache(updatedAt: "2026-11-10T08:00:00Z"))
+        #expect(first.error == "the calendar’s server didn’t answer" && first.failures == 1 && first.updatedAt == "2026-11-10T08:00:00Z")
+        let second = await fetchCalendar("http://127.0.0.1:1/calendar.ics", previous: first)
+        #expect(second.failures == 2)
+    }
+
+    /// A feed is read up to a limit, so a server that sends without end doesn't fill the memory.
+    @Test func feedSizeLimit() async throws {
+        func bytes(_ count: Int) -> AsyncStream<UInt8> {
+            AsyncStream { continuation in
+                for _ in 0..<count { continuation.yield(65) }
+                continuation.finish()
+            }
+        }
+        #expect(try await readCalendar(bytes(100), limit: 100).count == 100)
+        await #expect(throws: OatcakeError("the calendar is too large to read")) { try await readCalendar(bytes(101), limit: 100) }
+        await #expect(throws: OatcakeError.self) { try await readCalendar(bytes(0), limit: 100, expected: 101) }
     }
 }

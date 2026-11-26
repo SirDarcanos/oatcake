@@ -75,12 +75,15 @@ public struct CalendarCache: Codable, Equatable, Sendable {
     public var updatedAt: String?
     /// Why the last fetch failed, if it did: the reason alone ("the calendar took too long to answer").
     public var error: String?
+    /// How many fetches in a row have failed, since the last that worked.
+    public var failures: Int?
     public var events: [CalendarEvent]
 
-    public init(checkedAt: String? = nil, updatedAt: String? = nil, error: String? = nil, events: [CalendarEvent] = []) {
+    public init(checkedAt: String? = nil, updatedAt: String? = nil, error: String? = nil, failures: Int? = nil, events: [CalendarEvent] = []) {
         self.checkedAt = checkedAt
         self.updatedAt = updatedAt
         self.error = error
+        self.failures = failures
         self.events = events
     }
 
@@ -95,10 +98,18 @@ public struct CalendarCache: Codable, Equatable, Sendable {
         try writeAtomic(file, try encodeJSON(self), permissions: 0o600)
     }
 
-    /// Fresh for an hour; the refresh button fetches regardless.
+    /**
+     * Fresh for an hour after a fetch that worked. After one that failed (the Mac has just woken and
+     * isn't online yet, say), it's tried again a minute later, then two, four and so on up to the
+     * hour, so an event moved meanwhile isn't reminded at its old time. The refresh button fetches regardless.
+     */
     public func isStale(now: Date = Date()) -> Bool {
-        guard let checked = parseISO(checkedAt) else { return true }
-        return now.timeIntervalSince(checked) >= 3600
+        if error != nil, let checked = parseISO(checkedAt) {
+            let wait = min(3600, 60 * pow(2, Double(min(max(failures ?? 1, 1), 7) - 1)))
+            return now.timeIntervalSince(checked) >= wait
+        }
+        guard let updated = parseISO(updatedAt) else { return true }
+        return now.timeIntervalSince(updated) >= 3600
     }
 }
 
@@ -109,6 +120,7 @@ extension CalendarCache {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         checkedAt = try c.decodeIfPresent(String.self, forKey: .checkedAt)
         updatedAt = try c.decodeIfPresent(String.self, forKey: .updatedAt)
+        failures = try c.decodeIfPresent(Int.self, forKey: .failures)
         events = try c.decodeIfPresent([CalendarEvent].self, forKey: .events) ?? []
         error = try c.decodeIfPresent(String.self, forKey: .error).map { $0.hasPrefix(Self.failurePrefix) ? String($0.dropFirst(Self.failurePrefix.count)) : $0 }
     }
@@ -230,6 +242,10 @@ public func findCallLink(_ text: String) -> String? {
     return nil
 }
 
+/// More than any calendar's two weeks needs (a feed of 7,650 events is under 10 MB): a server that
+/// sends without end is stopped there rather than filling the memory.
+let calendarSizeLimit = 50_000_000
+
 /**
  * Downloads the calendar and keeps the events from a day ago to two weeks ahead. A failed fetch keeps
  * the previous events and records the error. The address is a secret, so it never appears in errors.
@@ -243,11 +259,12 @@ public func fetchCalendar(_ address: String, previous: CalendarCache) async -> C
         // A session that keeps nothing on disk: the address is a secret, and the shared one's cache would hold it.
         let session = URLSession(configuration: .ephemeral)
         defer { session.finishTasksAndInvalidate() }
-        let (data, response) = try await session.data(for: request)
+        let (bytes, response) = try await session.bytes(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 else {
             throw OatcakeError("the calendar address returned \(status) \(HTTPURLResponse.localizedString(forStatusCode: status))".trimmed)
         }
+        let data = try await readCalendar(bytes, limit: calendarSizeLimit, expected: response.expectedContentLength)
         let calendar = parseICal(String(decoding: data, as: UTF8.self))
         guard calendar.name == "VCALENDAR", calendar.closed else {
             throw OatcakeError("the address didn’t return a complete iCal feed")
@@ -256,12 +273,39 @@ public func fetchCalendar(_ address: String, previous: CalendarCache) async -> C
         let events = parseCalendar(calendar, from: now.addingTimeInterval(-86_400), to: now.addingTimeInterval(14 * 86_400))
         return CalendarCache(checkedAt: checkedAt, updatedAt: checkedAt, error: nil, events: events)
     } catch {
-        let message = (error as? URLError)?.code == .timedOut ? "the calendar took too long to answer"
-            : (error as? OatcakeError)?.message ?? "Oatcake couldn’t reach the calendar"
         var cache = previous
         cache.checkedAt = checkedAt
-        cache.error = message
+        cache.error = (error as? OatcakeError)?.message ?? fetchFailure((error as? URLError)?.code)
+        cache.failures = (previous.error == nil ? 0 : previous.failures ?? 1) + 1
         return cache
+    }
+}
+
+/// What came back, up to `limit` bytes: past that, it isn't a calendar anyone has.
+func readCalendar<Bytes: AsyncSequence>(_ bytes: Bytes, limit: Int, expected: Int64 = -1) async throws -> Data where Bytes.Element == UInt8 {
+    let tooLarge = OatcakeError("the calendar is too large to read")
+    if expected > limit { throw tooLarge }
+    var data = Data()
+    if expected > 0 { data.reserveCapacity(Int(expected)) }
+    for try await byte in bytes {
+        guard data.count < limit else { throw tooLarge }
+        data.append(byte)
+    }
+    return data
+}
+
+/// Why the calendar couldn't be fetched, in words, from what the connection said (which isn't secret).
+func fetchFailure(_ code: URLError.Code?) -> String {
+    switch code {
+    case .timedOut?: "the calendar took too long to answer"
+    case .notConnectedToInternet?, .networkConnectionLost?, .dataNotAllowed?, .internationalRoamingOff?:
+        "this Mac isn’t connected to the internet"
+    case .cannotFindHost?, .dnsLookupFailed?: "the calendar’s server couldn’t be found"
+    case .cannotConnectToHost?: "the calendar’s server didn’t answer"
+    case .secureConnectionFailed?, .serverCertificateUntrusted?, .serverCertificateHasBadDate?, .serverCertificateNotYetValid?,
+         .serverCertificateHasUnknownRoot?, .clientCertificateRejected?, .clientCertificateRequired?:
+        "a secure connection to the calendar’s server couldn’t be made"
+    default: "Oatcake couldn’t reach the calendar"
     }
 }
 

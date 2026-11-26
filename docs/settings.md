@@ -48,7 +48,9 @@ Settings, with **Open Notification Settings**.
 
   Oatcake refreshes each calendar once an hour, or when you press ↻ next to Upcoming (⌘R). If one
   feed fails, it keeps that feed’s last fetched events and reports the problem beside that calendar
-  in Settings. The other feeds continue to update.
+  in Settings (not connected to the internet, server not found, no secure connection, too slow to
+  answer), and tries again a minute later, then after waits that double, up to the hour. The other
+  feeds continue to update.
 
   Home and the sidebar show one chronological list of timed events in progress or starting today
   or tomorrow, leaving out events you declined. The sidebar shows up to six. The coloured dots
