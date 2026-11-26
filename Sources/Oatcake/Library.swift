@@ -254,7 +254,10 @@ final class Library {
 
     /// Counted again when the day has changed since, so yesterday's "due today" becomes overdue.
     func countTodosIfNewDay() {
-        if !Calendar.current.isDateInToday(countedOn) { countTodos() }
+        guard !Calendar.current.isDateInToday(countedOn) else { return }
+        // Your own list's "due tomorrow" counts from today (allTodoItems), so it's worked out again.
+        todoItems = allTodoItems(todoMeetings, reusing: todoItems)
+        countTodos()
     }
 
     private func countTodos() {

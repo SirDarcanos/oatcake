@@ -145,7 +145,13 @@ import Testing
         for i in marked.indices { marked[i].dueDate = day(30) }
         let ticked = with(meeting) { $0.todo = toggleTodo($0.todo, line: 0) }
         let again = allTodoItems([own, ticked], reusing: marked)
-        #expect(again.map(\.dueDate) == [day(30), day(4), day(3), nil, day(6)])
+        #expect(again.map(\.dueDate) == [nil, day(4), day(3), nil, day(6)])
         #expect(again[1].todo.done && !items[1].todo.done)
+        let unticked = allTodoItems([own, meeting], reusing: marked)
+        #expect(unticked.map(\.dueDate) == [nil, day(30), day(30), day(30), day(30)])
+        // Your own list's are always worked out again: "tomorrow" there counts from today, which moves on.
+        let yours = with(own) { $0.todo = "- [ ] Renew the domain — John — due tomorrow\n" }
+        let stale = allTodoItems([yours]).map { with($0) { $0.dueDate = day(3) } }
+        #expect(allTodoItems([yours], reusing: stale).map(\.dueDate) == [dueDate("tomorrow")])
     }
 }

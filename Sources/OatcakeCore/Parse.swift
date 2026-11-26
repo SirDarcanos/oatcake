@@ -261,12 +261,13 @@ public enum DueGroup: Int, CaseIterable, Comparable, Sendable {
 /**
  * Every to-do as an item, with its due date worked out. Those of a meeting whose todo.md (and title
  * and date) are as they were in `previous` are taken from there: a tick changes one file, and the
- * rest of the library needn't be worked out again.
+ * rest of the library needn't be worked out again. Your own list's are always worked out again: with
+ * no meeting to count from, "due tomorrow" counts from today, which changes at midnight.
  */
 public func allTodoItems(_ meetings: [MeetingTodos], reusing previous: [TodoItem] = []) -> [TodoItem] {
     let before = Dictionary(grouping: previous, by: \.meeting.path)
     return meetings.flatMap { m in
-        if let items = before[m.path], items.first?.meeting == m { return items }
+        if m.startedAt != nil, let items = before[m.path], items.first?.meeting == m { return items }
         return parseTodos(m.todo).map { TodoItem(todo: $0, meeting: m, dueDate: dueDate($0.due, meetingDate: m.startedAt)) }
     }
 }
