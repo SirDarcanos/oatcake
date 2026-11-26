@@ -30,6 +30,33 @@ struct RecordingPlayerView: View {
             }
         }
         .onDisappear { playback.stop() }
+        .task(id: url) { if let url { await answerKeys(url) } }
+    }
+
+    /// Space plays and pauses, and ⌥← and ⌥→ go back and on 15 seconds, while nothing that takes those
+    /// keys itself has the keyboard (a text field, a button) and nothing is open over the window. For
+    /// as long as the player is showing.
+    private func answerKeys(_ url: URL) async {
+        let playback = playback
+        let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let handled = MainActor.assumeIsolated {
+                guard let window = event.window, window.identifier?.rawValue == "main", window.attachedSheet == nil,
+                      !takesKeys(window.firstResponder) else { return false }
+                let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.numericPad, .function])
+                switch (event.keyCode, modifiers) {
+                case (49, []): playback.toggle(url)
+                case (123, [.option]), (124, [.option]):
+                    guard playback.duration > 0 else { return false }
+                    playback.refreshPosition()
+                    playback.seek(to: playback.elapsed + (event.keyCode == 123 ? -15 : 15))
+                default: return false
+                }
+                return true
+            }
+            return handled ? nil : event
+        }
+        while !Task.isCancelled { try? await Task.sleep(for: .seconds(3600)) }
+        if let monitor { NSEvent.removeMonitor(monitor) }
     }
 
     private func controls(_ url: URL) -> some View {
@@ -43,7 +70,7 @@ struct RecordingPlayerView: View {
                 }
             }
             .accessibilityLabel(playback.isPlaying ? "Pause recording" : "Play recording")
-            .help(playback.isPlaying ? "Pause recording" : "Play recording")
+            .help(playback.isPlaying ? "Pause recording (Space)" : "Play recording (Space; ⌥← and ⌥→ go back and on 15 seconds)")
 
             if playback.duration > 0 {
                 Slider(value: Binding(get: { playback.elapsed }, set: { playback.seek(to: $0) }),
@@ -81,4 +108,11 @@ struct RecordingPlayerView: View {
                 return .handled
             })
     }
+}
+
+/// A text field, or a control such as a button, uses Space and ⌥← ⌥→ itself. A list doesn't, and
+/// neither does text that can only be selected.
+@MainActor private func takesKeys(_ responder: NSResponder?) -> Bool {
+    if let text = responder as? NSTextView { return text.isEditable }
+    return responder is NSControl && !(responder is NSTableView)
 }

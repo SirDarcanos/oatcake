@@ -6,7 +6,16 @@ import SwiftUI
 extension Color {
     static let amber = Color(nsColor: NSColor(name: nil) { $0.bestMatch(from: [.darkAqua]) == .darkAqua ? NSColor(srgbRed: 1, green: 0.70, blue: 0.25, alpha: 1) : NSColor(srgbRed: 0.63, green: 0.28, blue: 0, alpha: 1) })
     static let fill = Color.primary.opacity(0.06)
-    static let line = Color.primary.opacity(0.09)
+    /// The edge of a field to type in, a card or the Ask bar: at least 3:1 against the window, light
+    /// (white to #ececec) or dark (#1e1e1e to #323232), and more with Increase Contrast.
+    static let line = Color(nsColor: NSColor(name: nil) { appearance in
+        switch appearance.bestMatch(from: [.aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua]) {
+        case .darkAqua: NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.4)
+        case .accessibilityHighContrastDarkAqua: NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.6)
+        case .accessibilityHighContrastAqua: NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.65)
+        default: NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.45)
+        }
+    })
 }
 
 struct ColourSwatchPopover: View {
@@ -58,12 +67,16 @@ struct Avatar: View {
 
     var body: some View {
         let _ = colorsChanged
-        let p = person(name, remember: remember)
+        let p = person(name, remember: false)
         Text(p.initial)
             .font(.system(size: size * 0.42, weight: .semibold))
             .foregroundStyle(.white)
             .frame(width: size, height: size)
             .background(Circle().fill(color ?? p.color))
+            // Their colour is claimed once the avatar is on screen, not while it's being drawn.
+            .task(id: name) { if remember { rememberColor(name) } }
+            // Always beside the name it stands for: read out, its initials would come before it.
+            .accessibilityHidden(true)
     }
 }
 
@@ -74,17 +87,40 @@ struct Chip: View {
     var style = Style.normal
     var help = "Jump to this moment in the transcript"
     var action: (() -> Void)?
+    @AppStorage(TextScale.key) private var textScale = 1.0
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    /// The accent as text on its own light tint. The accent alone is under 4.5:1 there, light and
+    /// dark, so it's taken towards black or white: far enough for each of macOS's accent colours
+    /// (yellow in light, purple in dark need the most) on a window from #ececec to #323232.
+    private static let tintText = Color(nsColor: NSColor(name: nil) { appearance in
+        let accent = NSColor.controlAccentColor
+        return switch appearance.bestMatch(from: [.aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua]) {
+        case .darkAqua: accent.blended(withFraction: 0.4, of: .white) ?? accent
+        case .accessibilityHighContrastDarkAqua: accent.blended(withFraction: 0.55, of: .white) ?? accent
+        case .accessibilityHighContrastAqua: accent.blended(withFraction: 0.65, of: .black) ?? accent
+        default: accent.blended(withFraction: 0.5, of: .black) ?? accent
+        }
+    })
 
     var body: some View {
         let label = Text(text)
-            .font(.system(size: 11, weight: .medium).monospacedDigit())
+            .font(.system(size: 11 * TextScale.clamped(textScale), weight: .medium).monospacedDigit())
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
-            .foregroundStyle(style == .normal ? AnyShapeStyle(.tint) : style == .pending ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
+            .foregroundStyle(style == .normal ? AnyShapeStyle(Self.tintText) : AnyShapeStyle(.secondary))
             .background(RoundedRectangle(cornerRadius: 4).fill(style == .normal ? AnyShapeStyle(.tint.opacity(0.12)) : style == .prep ? AnyShapeStyle(Color.fill) : AnyShapeStyle(.clear)))
-            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(style == .outline ? Color.line : .clear))
+            // With Increase Contrast every chip has an edge: a tint that faint barely shows its box.
+            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(style == .outline || contrast == .increased ? Color.line : .clear))
         if let action {
-            Button(action: action) { label }.buttonStyle(.plain).help(help).accessibilityLabel("\(help): \(text)")
+            Button(action: action) {
+                // At least 24 points to click, with the box itself no bigger. A row aligned on its top
+                // lines up the box's own top, so the room around it doesn't push the box down.
+                label.alignmentGuide(.top) { $0[.top] }
+                    .frame(minWidth: 24, minHeight: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).help(help).accessibilityLabel("\(help): \(text)")
         } else {
             label
         }
@@ -95,6 +131,8 @@ struct Notice<Content: View>: View {
     enum Tone { case amber, red, grey, blue }
     let tone: Tone
     @ViewBuilder var content: Content
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var withoutColour
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -112,6 +150,8 @@ struct Notice<Content: View>: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(RoundedRectangle(cornerRadius: 8).fill(background))
+        // With Increase Contrast the box has an edge: its tint alone hardly stands off the window.
+        .overlay { if contrast == .increased { RoundedRectangle(cornerRadius: 8).strokeBorder(Color.line) } }
     }
 
     private var background: Color {
@@ -155,7 +195,7 @@ extension View {
 func sidePanelWidth(in paneWidth: CGFloat) -> CGFloat { min(340, max(220, paneWidth - 380)) }
 
 /// The toolbar over a screen that has nothing of its own up there (Home, New recording): a space, so
-/// the search field stays over the meeting list rather than sliding along to the window's end.
+/// the search button stays over the meeting list rather than sliding along to the window's end.
 struct EmptyPaneToolbar: ToolbarContent {
     var body: some ToolbarContent {
         if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
@@ -170,13 +210,14 @@ extension ToolbarContent {
     }
 }
 
-/// The pulsing red dot of a recording in progress.
+/// The pulsing red dot of a recording in progress; a steady one with Reduce Motion.
 struct RecDot: View {
     @ViewState private var dim = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         Circle().fill(.red).frame(width: 7, height: 7)
-            .opacity(dim ? 0.3 : 1)
-            .onAppear { withAnimation(.easeInOut(duration: 0.7).repeatForever()) { dim = true } }
+            .opacity(dim && !reduceMotion ? 0.3 : 1)
+            .onAppear { if !reduceMotion { withAnimation(.easeInOut(duration: 0.7).repeatForever()) { dim = true } } }
     }
 }
 
@@ -189,7 +230,12 @@ struct TodoCheckbox: View {
         Button(action: action) {
             Image(systemName: checked ? "checkmark.circle.fill" : "circle")
                 .font(.system(size: 15))
-                .foregroundStyle(checked ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
+                .foregroundStyle(checked ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                // At least 24 points to click, with the circle no bigger. A row aligned on its top
+                // lines up the circle's own top, so the room around it doesn't push it below the text.
+                .alignmentGuide(.top) { $0[.top] }
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(checked ? "Mark as not done" : "Mark as done")
@@ -225,23 +271,36 @@ struct Meter: View {
 
 struct SectionLabel: View {
     let text: String
-    var body: some View { Text(text).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary) }
+    @AppStorage(TextScale.key) private var textScale = 1.0
+    var body: some View {
+        Text(text).font(.system(size: 11 * TextScale.clamped(textScale), weight: .semibold)).foregroundStyle(.secondary)
+            .accessibilityAddTraits(.isHeader)
+    }
 }
 
 struct PageTitle: View {
     let text: String
-    var size: CGFloat = 24
     var body: some View {
-        Text(text).font(.system(size: size, weight: .bold)).tracking(-0.4).textSelection(.enabled)
+        Text(text).font(.system(size: 24, weight: .bold)).tracking(-0.4).textSelection(.enabled)
+            .accessibilityAddTraits(.isHeader)
     }
 }
 
+/// Says something to VoiceOver that it wouldn't notice by itself: a toast, an answer arriving.
+@MainActor func announce(_ text: String, priority: NSAccessibilityPriorityLevel = .medium) {
+    guard let window = NSApp.mainWindow ?? NSApp.keyWindow else { return }
+    NSAccessibility.post(element: window, notification: .announcementRequested,
+                         userInfo: [.announcement: text, .priority: priority.rawValue])
+}
+
 /// One toast at a time, gone after a couple of seconds. One that says something went wrong is
-/// marked as such, stays longer, runs to several lines if it has to, and goes when it's clicked.
+/// marked as such, stays longer, runs to several lines if it has to, and goes when it's clicked (or
+/// pressed with VoiceOver). With Reduce Motion it fades rather than slides.
 struct ToastView: View {
     let text: String
     var isError = false
     var dismiss: () -> Void = {}
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             if isError { Image(systemName: "xmark.octagon.fill").foregroundStyle(.red) }
@@ -260,13 +319,25 @@ struct ToastView: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isError ? .isButton : [])
         .accessibilityHint(isError ? "Dismisses this message" : "")
+        .modifier(DismissOnPress(enabled: isError, dismiss: dismiss))
         .padding(.bottom, 80)
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
     }
 }
 
-/// How big the reading text is: summaries, answers, transcripts, your notes and the Markdown
-/// editors. View › Bigger Text and Smaller Text move it a step; everything else stays the size it is.
+/// VoiceOver's press for a note that goes when pressed (an error's), and none for one that doesn't.
+private struct DismissOnPress: ViewModifier {
+    let enabled: Bool
+    let dismiss: () -> Void
+
+    func body(content: Content) -> some View {
+        if enabled { content.accessibilityAction { dismiss() } } else { content }
+    }
+}
+
+/// How big the reading text is: summaries, answers, transcripts (the meeting's, the live one and Who's
+/// who's), your notes, the Markdown editors, the meeting list, to-dos, times and section labels. View ›
+/// Bigger Text and Smaller Text move it a step; everything else stays the size it is.
 enum TextScale {
     static let key = "textScale"
     static let steps: [Double] = [0.85, 1, 1.15, 1.3, 1.45, 1.6]
@@ -277,11 +348,24 @@ enum TextScale {
     static func clamped(_ scale: Double) -> Double { min(steps.last!, max(steps.first!, scale)) }
 }
 
-/// Opens Settings on one of its panes ("summaries", "updates"…), however it's pressed: a click, the
-/// keyboard or VoiceOver.
+/// Settings' panes, as Settings is opened on them and remembers the last one shown.
+enum SettingsPane: String {
+    case general, calendar, people, models, summaries, storage, updates
+    static let key = "settingsPane"
+}
+
+extension Font {
+    /// One of the system's text styles (13 points for body, 10 for a caption) at the size View ›
+    /// Bigger Text has set. On the Mac the styles themselves don't change size.
+    static func scaled(_ style: NSFont.TextStyle, _ scale: Double, weight: Font.Weight = .regular) -> Font {
+        .system(size: NSFont.preferredFont(forTextStyle: style).pointSize * TextScale.clamped(scale), weight: weight)
+    }
+}
+
+/// Opens Settings on one of its panes, however it's pressed: a click, the keyboard or VoiceOver.
 struct SettingsPaneLink: View {
     @Environment(\.openSettings) private var openSettings
-    let pane: String
+    let pane: SettingsPane
     let title: String
 
     var body: some View {
@@ -290,8 +374,8 @@ struct SettingsPaneLink: View {
 }
 
 /// The one place that says which pane Settings opens on.
-@MainActor func showSettingsPane(_ pane: String, _ open: OpenSettingsAction) {
-    UserDefaults.standard.set(pane, forKey: "settingsPane")
+@MainActor func showSettingsPane(_ pane: SettingsPane, _ open: OpenSettingsAction) {
+    UserDefaults.standard.set(pane.rawValue, forKey: SettingsPane.key)
     open()
 }
 
@@ -320,8 +404,9 @@ func markingFound(_ text: AttributedString, _ words: [String]) -> AttributedStri
 
 func markingFound(_ text: String, _ words: [String]) -> AttributedString { markingFound(AttributedString(text), words) }
 
-/// A text field that leaves ↑, ↓, Return and Escape to the view around it, and takes the keyboard
-/// when it appears. In a SwiftUI TextField the field editor gets those keys first.
+/// A text field that leaves ↑, ↓, Return and Escape to the view around it, takes the keyboard when it
+/// appears, and gives it back to what had it when it goes. In a SwiftUI TextField the field editor
+/// gets those keys first.
 struct KeyedTextField: NSViewRepresentable {
     @Binding var text: String
     var placeholder: String
@@ -331,12 +416,26 @@ struct KeyedTextField: NSViewRepresentable {
     var onEscape: () -> Void = {}
 
     final class Field: NSTextField {
+        /// What had the keyboard before this field took it.
+        private weak var before: NSResponder?
+
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             DispatchQueue.main.async { [weak self] in
                 guard let self, let window = self.window else { return }
+                // Another field being typed in has the field editor as the responder: that field is what had it.
+                let had = window.firstResponder
+                if let editor = had as? NSText, editor.isFieldEditor { before = editor.delegate as? NSResponder } else { before = had }
                 window.makeFirstResponder(self)
             }
+        }
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            // Going: the keyboard goes back, unless what had it has gone too (a meeting closed by opening another).
+            if newWindow == nil, let window, let before, before === window || (before as? NSView)?.window === window {
+                window.makeFirstResponder(before)
+            }
+            super.viewWillMove(toWindow: newWindow)
         }
     }
 
@@ -363,7 +462,7 @@ struct KeyedTextField: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
-    final class Coordinator: NSObject, NSTextFieldDelegate {
+    @MainActor final class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: KeyedTextField
         init(parent: KeyedTextField) { self.parent = parent }
 

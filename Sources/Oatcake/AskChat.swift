@@ -23,7 +23,7 @@ final class AskChat {
 
     var running: AskTurn? { turns.first(where: \.running) }
 
-    func send(_ question: String, meeting: String?, config: Config, downloads: ModelDownloads) {
+    func send(_ question: String, meeting: String?, config: Config, downloads: ModelDownloads, meetings: Meetings) {
         let history = turns.compactMap { turn in turn.answer.map { AskExchange(question: turn.question, answer: $0) } }
         let turn = AskTurn(question: question)
         turns.append(turn)
@@ -40,7 +40,7 @@ final class AskChat {
                 defer { waiting.cancel() }
                 try await downloads.ensureModel()
                 waiting.cancel()
-                let answer = try await OatcakeCore.ask(config, meeting: meeting, question: question, history: history) { step in
+                let answer = try await OatcakeCore.ask(config, meeting: meeting, question: question, history: history, meetings: meetings) { step in
                     Task { @MainActor in self.update(turn.id) { $0.step = step } }
                 }
                 update(turn.id) { $0.answer = answer }

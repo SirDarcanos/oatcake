@@ -3,23 +3,49 @@ import Foundation
 
 public let sampleRate = recorderSampleRate
 
-/// Reads a raw 16 kHz mono PCM16 file into floats in [-1, 1].
-func readPcm(_ url: URL) -> [Float] {
-    guard let data = try? Data(contentsOf: url, options: .alwaysMapped) else { return [] }
-    return floats(data)
+/**
+ * A raw 16 kHz mono PCM16 track, mapped rather than read. Its samples are made floats (twice the
+ * size) when they're wanted, and only as many as are: an hour of a track is about 115 MB as samples
+ * and 230 MB as floats, so analysing a call holds one track's floats at a time, not both.
+ */
+struct PcmFile {
+    private let data: Data
+
+    /// Throws when the file can't be read: a track that isn't there isn't silence.
+    init(_ url: URL) throws {
+        data = try Data(contentsOf: url, options: .alwaysMapped)
+    }
+
+    var count: Int { data.count / 2 }
+
+    /// Every sample, as floats in [-1, 1].
+    func samples() -> [Float] { floats(data) }
+
+    /// The samples between two times in seconds, clamped to the track.
+    func samples(_ start: Double, _ end: Double) -> [Float] {
+        let from = max(0, min(count, Int((start * Double(sampleRate)).rounded(.down))))
+        let to = max(from, min(count, Int((end * Double(sampleRate)).rounded(.up))))
+        return floats(data[(data.startIndex + from * 2)..<(data.startIndex + to * 2)])
+    }
 }
+
+/// Reads a raw 16 kHz mono PCM16 file into floats in [-1, 1].
+func readPcm(_ url: URL) throws -> [Float] { try PcmFile(url).samples() }
 
 /// PCM16 samples, little-endian, as floats in [-1, 1].
 private func floats(_ data: Data) -> [Float] {
     data.withUnsafeBytes { raw in raw.bindMemory(to: Int16.self).map { Float(Int16(littleEndian: $0)) / 32768 } }
 }
 
-/// The samples of a raw PCM16 file from one sample onwards: what a recording still being written has gained since.
-func readPcm(_ url: URL, fromSample: Int) -> [Float] {
+/// The samples of a raw PCM16 file from one sample onwards, `count` at most: what a recording still
+/// being written has gained since. Nothing when the file isn't there yet.
+func readPcm(_ url: URL, fromSample: Int, count: Int? = nil) -> [Float] {
     guard let handle = try? FileHandle(forReadingFrom: url) else { return [] }
     defer { try? handle.close() }
-    guard (try? handle.seek(toOffset: UInt64(fromSample) * 2)) != nil, let data = try? handle.readToEnd() else { return [] }
-    return floats(data)
+    guard (try? handle.seek(toOffset: UInt64(fromSample) * 2)) != nil else { return [] }
+    let data: Data?
+    if let count { data = try? handle.read(upToCount: count * 2) } else { data = try? handle.readToEnd() }
+    return data.map(floats) ?? []
 }
 
 /// The samples between two times in seconds, clamped to the track.

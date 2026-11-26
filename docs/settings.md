@@ -40,6 +40,8 @@ Settings, with **Open notification settings**.
 
 - **Add calendar…** connects a calendar. Give it a name and paste its private iCal address (Google
   Calendar › Settings › your calendar › Integrate calendar › “Secret address in iCal format”).
+  Any other calendar that gives you an iCal (`.ics`) address starting `https://` or `webcal://`
+  works the same way.
   In the Add or Edit dialog, click the colour dot to open the same swatch picker as in People.
   Repeat for each calendar. **Edit…** changes the name or colour, replaces the
   address if you paste a new one, or removes the calendar. Oatcake keeps any previously connected
@@ -48,7 +50,9 @@ Settings, with **Open notification settings**.
 
   Oatcake refreshes each calendar once an hour, or when you press ↻ next to Upcoming (⌘R). If one
   feed fails, it keeps that feed’s last fetched events and reports the problem beside that calendar
-  in Settings. The other feeds continue to update.
+  in Settings (not connected to the internet, server not found, no secure connection, too slow to
+  answer), and tries again a minute later, then after waits that double, up to the hour. The other
+  feeds continue to update.
 
   Home and the sidebar show one chronological list of timed events in progress or starting today
   or tomorrow, leaving out events you declined, in the same rows ("No more calls today or
@@ -70,13 +74,19 @@ Settings, with **Open notification settings**.
   address is never opened).
 ### Reminders
 
-- **Remind me before calls** (on to start with): 5 minutes before each timed event, a
-  notification with **Join and start recording**. The button opens the call link when the
-  event has one, starts recording it (in the folder named like the event; a new folder for a
-  recurring event without one, ":" and "/" becoming "-"), and brings Oatcake forward on the live
-  notes. Clicking the notification itself opens New recording for the event. macOS asks once
-  whether Oatcake may send notifications; the packaged app asks for Alerts, so reminders stay up
-  until dealt with.
+- **Remind me before calls** (on to start with): before each timed event, a notification with
+  **Join and start recording**. The button opens the call link when the event has one,
+  starts recording it (in the folder named like the event; a new folder for a recurring event
+  without one, ":" and "/" becoming "-"), and brings Oatcake forward on the live notes. If the
+  event has gone from your calendars since, the button says so and starts nothing. Clicking the
+  notification itself opens New recording for the event. macOS asks once whether Oatcake may send
+  notifications; the packaged app asks for Alerts, so reminders stay up until dealt with.
+- **Reminder** (while reminders are on): how long before each call it comes, 5 minutes to start
+  with. **Add reminder** adds another (5 minutes and 1 minute before, say), and − removes one.
+  Each call is reminded once for each; if Oatcake opens when more than one of them has come, one
+  reminder covers them. Which reminders have gone out is kept in `reminders.json` in Oatcake's
+  data folder, so opening Oatcake again (an update does) doesn't remind again. A call you're
+  already recording isn't reminded of: its sound would go into the recording.
 - **Show my next call in the menu bar** (on to start with, with a calendar connected): Oatcake's
   oatcake with the time until it starts, and what's coming up in its menu (see
   [The menu bar](how-it-works.md#the-menu-bar)). Turning this off hides calendar details, not the
@@ -127,7 +137,8 @@ their chosen colour with them, and so does merging them into someone who hasn't 
   own, is how many tokens it's set to hold (Ollama's `num_ctx`, llama.cpp's `-c`): Oatcake sends no
   more than that at once, splitting a long call into parts if it has to. It doesn't change the
   server's setting, so match it to the server. Empty means 32,768, and Oatcake needs at least
-  16,384. **Download now** fetches the
+  16,384. Under the list of models, whether the chosen one is on this Mac (or a server's details),
+  and **Check it works**: **Download now** fetches the
   chosen model straight away rather than at your first call, **Stop** stops a download, **Remove…**
   deletes it (or **Remove partial download…**), each asking first, and **Test** asks it for one word. A model on a
   server of your own that reasons first can still be reasoning when the test's room for that word
@@ -185,6 +196,8 @@ keeps its lowest level; one on Ollama that can't reason at all is asked again wi
   doesn't move anything: meetings already in the old one stay where they are.
 - **Keep call audio after saving** (off to start with): audio is deleted once a meeting is saved.
   When on, the call's audio (both sides, mixed) is saved in the meeting's folder as `audio.m4a`.
+  If it can't be written there, Oatcake says why and tries again after the next save or launch. A
+  meeting deleted before its audio was written sends that audio to the Trash.
 - **Import from Granola** and **Import from Quill:** **Import…** picks an export (see
   [Importing](importing.md)).
 

@@ -4,37 +4,42 @@ import SwiftUI
 /// The middle column: the selected folder's meetings, newest first (every meeting for the top level).
 struct MeetingListView: View {
     @Environment(AppModel.self) private var model
-    /// Passed in rather than read here: inside the split view, this column doesn't always see the
-    /// model change by itself.
-    let folder: TreeNode?
-    @ViewState private var renaming: TreeNode?
     /// The meetings selected with ⌘- or ⇧-click. One selected meeting is the open one, so this only
     /// matters when there are several.
     @ViewState private var picked: Set<String> = []
-    @ViewState private var draft = ""
+    @AppStorage(TextScale.key) private var textScale = 1.0
 
     var body: some View {
+        let folder = model.library.tree?.find(model.folder) ?? model.library.tree
         // The top level lists every meeting, each labelled with the folder it's in.
         let everything = folder?.path.isEmpty ?? true
         let rows = listedIn(folder)
         // What's listed, and how many, are named in the toolbar above the list, as Mail names a mailbox.
         let title = everything ? "All meetings" : baseName(folder!.path)
-        let subtitle = "\(everything || parentOf(folder!.path).isEmpty ? "" : folderPath(parentOf(folder!.path)) + " · ")\(rows.count) meeting\(rows.count == 1 ? "" : "s")"
+        let subtitle = folder == nil ? "" : "\(everything || parentOf(folder!.path).isEmpty ? "" : folderPath(parentOf(folder!.path)) + " · ")\(rows.count) meeting\(rows.count == 1 ? "" : "s")"
         Group {
-            if rows.isEmpty {
-                VStack(spacing: 10) {
-                    Text(everything ? "No meetings yet." : "No meetings in this folder yet.")
-                        .foregroundStyle(.secondary)
-                    // Not while New recording is open beside it, with its own Start recording.
-                    if case .new = model.selection {} else { Button { model.newRecording() } label: { Label(everything ? "New recording" : "Record here", systemImage: "circle.fill") } }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if folder == nil {
+                // The Meetings folder is still being read, just after launch: not "no meetings".
+                Color.clear
+            } else if rows.isEmpty {
+                // Record here is in the main pane beside this, which an empty folder leaves free. A folder
+                // lists only its own meetings: one whose meetings are all in the folders inside it says so.
+                let inside = folder?.allMeetings.count ?? 0
+                Text(everything ? "No meetings yet."
+                     : inside == 1 ? "This folder’s one meeting is in a folder inside it."
+                     : inside > 1 ? "This folder’s \(inside) meetings are in the folders inside it."
+                     : "No meetings in this folder yet.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 // Picking a meeting leaves this list as it is, rather than swapping it for the meeting's folder.
                 // Picking several (⌘- or ⇧-click) leaves the open meeting open, for acting on them all at once.
                 let listed = Set(rows.map(\.path))
-                let chosen = rows.filter { selected(in: listed).contains($0.path) }
-                List(selection: Binding(get: { selected(in: listed) }, set: { paths in
+                // Worked out once, not again for each row.
+                let shown = selected(in: listed)
+                let chosen = rows.filter { shown.contains($0.path) }
+                List(selection: Binding(get: { shown }, set: { paths in
                     picked = paths
                     if paths.count == 1, let p = paths.first { model.selectMeeting(p) }
                 })) {
@@ -45,18 +50,18 @@ struct MeetingListView: View {
                 .contextMenu(forSelectionType: String.self) { paths in
                     let nodes = rows.filter { paths.contains($0.path) }
                     if nodes.count == 1, let m = nodes.first {
-                        Button("Rename…") { draft = meetingTitle(m); renaming = m }
-                        Button("Show in Finder") { model.library.reveal(m.path) }
-                        Divider()
-                        Button("Move to Trash") { model.library.trash([m]) }
+                        // The same as the meeting's own ⋯ menu.
+                        MeetingMenuItems(model: model, node: m)
                     } else if nodes.count > 1 {
+                        MoveMenu(model: model, paths: nodes.map(\.path), title: "Move \(nodes.count) Meetings To")
                         Button("Show in Finder") { model.library.reveal(nodes.map(\.path)) }
                         Divider()
-                        Button("Move \(nodes.count) Meetings to Trash…") { model.library.trash(nodes) }
+                        Button("Move \(nodes.count) Meetings to Trash…") { model.trash(nodes) }
                     }
                 }
-                // File › Move to Trash (⌘⌫, as in Finder) acts on the selection while the list has the keyboard.
-                .focusedValue(\.trashMeetings, chosen.isEmpty ? nil : { model.library.trash(chosen) })
+                // File › Move to Trash (⌘⌫, as in Finder) acts on the selection while the list has the
+                // keyboard; the next meeting opens, as in Mail.
+                .focusedValue(\.trashMeetings, chosen.isEmpty ? nil : { model.trash(chosen) })
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -75,13 +80,6 @@ struct MeetingListView: View {
         }
         // A meeting opened from elsewhere (the sidebar, a search, a reminder) ends a selection of several.
         .onChange(of: selectedPath) { picked = [] }
-        .alert("Rename meeting", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-            TextField("Title", text: $draft)
-            Button("Rename") { if let node = renaming { model.library.retitle(node.path, to: draft) } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Changes the meeting’s title and its folder’s name.")
-        }
     }
 
     private var selectedPath: String? {
@@ -109,7 +107,7 @@ struct MeetingListView: View {
                 }
                 Spacer(minLength: 4)
                 if m.granola {
-                    Text("Granola").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+                    Text("Granola").font(.scaled(.caption2, textScale, weight: .medium)).foregroundStyle(.secondary)
                         .padding(.horizontal, 5).padding(.vertical, 1)
                         .background(RoundedRectangle(cornerRadius: 4).fill(Color.fill))
                 }
@@ -127,10 +125,11 @@ struct MeetingListView: View {
                 }
             }
             if !m.preview.isEmpty {
-                Text(m.preview).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Text(m.preview).font(.scaled(.caption1, textScale)).foregroundStyle(.secondary).lineLimit(2)
             }
         }
+        .font(.scaled(.body, textScale))
         .padding(.vertical, 4)
-        .draggable(dragPrefix + m.path)
+        .draggable(MeetingItem(m.path, in: model.library.meetings.root))
     }
 }

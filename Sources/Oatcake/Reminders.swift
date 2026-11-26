@@ -85,6 +85,26 @@ enum Reminders {
         post(content, id: "call-ended")
     }
 
+    /// A call has been processed and waits in Who's who. No sound: it can wait until you're back.
+    @MainActor static func readyToCheck(_ title: String, id: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Ready to check who’s who"
+        content.body = "“\(title)” is waiting under Needs review."
+        post(content, id: readyPrefix + id)
+    }
+
+    /// The recording has been saved or discarded: its notification has nothing left to say.
+    static func withdrawReadyToCheck(_ id: String) {
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [readyPrefix + id])
+    }
+
+    /// The recording a "ready to check who's who" notification is about, from the notification's identifier.
+    static func recording(readyToCheck notification: String) -> String? {
+        notification.hasPrefix(readyPrefix) ? String(notification.dropFirst(readyPrefix.count)) : nil
+    }
+
+    private static let readyPrefix = "review-"
+
     @MainActor static func show(_ event: CalendarEvent) {
         lastSound = Date()
         Task {

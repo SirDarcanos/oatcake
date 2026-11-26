@@ -24,15 +24,13 @@ import Testing
         let file = secretFile()
         defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
         try Secrets.set(.calendar, "  https://calendar.example.com/private.ics \n", file: file)
-        #expect(Secrets.get(.calendar, file: file) == "https://calendar.example.com/private.ics")
-        let described = Secrets.describe(.calendar, file: file)
-        #expect(described.saved && described.hint == "Saved · calendar.example.com")
+        #expect(Secrets.savedValue(.calendar, file) == "https://calendar.example.com/private.ics")
         let mode = try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? Int
         #expect(mode == 0o600)
 
         try Secrets.set(.calendar, " ", file: file)
         #expect(!FileManager.default.fileExists(atPath: file.path))
-        #expect(!Secrets.describe(.calendar, file: file).saved)
+        #expect(Secrets.savedValue(.calendar, file) == nil)
     }
 
     /// 0.4.0 to 0.5.2 kept it in the Keychain: it moves into the file, and the Keychain item goes.
@@ -41,7 +39,7 @@ import Testing
         defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
         var deleted: [String] = []
         #expect(Secrets.moveFromKeychain(file: file, read: { _ in (errSecSuccess, "https://a.example.com/a.ics") }, delete: { deleted.append($0) }))
-        #expect(Secrets.get(.calendar, file: file) == "https://a.example.com/a.ics")
+        #expect(Secrets.savedValue(.calendar, file) == "https://a.example.com/a.ics")
         #expect(deleted == ["calendar"])
 
         // One already in the file stays, and the Keychain isn't read for it (reading is what asks
@@ -52,7 +50,7 @@ import Testing
             Issue.record("The Keychain was read")
             return (errSecSuccess, "https://a.example.com/a.ics")
         }, delete: { deleted.append($0) }))
-        #expect(Secrets.get(.calendar, file: file) == "https://b.example.com/b.ics")
+        #expect(Secrets.savedValue(.calendar, file) == "https://b.example.com/b.ics")
         #expect(deleted == ["calendar"])
     }
 

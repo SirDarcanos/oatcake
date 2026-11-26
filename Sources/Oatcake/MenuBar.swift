@@ -126,6 +126,10 @@ enum MenuBarHelper {
         }
         // The time until the next call counts down without Oatcake having to say so.
         Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in MainActor.assumeIsolated { item.refresh() } }
+        // Once AppKit has put in its own handler for a quit, which this one replaces.
+        NotificationCenter.default.addObserver(forName: NSApplication.didFinishLaunchingNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { item.passOnQuits() }
+        }
         app.run()
         exit(0)
     }
@@ -160,15 +164,17 @@ final class StatusItem: NSObject, NSMenuDelegate {
         case .idle:
             (symbol, title, tip, accessibilityLabel) = ("oatcake", "", "Oatcake", "Oatcake")
         case .recording(let name, let elapsed):
+            // What it shows is said too, in words a clock's digits wouldn't be read as.
             (symbol, title, tip, accessibilityLabel) = ("record.circle.fill", elapsed.map { " " + clock($0) } ?? "",
-                                                       "Oatcake is recording “\(name)”", "Oatcake, recording")
+                                                       "Oatcake is recording “\(name)”", "Oatcake, recording" + (elapsed.map { " for \(minutes($0))" } ?? ""))
         case .upcoming(let events):
             let now = Date()
             let label = nextCallLabel(events, now: now)
+            let spoken = nextCallLabel(events, now: now, spoken: true)
             let next = events.first { $0.startDate > now } ?? events.first
             (symbol, title, tip, accessibilityLabel) = ("oatcake", label.isEmpty ? "" : " " + label,
                                                        next.map { "\($0.title) · \(timeOfDay($0.startDate))–\(timeOfDay($0.endDate))" } ?? "Nothing coming up on your calendar",
-                                                       "Oatcake, next call")
+                                                       spoken.isEmpty ? "Oatcake" : spoken == "now" ? "Oatcake, a call is on now" : "Oatcake, next call \(spoken)")
         }
         // Set only on a change: this runs twice a second during a recording.
         if button.title != title { button.title = title }
@@ -239,6 +245,16 @@ final class StatusItem: NSObject, NSMenuDelegate {
     // Oatcake may have something to ask before it quits (a call being recorded, say): its question needs to be in front.
     @objc private func quit() { bringOatcakeForward(); send(.quit) }
 
+    /// A quit sent to Oatcake by its bundle ID (install.sh's `tell application id … to quit`) can come
+    /// here, as the helper has the same ID: it's passed on to Oatcake, as Quit Oatcake is, rather than
+    /// ending the helper, which Oatcake would only start again.
+    func passOnQuits() {
+        NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(quitEvent(_:withReply:)),
+                                                     forEventClass: AEEventClass(kCoreEventClass), andEventID: AEEventID(kAEQuitApplication))
+    }
+
+    @objc private func quitEvent(_ event: NSAppleEventDescriptor, withReply reply: NSAppleEventDescriptor) { quit() }
+
     /// The click was on the helper's menu, so it's the helper macOS will let bring an app forward:
     /// it passes that on to Oatcake, which then shows its window.
     private func bringOatcakeForward() {
@@ -284,11 +300,12 @@ let oatcakeGlyph: NSImage = {
 
 /// "12m", "1h 5m" or "now" for the menu bar: the time until the next call starts. A call that's
 /// under way shows "now" unless the next one is within a quarter of an hour. "" when nothing is
-/// coming up in the next day.
-func nextCallLabel(_ events: [CalendarEvent], now: Date) -> String {
+/// coming up in the next day. `spoken`: "in 12 minutes", "in 1 hour 5 minutes", for VoiceOver.
+func nextCallLabel(_ events: [CalendarEvent], now: Date, spoken: Bool = false) -> String {
     let next = events.first { $0.startDate > now }
     let minutesAway = next.map { Int(($0.startDate.timeIntervalSince(now) / 60).rounded(.up)) }
     if events.contains(where: { $0.startDate <= now && $0.endDate > now }), (minutesAway ?? .max) > 15 { return "now" }
     guard let minutesAway, minutesAway < 24 * 60 else { return "" }
+    if spoken { return "in " + longDuration(Double(minutesAway) * 60) }
     return shortDuration(Double(minutesAway) * 60)
 }

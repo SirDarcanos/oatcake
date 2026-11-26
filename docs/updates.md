@@ -5,8 +5,10 @@ Updates can turn that off, and has **Check now**; a development copy only checks
 A new release shows in the sidebar above Settings; **Update…** asks, then downloads it, checks
 it, and quits and reopens Oatcake on the new version. Settings › Updates shows what's new in it,
 with its own **Install and relaunch…**, which asks the same question. It won't start while a call is being recorded or
-analysed, a summary is being written or meetings are being imported: it says so, and you try
-again afterwards. Nothing is installed until you click.
+analysed, a summary, a draft for sharing or an answer is being written, or meetings are being
+imported, nor while it would lose edits that couldn't be saved or notes typed for a call that
+couldn't be recorded: it says so, and you try again afterwards. Edits waiting to be saved are
+saved first. Nothing is installed until you click.
 
 Each release carries `latest.json`, a manifest naming the version and its zip (address,
 SHA-256, size), signed with Oatcake's Ed25519 release key. Oatcake checks that signature
@@ -14,7 +16,8 @@ against the public keys it ships (`Update.publicKeys`), checks the zip's size an
 checksum, unpacks it with `ditto`, checks it's Oatcake at that version, and checks the new app
 is signed with the same certificate as the running one (`codesign --verify --deep --strict -R`
 with the running app's designated requirement). The new copy is staged next to the installed
-one; a small detached script waits for Oatcake to quit, swaps the two, and opens it. Its log is
+one (and removed again if the swap can't be started); a small detached script waits for Oatcake
+to quit, swaps the two, and opens it. Its log is
 `~/Library/Application Support/Oatcake/update.log`. The mechanics are in
 `Sources/OatcakeCore/Update.swift`.
 

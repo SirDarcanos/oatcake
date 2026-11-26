@@ -6,6 +6,17 @@ import AppKit
 import OatcakeCore
 import SwiftUI
 
+extension Timer {
+    /// A repeating timer on the main run loop that also fires while a menu is open or a panel or an
+    /// alert is up (NSOpenPanel.runModal, NSAlert.runModal). scheduledTimer's default mode waits for
+    /// them, and so did the recorder's watchdog, the automatic stop, reminders and the menu bar's clock.
+    static func common(every interval: TimeInterval, _ block: @escaping @Sendable (Timer) -> Void) -> Timer {
+        let timer = Timer(timeInterval: interval, repeats: true, block: block)
+        RunLoop.main.add(timer, forMode: .common)
+        return timer
+    }
+}
+
 /// A line typed during a call.
 struct LiveLine: Identifiable, Equatable {
     let id = UUID()
@@ -52,6 +63,9 @@ final class RecordingController {
     var live: Recording?
     /// The call being recorded, as it's heard: lines from the live helper, and what the helper is doing.
     var liveLines: [LiveTranscriptLine] = []
+    /// `liveLines` as the live screen shows them: in order, without your microphone's echoes of the
+    /// call. Worked out when a line arrives or is named, not each time the screen is drawn.
+    private(set) var liveShown: [LiveTranscriptLine] = []
     var liveState = LiveTranscriptState.idle
     /// The lines you've said who said during this call, as kept in the recording (live-names.json).
     var liveNames: [LiveName] = []
@@ -62,6 +76,9 @@ final class RecordingController {
     /// The recorder said so itself (it couldn't use the microphone, say). Otherwise the failure is
     /// only that nothing has been heard from it, which a recorder that's slow to start can still put right.
     private var failureIsFinal = false
+    /// When the recorder was launched (`open` had returned), which its quarter of a minute to get
+    /// going counts from; nil while it's being launched.
+    private var launchedAt: Date?
     /// Since when the microphone, and the call audio, have had nothing in them; nil while there's sound.
     var micQuietSince: Date?
     var callQuietSince: Date?
@@ -98,6 +115,8 @@ final class RecordingController {
     private var endingLive = false
     private var micSilence = MicSilence()
     private var callQuietSaid = false
+    /// A look at the calling apps is under way: it's made off the main thread, and can take longer than the timer.
+    private var checkingCall = false
     let menuBar = MenuBarItem()
     private var timers: [Timer] = []
     private var statusTimer: Timer?
@@ -110,10 +129,10 @@ final class RecordingController {
 
     /// From launch on, every couple of seconds: is the recorder still there, and is there a call?
     func startChecks() {
-        timers.append(Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
+        timers.append(Timer.common(every: 2) { _ in
             Task { @MainActor in
                 self.checkRecorder()
-                self.checkCall()
+                await self.checkCall()
             }
         })
     }
@@ -181,23 +200,44 @@ final class RecordingController {
     func startRecording(title: String, folder: String, options: Recordings.StartOptions) throws {
         // One call at a time: a second recorder would capture the same audio.
         guard active.isEmpty else { throw OatcakeError("Oatcake is already recording a call. Stop it first.") }
-        let rec = try Recordings.start(title: title, folder: folder, micUid: config.mic?.uid, options: options)
+        let (rec, socket) = try Recordings.start(title: title, folder: folder, micUid: config.mic?.uid, options: options)
         active[rec.id] = rec
         if let eventId = options.eventId { recordedEvents.insert(eventId) }
         // The prep is in the call's notes now.
         if !options.prep.isEmpty { try? PrepNotes.save(options.eventId, []) }
         goLive(rec)
+        launch(rec, socket: socket)
+    }
+
+    /// Starts the recorder without holding up the window: `open` can take a while. If it can't be
+    /// started, the live screen says so as for a recorder that never got going.
+    private func launch(_ rec: Recording, socket: String) {
+        launchedAt = nil
+        Task {
+            do {
+                try await Recordings.launchRecorder(rec, socket: socket)
+                if live?.id == rec.id { launchedAt = Date() }
+            } catch {
+                guard live?.id == rec.id, !endingLive else { return }
+                recorderFailure = error.localizedDescription
+                failureIsFinal = true
+                stopLiveTranscript()
+                updateMenuBar()
+                Reminders.say("Oatcake couldn’t start recording", error.localizedDescription, id: "recorder-failed")
+            }
+        }
     }
 
     private func goLive(_ rec: Recording) {
         live = rec
         status = RecorderStatus(state: .starting)
+        launchedAt = Date()
         selection = .live
         callSeen = false
         callOverSince = nil
         resetLiveState()
         statusTimer?.invalidate()
-        statusTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+        statusTimer = Timer.common(every: 0.5) { _ in
             Task { @MainActor in
                 guard let live = self.live else { return }
                 self.status = Recordings.status(live)
@@ -243,10 +283,12 @@ final class RecordingController {
             }
         }
         Recordings.stop(rec)
-        for _ in 0..<50 where !finished() && Recordings.isRunning(rec) {
+        // Until it has gone, not only until meta.json is there: it writes that before stopping its
+        // devices, which is what can hang.
+        for _ in 0..<50 where Recordings.isRunning(rec) {
             try? await Task.sleep(for: .milliseconds(100))
         }
-        if !finished(), Recordings.isRunning(rec) {
+        if Recordings.isRunning(rec) {
             Recordings.kill(rec)
             for _ in 0..<10 where Recordings.isRunning(rec) {
                 try? await Task.sleep(for: .milliseconds(100))
@@ -338,8 +380,10 @@ final class RecordingController {
             return
         }
         // Nothing was recorded. A recorder still on its way up isn't running yet either, so only a
-        // status that has moved on, or a quarter of a minute of nothing, counts as not having started.
-        guard status.state != .starting || Date().timeIntervalSince(rec.startedAt) > 15 else { return }
+        // status that has moved on, or a quarter of a minute of nothing since it was launched, counts
+        // as not having started. (While macOS asks about the microphone or system audio, the recorder
+        // is running: it says who it is before it asks.)
+        guard status.state != .starting || launchedAt.map({ Date().timeIntervalSince($0) > 15 }) == true else { return }
         let why = status.state == .error ? status.error ?? couldntStart : couldntStart
         recorderFailure = why
         failureIsFinal = status.state != .starting
@@ -461,6 +505,9 @@ final class RecordingController {
     /// A call that couldn't be recorded isn't one that's being recorded: it holds up nothing.
     var isRecording: Bool { !active.isEmpty && recorderFailure == nil }
 
+    /// The recordings whose recorders this copy of Oatcake is looking after (or starting) now.
+    var activeIDs: Set<String> { Set(active.keys) }
+
     func saveLiveNotes(_ id: String) {
         guard let lines = liveNotes[id] else { return }
         do {
@@ -489,9 +536,12 @@ final class RecordingController {
     /// quarter of a minute, says the call seems to have ended and stops half a minute after that,
     /// unless you choose Keep recording or the call comes back. Music still playing, or a call
     /// you're only muted on, keeps it going.
-    private func checkCall() {
-        guard config.callNotice || live != nil else { return }
-        let apps = CallDetector.appsOnCall()
+    private func checkCall() async {
+        guard config.callNotice || live != nil, !checkingCall else { return }
+        // Off the main thread: it asks Core Audio about every process on the Mac.
+        checkingCall = true
+        let apps = await Task.detached { CallDetector.appsOnCall() }.value
+        checkingCall = false
         callOnMic = !apps.isEmpty
         let now = Date()
         guard !apps.isEmpty else {
@@ -584,6 +634,7 @@ final class RecordingController {
         // started, say): one is enough.
         guard liveTranscriptFor != rec.id else { return }
         liveLines = []
+        liveShown = []
         liveState = .idle
         liveNames = LiveNames.load(rec.dir)
         guard config.liveTranscript, liveHelper == nil else { return }
@@ -593,7 +644,7 @@ final class RecordingController {
         liveRun = run
         liveRunNamesVoices = config.liveVoices
         Task {
-            _ = try? await ChildProcess.run(Bundle.main.executableURL!, [HelperMode.live, rec.dir.path], onStart: { process in
+            let result = try? await ChildProcess.run(Bundle.main.executableURL!, [HelperMode.live, rec.dir.path], onStart: { process in
                 Task { @MainActor in
                     // The call may have ended (or the switch been turned off) before the helper got going.
                     if self.live?.id == rec.id, self.liveTranscriptFor == rec.id, self.config.liveTranscript { self.liveHelper = process } else { process.terminate() }
@@ -606,10 +657,23 @@ final class RecordingController {
                     for change in event.names ?? [] {
                         if let i = self.liveLines.firstIndex(where: { $0.id == change.line }) { self.liveLines[i].speaker = change.name }
                     }
+                    if event.line != nil || event.names?.isEmpty == false { self.liveShown = liveTranscript(self.liveLines) }
                     if let stage = event.stage { self.liveState = .at(stage) }
                     if let error = event.error { self.liveState = .stopped(error) }
                 }
             })
+            // The helper went by itself while the call goes on (it crashed, or couldn't load the speech
+            // models). The pane says so, in the helper's words if it said why (read from its output: its
+            // last line may not have been shown yet), and saving Settings with the live transcript on
+            // starts another.
+            guard liveRun == run else { return }
+            liveHelper = nil
+            liveTranscriptFor = nil
+            liveRun = nil
+            guard live?.id == rec.id, result?.status != 0 else { return }
+            let why = (result?.stdout ?? "").split(separator: "\n").reversed()
+                .compactMap { try? JSONDecoder().decode(LiveEvent.self, from: Data($0.utf8)) }.first { $0.error != nil }?.error
+            liveState = .stopped(why ?? "it quit unexpectedly. To start it again, turn it off and on in Settings › General.")
         }
     }
 
@@ -632,7 +696,10 @@ final class RecordingController {
             liveNames = names
             // Shown straight away; the helper names the lines that sound like it a moment later. A name
             // taken back stays until the helper has decided again.
-            if let name, let i = liveLines.firstIndex(where: { $0.id == line.id }) { liveLines[i].speaker = name }
+            if let name, let i = liveLines.firstIndex(where: { $0.id == line.id }) {
+                liveLines[i].speaker = name
+                liveShown = liveTranscript(liveLines)
+            }
         } catch {
             toast("Couldn’t keep that name: \(error.localizedDescription)", isError: true)
         }

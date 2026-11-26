@@ -19,13 +19,54 @@ import Testing
         let shifted = "- [ ] New first\n" + md
         #expect(toggleTodo(shifted, line: 0, text: "Send the deck") == "- [ ] New first\n- [x] Send the deck — Jane — due Fri, Nov 6 — [12:34]\n- [x] Book room\nnot a todo\n* [X] Done — John")
         #expect(toggleTodo(shifted, line: 1, text: "Gone since") == nil)
+        // A spaced dash in the task itself: only the last piece that isn't a field is the owner.
+        let dashed = parseTodos("- [ ] Compare A — B pricing — John — due Fri, Nov 6 — [01:15]\n- [ ] Compare A — B pricing — due Fri\n")
+        #expect(dashed[0] == Todo(line: 0, done: false, text: "Compare A — B pricing", owner: "John", due: "Fri, Nov 6", stamp: "01:15"))
+        #expect(dashed[1].text == "Compare A" && dashed[1].owner == "B pricing")
     }
 
     @Test func typedTodos() {
         #expect(typedTodo("Send the deck - due Fri, Nov 6", owner: "John") == "Send the deck — John — due Fri, Nov 6")
         #expect(typedTodo("Send the deck - Jane - due Fri, Nov 6", owner: "John") == "Send the deck — Jane — due Fri, Nov 6")
+        // The task keeps a dash of its own, as it was typed.
+        let typed = typedTodo("Send the deck - draft two -- Jane - due Fri", owner: "John")
+        #expect(typed == "Send the deck - draft two — Jane — due Fri")
+        #expect(parseTodos("- [ ] \(typed)").first.map { [$0.text, $0.owner, $0.due] } == ["Send the deck - draft two", "Jane", "Fri"])
+        #expect(typedTodo("Send the deck") == "Send the deck" && typedTodo("Send the deck", owner: "") == "Send the deck")
+        #expect(typedTodo("  Call Jane — [12:34]  ", owner: "John") == "Call Jane — John — [12:34]")
         #expect(addTodo("- [ ] One\n\n", "Two") == "- [ ] One\n- [ ] Two\n")
         #expect(addTodo("", "Two") == "- [ ] Two\n")
+    }
+
+    /// A to-do edited from the To-dos page: found as a tick finds it, its box kept, and typed back the way it was written.
+    @Test func editedTodos() {
+        let md = "- [ ] New first\n- [x] Send the deck — Jane — due Fri, Nov 6 — [12:34]\n"
+        #expect(editTodo(md, line: 0, text: "Send the deck", to: " Send the slides — Jane ") == "- [ ] New first\n- [x] Send the slides — Jane\n")
+        #expect(editTodo(md, line: 1, text: "Send the deck", to: nil) == "- [ ] New first\n")
+        #expect(editTodo(md, line: 1, text: "Gone since", to: "x") == nil)
+        let todo = parseTodos(md)[1]
+        #expect(typedForm(todo) == "Send the deck - Jane - due Fri, Nov 6 - [12:34]")
+        #expect(parseTodos("- [ ] " + typedTodo(typedForm(todo))).first.map { [$0.text, $0.owner, $0.due, $0.stamp] } == ["Send the deck", "Jane", "Fri, Nov 6", "12:34"])
+    }
+
+    /// The To-dos page's groups by due date. Weeks are counted in calendar days: in New York the clocks
+    /// go back on Sunday 1 November 2026, and next week's Sunday (the 8th) is still next week from Monday the 26th.
+    @Test func dueGroups() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        let day = { (month: Int, d: Int) in calendar.date(from: DateComponents(year: 2026, month: month, day: d))! }
+        let monday = day(10, 26)
+        let item = { (due: Date?, done: Bool) in
+            TodoItem(todo: Todo(line: 0, done: done, text: "Send the deck", owner: "", due: "", stamp: ""),
+                     meeting: MeetingTodos(path: "", title: "To-dos", startedAt: nil, todo: ""), dueDate: due)
+        }
+        let group = { (due: Date?) in item(due, false).dueGroup(today: monday.addingTimeInterval(15 * 3600), calendar: calendar) }
+        #expect(group(day(10, 23)) == .overdue && item(day(10, 23), true).dueGroup(today: monday, calendar: calendar) == .dueEarlier)
+        #expect(group(monday) == .today && group(day(10, 27)) == .thisWeek && group(day(11, 1)) == .thisWeek)
+        #expect(group(day(11, 2)) == .nextWeek && group(day(11, 8)) == .nextWeek && group(day(11, 9)) == .later && group(nil) == .noDate)
+        // Sunday's week is that day alone.
+        #expect(item(day(11, 2), false).dueGroup(today: day(11, 1), calendar: calendar) == .nextWeek)
+        #expect(DueGroup.allCases.sorted() == DueGroup.allCases && DueGroup.overdue.title == "Overdue")
     }
 
     @Test func transcripts() {
@@ -97,5 +138,20 @@ import Testing
         #expect(items.map { $0.isOverdue(today: day(4)) } == [false, false, false, false, false])
         #expect(items.map { $0.isOverdue(today: day(5)) } == [false, true, false, false, false])
         #expect(items.map { $0.isOverdue(today: day(7)) } == [false, true, false, false, true])
+
+        // Read again after a tick in one meeting: the other's items are kept as they were worked out
+        // (marked here, to tell), and only the changed one's are worked out afresh.
+        var marked = items
+        for i in marked.indices { marked[i].dueDate = day(30) }
+        let ticked = with(meeting) { $0.todo = toggleTodo($0.todo, line: 0) }
+        let again = allTodoItems([own, ticked], reusing: marked)
+        #expect(again.map(\.dueDate) == [nil, day(4), day(3), nil, day(6)])
+        #expect(again[1].todo.done && !items[1].todo.done)
+        let unticked = allTodoItems([own, meeting], reusing: marked)
+        #expect(unticked.map(\.dueDate) == [nil, day(30), day(30), day(30), day(30)])
+        // Your own list's are always worked out again: "tomorrow" there counts from today, which moves on.
+        let yours = with(own) { $0.todo = "- [ ] Renew the domain — John — due tomorrow\n" }
+        let stale = allTodoItems([yours]).map { with($0) { $0.dueDate = day(3) } }
+        #expect(allTodoItems([yours], reusing: stale).map(\.dueDate) == [dueDate("tomorrow")])
     }
 }

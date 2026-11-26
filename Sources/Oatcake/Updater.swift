@@ -60,7 +60,7 @@ final class Updater {
     }
 
     /// Why this copy can't replace itself with the release, if it can't, and whether the install command would.
-    private func whyBlocked(_ m: Update.Manifest) -> (String?, String?) {
+    private func whyBlocked(_ m: Update.Manifest) async -> (String?, String?) {
         let os = ProcessInfo.processInfo.operatingSystemVersion
         if Update.compareVersions("\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)", m.minimumSystemVersion) < 0 {
             return ("Oatcake \(m.version) needs macOS \(m.minimumSystemVersion) or later.", nil)
@@ -73,7 +73,8 @@ final class Updater {
             return ("Oatcake can’t replace itself in \(bundle.deletingLastPathComponent().path). Install the update from Terminal instead:", Update.installCommand)
         }
         do {
-            if Update.isAdHoc(try Update.designatedRequirement(bundle)) {
+            // codesign is waited for off the main actor, so the window doesn't stop meanwhile.
+            if Update.isAdHoc(try await Task.detached { try Update.designatedRequirement(bundle) }.value) {
                 return ("This copy of Oatcake wasn’t signed for updates. Install the update from Terminal instead:", Update.installCommand)
             }
         } catch {
@@ -107,9 +108,11 @@ final class Updater {
             lastCheck = Date()
             checkedAt = Date()
             if Update.compareVersions(m.version, current) > 0 {
+                // Worked out before the release is offered, so it can't be installed meanwhile.
+                let why = await whyBlocked(m)
                 manifest = m
                 available = Available(version: m.version, notes: m.notes, size: m.zip.size)
-                (blocked, command) = whyBlocked(m)
+                (blocked, command) = why
             } else {
                 manifest = nil
                 available = nil
@@ -138,8 +141,8 @@ final class Updater {
                 Task { @MainActor in if self.installing != text { self.installing = text } }
             }
             installing = "Checking…"
-            let requirement = try Update.designatedRequirement(bundle)
             let staged = try await Task.detached { () throws -> URL in
+                let requirement = try Update.designatedRequirement(bundle)
                 let app = try Update.unpack(zip, into: tmp, manifest: m)
                 guard Update.satisfies(app, requirement) else {
                     throw OatcakeError("The update isn’t signed with the same certificate as this copy of Oatcake, so it wasn’t installed.")

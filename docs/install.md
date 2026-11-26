@@ -10,13 +10,15 @@ with a browser until you allow it. There are two ways to install it.
 curl -fsSL https://github.com/a8cteam51/oatcake/releases/latest/download/install.sh | sh
 ```
 
-It downloads the latest release, checks its checksum and that it's signed with Oatcake's own
-release certificate, puts Oatcake in Applications (or wherever it's installed already, or
-`~/Applications` if you can't write to Applications) and opens it. The installer comes from the
-release itself. Files that curl downloads don't get macOS's quarantine flag, so there's no warning
-to get past. Run it again to update to the latest release; when that version is installed
-already, it just opens it. Two settings go before `sh`: `OATCAKE_REINSTALL=1` installs the same
-version again, and `OATCAKE_INSTALL_DIR=<folder>` installs somewhere else:
+It downloads the latest release over HTTPS (it won't follow a redirect to anything else), checks
+its checksum and that it's signed with Oatcake's own release certificate, puts Oatcake in
+Applications (or wherever it's installed already, or `~/Applications` if you can't write to
+Applications) and opens it. The installer comes from the release itself. Files that curl
+downloads don't get macOS's quarantine flag, so there's no warning to get past. Run it again to
+update to the latest release; it quits Oatcake first if it's open. When that version is installed
+already, it just opens it; when a newer one is (because a release was withdrawn, say), it says so
+and installs nothing. Two settings go before `sh`: `OATCAKE_REINSTALL=1` installs the same version
+again, and `OATCAKE_INSTALL_DIR=<folder>` installs somewhere else:
 
 ```sh
 curl -fsSL https://github.com/a8cteam51/oatcake/releases/latest/download/install.sh | OATCAKE_REINSTALL=1 sh

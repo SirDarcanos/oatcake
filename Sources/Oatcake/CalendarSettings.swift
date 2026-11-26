@@ -35,6 +35,51 @@ struct CalendarSettingsRows: View {
     }
 }
 
+/// Settings › Calendars › Reminders: how long before each call its reminders come, a row for each.
+struct ReminderTimesRows: View {
+    @Binding var minutes: [Int]
+    private static let choices = [1, 2, 3, 5, 10, 15, 20, 30, 45, 60]
+
+    var body: some View {
+        // Earliest first, as they'll come.
+        ForEach(Array(minutes.enumerated()), id: \.offset) { index, chosen in
+            LabeledContent("Reminder") {
+                HStack(spacing: 8) {
+                    Picker("Reminder", selection: Binding(get: { chosen }, set: { change(index, to: $0) })) {
+                        ForEach(Array(Set(Self.choices + [chosen])).sorted(), id: \.self) { Text(Self.label($0)).tag($0) }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    // The last one stays: turning reminders off is the switch above.
+                    if minutes.count > 1 {
+                        Button { minutes.remove(at: index) } label: {
+                            // Drawn at its own size, but 24 points to click, as the app's other small buttons are.
+                            Image(systemName: "minus.circle").frame(width: 24, height: 24).contentShape(Rectangle())
+                        }
+                            .buttonStyle(.borderless)
+                            .help("Remove this reminder")
+                            .accessibilityLabel("Remove the reminder \(Self.label(chosen))")
+                    }
+                }
+            }
+        }
+        if let next = Self.choices.first(where: { !minutes.contains($0) }) {
+            Button("Add reminder") { minutes = (minutes + [next]).sorted(by: >) }
+                .help("Another reminder before each call, \(Self.label(next))")
+        }
+    }
+
+    private func change(_ index: Int, to value: Int) {
+        var changed = minutes
+        changed[index] = value
+        minutes = Array(Set(changed)).sorted(by: >)
+    }
+
+    static func label(_ minutes: Int) -> String {
+        minutes == 60 ? "1 hour before" : minutes == 1 ? "1 minute before" : "\(minutes) minutes before"
+    }
+}
+
 struct CalendarEditor: View {
     @Environment(\.dismiss) private var dismiss
     let calendar: CalendarController

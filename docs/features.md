@@ -23,7 +23,10 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 - Microphone choice, following the Mac's or a chosen mic, changeable mid-call without a gap in the
   recording. [Record](how-it-works.md#1-record)
 - Warnings for a silent microphone, no call audio, or a recorder that stopped or never started, on
-  screen and as notifications; what was recorded is kept. [Record](how-it-works.md#1-record)
+  screen and as notifications; what was recorded is kept, and a recording stops by itself before
+  the disk is full. [Record](how-it-works.md#1-record)
+- Your microphone and the call audio stay lined up through a change of microphone, the Mac
+  sleeping, or headphones connecting. [Record](how-it-works.md#1-record)
 - An offer to record when a calling app starts using the microphone, and an automatic stop when
   the call ends, with **Keep recording**. [Calls are noticed](how-it-works.md#calls-are-noticed)
 - An option to keep call notices working after you close the window. Reopen or quit Oatcake from
@@ -42,7 +45,8 @@ Everything Oatcake does today, with a link to where each is described. Planned w
   folder named like it or a new one for a recurring meeting. [Calendar settings](settings.md#calendars)
 - **Join the call** on Home opens a Meet, Zoom or Teams call without starting a recording.
   [Calendar settings](settings.md#calendars)
-- A reminder 5 minutes before each call, whose button opens the call and starts recording.
+- Reminders before each call (5 minutes before, or as many as you like at the times you choose),
+  whose button opens the call and starts recording.
   [Calendar settings](settings.md#calendars)
 - Your next call in the menu bar, with what's coming up in its menu.
   [The menu bar](how-it-works.md#the-menu-bar)
@@ -93,7 +97,8 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 - To-dos with owners and due dates, ticked off in the meeting; a to-do's time opens the transcript
   there. [To-dos](how-it-works.md#to-dos)
 - A To-dos page gathering every meeting's, by due date, folder or owner, with your own list
-  besides. [To-dos](how-it-works.md#to-dos)
+  besides, whose to-dos can be edited or deleted there. ⌘Z undoes a tick.
+  [To-dos](how-it-works.md#to-dos)
 - To-dos can be turned off altogether. [General](settings.md#general)
 - Qwen3 8B or 4B, downloaded and run by Oatcake, or a model server of your own on your Mac or
   network, sent as much at once as its context holds. [Language model](models.md#language-model)
@@ -110,11 +115,16 @@ Everything Oatcake does today, with a link to where each is described. Planned w
   [Listening to the recording](how-it-works.md#listening-to-the-recording)
 - **Copy** and **Share**, formatted for documents and mail and as Markdown.
   [Reading and editing](how-it-works.md#reading-and-editing)
-- Folders within folders, meetings dragged between them, several at a time; rename, Show in
-  Finder and Move to Trash. [Organising meetings](how-it-works.md#organising-meetings)
-- Search across every meeting, and find in the transcript you're reading.
-  [The window](how-it-works.md#the-window)
+- Folders within folders, meetings dragged or moved between them, several at a time; rename, Show
+  in Finder, Move to Trash and Undo to put back. A meeting dragged out of Oatcake is its folder, or
+  its summary as text. [Organising meetings](how-it-works.md#organising-meetings)
+- Search across every meeting, with its words and results kept for the next look, and find on the
+  tab you're reading. [The window](how-it-works.md#the-window)
 - Bigger and smaller text. [The window](how-it-works.md#the-window)
+- Every command in the menu bar, with keys for what's done on every call, and Back and Forward
+  after following a link. [Keyboard shortcuts](keyboard-shortcuts.md)
+- Oatcake opens on the folder, meeting and tab it was on when it was last closed.
+  [The window](how-it-works.md#the-window)
 - The call's audio kept with the meeting, if you choose. [Storage](settings.md#storage)
 
 ## Ask
@@ -122,6 +132,16 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 - Ask across your saved meetings from Home, or start with the meeting you have open. Answers link to the
   meetings and times they draw on. [Ask](how-it-works.md#5-ask)
 - Follow-ups in the same conversation as you move between Home and meetings. [Ask](how-it-works.md#5-ask)
+
+## Accessibility
+
+- VoiceOver: headings, a name for every button and note line, the notes at the bottom of the
+  window and Ask's answers read out, and the menu bar item's countdown.
+  [The window](how-it-works.md#the-window)
+- Reduce motion, Increase contrast and Differentiate without colour followed, and Bigger Text for
+  lists, to-dos and transcripts as well as what you read. [The window](how-it-works.md#the-window)
+- Fields and cards edged at 3:1 or more against the window, light and dark, and buttons at least
+  24 points to click.
 
 ## Local MCP server
 

@@ -41,6 +41,18 @@ func listedIn(_ folder: TreeNode?) -> [TreeNode] {
     return (folder.path.isEmpty ? folder.allMeetings : folder.meetings).sorted(by: newestFirst)
 }
 
+/// The first `count` of what `listedIn` gives, found without sorting the whole library for them.
+func newestIn(_ folder: TreeNode?, _ count: Int) -> [TreeNode] {
+    guard let folder, count > 0 else { return [] }
+    var newest: [TreeNode] = []
+    for m in folder.path.isEmpty ? folder.allMeetings : folder.meetings {
+        guard newest.count < count || newestFirst(m, newest[newest.count - 1]) else { continue }
+        newest.insert(m, at: newest.firstIndex { newestFirst(m, $0) } ?? newest.count)
+        if newest.count > count { newest.removeLast() }
+    }
+    return newest
+}
+
 // MARK: - People
 
 /// "Jane Doe" from an attendee, or from "jane.doe@…" when the invite has no name.
@@ -123,6 +135,16 @@ private func hueFor(_ name: String, remember: Bool) -> Double {
     return hues[index]
 }
 
+/// Claims a colour for someone seen for the first time, as hueFor does, from outside a view's body:
+/// drawing only reads. Avatars already drawn are told, in case two new names were drawn in the same
+/// free colour and the second has just been given another.
+func rememberColor(_ name: String) {
+    let known = (UserDefaults.standard.dictionary(forKey: colorsKey) as? [String: Int])?[firstNameKey(name)].map(hues.indices.contains) ?? false
+    guard !known, chosenColor(name) == nil, !name.trimmed.isEmpty, name.range(of: notAPerson, options: .regularExpression) == nil else { return }
+    _ = hueFor(name, remember: true)
+    UserDefaults.standard.set(UserDefaults.standard.integer(forKey: colorsChangedKey) + 1, forKey: colorsChangedKey)
+}
+
 /**
  * Colours for the names on a Who's who screen, where nothing is claimed until the meeting is saved:
  * someone seen before keeps their colour, and each new name takes the next free one, in the order
@@ -174,7 +196,6 @@ private func nameColor(_ hue: Double) -> Color {
 struct Person {
     var initial: String
     var color: Color
-    var isPerson: Bool
 }
 
 /// A person's avatar colour and initial: the same colour on every screen.
@@ -190,9 +211,9 @@ func person(_ name: String, remember: Bool = true) -> Person {
         .compactMap { $0.first { $0.isLetter || $0.isNumber } }
     let initial = (words.count > 1 ? String([words[0], words[words.count - 1]]) : words.first.map(String.init) ?? "?").uppercased()
     if name.trimmed.isEmpty || name.range(of: notAPerson, options: .regularExpression) != nil {
-        return Person(initial: name.hasPrefix("Voice") ? String(clean.prefix(1)) : initial, color: Color(nsColor: .systemGray), isPerson: false)
+        return Person(initial: name.hasPrefix("Voice") ? String(clean.prefix(1)) : initial, color: Color(nsColor: .systemGray))
     }
-    return Person(initial: initial, color: oklch(0.55, 0.15, hueFor(name, remember: remember)), isPerson: true)
+    return Person(initial: initial, color: oklch(0.55, 0.15, hueFor(name, remember: remember)))
 }
 
 /// The design's oklch(L C h) colours, in sRGB.

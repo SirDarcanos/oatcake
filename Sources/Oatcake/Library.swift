@@ -12,8 +12,8 @@ final class Library {
     var app = AppServices()
     /// A folder or meeting now lives somewhere else: whatever knew it by its old path follows it.
     var whenMoved: @MainActor (_ from: String, _ to: String) -> Void = { _, _ in }
-    /// Meetings have gone to the Trash: what was kept for them elsewhere can go too.
-    var whenTrashed: @MainActor () -> Void = {}
+    /// Meetings (or folders) have gone to the Trash, by their paths: what was kept for them elsewhere can go too.
+    var whenTrashed: @MainActor (_ paths: [String]) -> Void = { _ in }
     private var config: Config { app.config() }
     private func toast(_ text: String, isError: Bool = false) { app.toast(text, isError) }
     private func refresh() { app.refresh() }
@@ -23,6 +23,8 @@ final class Library {
     var tree: TreeNode?
     /// Bumps on every change on disk, so open meetings re-read their files.
     var diskVersion = 0
+    /// macOS has said something in the Meetings folder changed since it was last read.
+    @ObservationIgnored private var changedOnDisk = false
     /// Every meeting's to-dos as last read, and what's worked out from them when they're read (not
     /// each time something that shows them is redrawn): each to-do as an item, and the sidebar's counts.
     private(set) var todoMeetings: [MeetingTodos] = []
@@ -48,7 +50,24 @@ final class Library {
     // Keep the sidebar in step with Finder.
     func watchMeetings() {
         try? FileManager.default.createDirectory(at: meetings.root, withIntermediateDirectories: true)
-        watcher = FolderWatcher(meetings.root) { [weak self] in self?.refresh() }
+        watcher = FolderWatcher(meetings.root) { [weak self] in
+            self?.changedOnDisk = true
+            self?.refresh()
+        }
+    }
+
+    /// Whether macOS has said something changed since the last read, for the read starting now.
+    func takeChangedOnDisk() -> Bool {
+        defer { changedOnDisk = false }
+        return changedOnDisk
+    }
+
+    /// What a read of the Meetings folder found: the tree, when it isn't the one already shown, and
+    /// whether files changed since the read before. A read that found nothing new redraws nothing,
+    /// and open meetings aren't read again for it.
+    func landed(_ tree: TreeNode?, changedOnDisk: Bool) {
+        if let tree { self.tree = tree }
+        if tree != nil || changedOnDisk { diskVersion += 1 }
     }
 
     func rename(_ path: String, to name: String) {
@@ -90,42 +109,75 @@ final class Library {
         return made
     }
 
-    /// Moves meetings or folders to the Trash. Several at once ask first, as a folder with meetings in it does.
-    func trash(_ nodes: [TreeNode]) {
-        guard nodes.count > 1 else { return moveToTrash(nodes) }
+    /// Moves meetings or folders to the Trash. Several at once ask first, as a folder with meetings in it
+    /// does. `done` is given the paths that went, once they have.
+    func trash(_ nodes: [TreeNode], done: @escaping ([String]) -> Void = { _ in }) {
+        guard nodes.count > 1 else { return done(moveToTrash(nodes)) }
         app.confirm(Confirmation(title: "Move \(nodes.count) meetings to the Trash?",
                                  text: "You can put them back from the Trash in Finder.",
-                                 ok: "Move to Trash", cancel: "Cancel") { [self] in moveToTrash(nodes) })
+                                 ok: "Move to Trash", cancel: "Cancel") { [self] in done(moveToTrash(nodes)) })
     }
 
-    /// One that can't be moved stops the rest, and the toast says how many went before it and why.
-    private func moveToTrash(_ nodes: [TreeNode]) {
+    /// Returns the paths that went. One that can't be moved stops the rest, and the toast says how many
+    /// went before it and why. Edit › Undo (⌘Z) puts them back.
+    @discardableResult
+    private func moveToTrash(_ nodes: [TreeNode]) -> [String] {
+        var gone: [String] = []
+        var inTrash: [(node: TreeNode, url: URL)] = []
+        // Put back into the Meetings folder they came from, even if another has been chosen since.
+        let from = meetings
         defer {
-            whenTrashed()
+            whenTrashed(gone)
             refresh()
+            if !inTrash.isEmpty, let undo = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" })?.undoManager {
+                let items = inTrash
+                undo.registerUndo(withTarget: self) { $0.putBack(items, into: from) }
+                undo.setActionName("Move to Trash")
+            }
         }
-        var moved = 0
         do {
             for node in nodes {
-                try meetings.trash(node.path)
-                moved += 1
+                if let url = try from.trash(node.path) { inTrash.append((node, url)) }
+                gone.append(node.path)
             }
         } catch {
             toast(nodes.count == 1 ? error.localizedDescription
-                                   : "Moved \(moved) of \(nodes.count) meetings to the Trash — \(error.localizedDescription)", isError: true)
-            return
+                                   : "Moved \(gone.count) of \(nodes.count) meetings to the Trash — \(error.localizedDescription)", isError: true)
+            return gone
         }
         if nodes.count == 1, let node = nodes.first {
-            toast("Moved “\(node.kind == .meeting ? meetingTitle(node) : node.name)” to the Trash")
+            toast("Moved “\(name(node))” to the Trash")
         } else if !nodes.isEmpty {
             toast("Moved \(nodes.count) meetings to the Trash")
         }
+        return gone
     }
+
+    /// Undo for Move to Trash: back from the Trash to where they were, the last to go first.
+    private func putBack(_ items: [(node: TreeNode, url: URL)], into meetings: Meetings) {
+        defer { refresh() }
+        var back = 0
+        do {
+            for item in items.reversed() {
+                try meetings.putBack(item.url, to: item.node.path)
+                back += 1
+            }
+        } catch {
+            toast("Couldn’t put “\(name(items[items.count - 1 - back].node))” back: \(error.localizedDescription). It’s still in the Trash.", isError: true)
+            return
+        }
+        toast(items.count == 1 ? "Put “\(name(items[0].node))” back from the Trash" : "Put \(items.count) meetings back from the Trash")
+    }
+
+    private func name(_ node: TreeNode) -> String { node.kind == .meeting ? meetingTitle(node) : node.name }
 
     /// A folder's Move to Trash. One with meetings in it asks first: it takes them all with it.
     func trashFolder(_ node: TreeNode) {
         let count = node.allMeetings.count
-        guard count > 0 else { return moveToTrash([node]) }
+        guard count > 0 else {
+            moveToTrash([node])
+            return
+        }
         app.confirm(Confirmation(title: "Move “\(node.name)” to the Trash?",
                                     text: "It holds \(count == 1 ? "1 meeting, which goes" : "\(count) meetings, which go") with it. You can put \(count == 1 ? "it" : "them") back from the Trash in Finder.",
                                     ok: "Move to Trash", cancel: "Cancel") { [self] in moveToTrash([node]) })
@@ -140,10 +192,6 @@ final class Library {
     }
 
     func readMeeting(_ path: String) throws -> MeetingFiles { try meetings.read(path) }
-
-    func writeMeetingFile(_ path: String, _ file: MeetingFile, _ content: String) throws {
-        try meetings.write(path, file, content)
-    }
 
     /// Ticks or unticks a to-do in todo.md as it is now, not as a view last read it: a tick never
     /// writes back over to-dos that have arrived since (the summary's, say). `text` is the to-do's
@@ -160,6 +208,39 @@ final class Library {
     func addTodo(_ path: String, _ text: String) throws {
         try meetings.addTodo(path, text)
         refresh()
+    }
+
+    /// Rewrites a to-do in todo.md as it is now, or takes it out (`body` nil). False when it isn't
+    /// in the file any more: nothing was written.
+    func editTodo(_ path: String, line: Int, text: String, to body: String?) throws -> Bool {
+        let changed = try meetings.editTodo(path, line: line, text: text, to: body)
+        refresh()
+        return changed
+    }
+
+    /// A meeting's todo.md alone, as it is now; nil when it can't be read.
+    func readTodo(_ path: String) -> String? { try? meetings.readTodo(path) }
+
+    /**
+     * Ticks or unticks a to-do, wherever it's shown, in todo.md as it is now (toggleTodo), and ⌘Z
+     * ticks it back. `shown` is given the file as it is afterwards, for the screen to show at once,
+     * or nil when nothing was ticked: the to-do isn't in the file as shown (which the toast says)
+     * or the file couldn't be written. The screen then reads its to-dos again.
+     */
+    func tick(_ path: String, _ todo: Todo, undo: UndoManager?, shown: @escaping @MainActor (String?) -> Void) {
+        do {
+            guard try toggleTodo(path, line: todo.line, text: todo.text) else {
+                toast(todoChangedMessage)
+                return shown(nil)
+            }
+            shown(readTodo(path))
+            undo?.registerUndo(withTarget: self) { library in
+                MainActor.assumeIsolated { library.tick(path, todo, undo: undo, shown: shown) }
+            }
+        } catch {
+            toast(error.localizedDescription, isError: true)
+            shown(nil)
+        }
     }
 
     /// Rename speakers…: other names for a saved meeting's speakers, in that meeting only.
@@ -216,18 +297,22 @@ final class Library {
         }
     }
 
-    /// The to-dos as just read from the Meetings folder.
-    func setTodos(_ todos: [MeetingTodos]) {
+    /// The to-dos as just read from the Meetings folder, and their items when they were worked out
+    /// with them (off the main thread); otherwise only the meetings whose to-dos changed are worked out.
+    func setTodos(_ todos: [MeetingTodos], items: [TodoItem]? = nil) {
         // Unchanged, on the same day: what was worked out still stands.
         if todos == todoMeetings, Calendar.current.isDateInToday(countedOn) { return }
         todoMeetings = todos
-        todoItems = allTodoItems(todos)
+        todoItems = items ?? allTodoItems(todos, reusing: todoItems)
         countTodos()
     }
 
     /// Counted again when the day has changed since, so yesterday's "due today" becomes overdue.
     func countTodosIfNewDay() {
-        if !Calendar.current.isDateInToday(countedOn) { countTodos() }
+        guard !Calendar.current.isDateInToday(countedOn) else { return }
+        // Your own list's "due tomorrow" counts from today (allTodoItems), so it's worked out again.
+        todoItems = allTodoItems(todoMeetings, reusing: todoItems)
+        countTodos()
     }
 
     private func countTodos() {
