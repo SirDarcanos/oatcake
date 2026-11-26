@@ -148,7 +148,6 @@ struct ReviewView: View {
     @ViewState private var saved = false
     @ViewState private var player = ClipPlayer()
     @ViewState private var paneWidth: CGFloat = 900
-    @AppStorage(TextScale.key) private var textScale = 1.0
 
     /// What's been set so far lives with the app, so leaving this screen and coming back keeps it.
     private var draft: ReviewDraft {
@@ -576,6 +575,7 @@ private struct ReviewTranscript: View {
     let leftOut: Set<String>
     /// Everyone named, in the order their colours are given in.
     let order: [String]
+    @AppStorage(TextScale.key) private var textScale = 1.0
 
     var body: some View {
         // The names are text here, so each person's colour is in the shade that reads against the window.
@@ -592,10 +592,10 @@ private struct ReviewTranscript: View {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack {
                             Text(name).fontWeight(.semibold).foregroundStyle(colors[name].map { AnyShapeStyle($0) } ?? AnyShapeStyle(.secondary))
-                            Text(clock(l.start)).foregroundStyle(.tertiary).monospacedDigit()
+                            Text(clock(l.start)).foregroundStyle(.secondary).monospacedDigit()
                         }
-                        .font(.caption)
-                        Text(l.text).font(.callout).textSelection(.enabled)
+                        .font(.scaled(.caption1, textScale))
+                        Text(l.text).font(.scaled(.callout, textScale)).textSelection(.enabled)
                     }
                 }
             }

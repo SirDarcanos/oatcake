@@ -170,6 +170,8 @@ private struct LiveTranscriptPane: View {
     /// New lines are followed while you're at the end; scrolled up to read back, or to say who a voice
     /// is, the transcript stays where you are.
     @ViewState private var following = true
+    @AppStorage(TextScale.key) private var textScale = 1.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let lines = model.recording.liveShown
