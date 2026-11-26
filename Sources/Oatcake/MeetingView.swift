@@ -70,7 +70,6 @@ struct MeetingView: View {
     @ViewState private var finding = false
     @ViewState private var query = ""
     @ViewState private var match = 0
-    @ViewState private var copied = false
     @FocusState private var findFocused: Bool
     @AppStorage(TextScale.key) private var textScale = 1.0
 
@@ -246,8 +245,10 @@ struct MeetingView: View {
 
     // MARK: Toolbar
 
+    /// The tabs on the left; on the right, how saving is going (while there's something to say) and
+    /// one menu with everything that can be done to the meeting.
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .principal) {
+        ToolbarItem(placement: .navigation) {
             Picker("Tab", selection: Binding(get: { tab }, set: { switchTab($0) })) {
                 Text("Summary").tag(MeetingTab.summary).help("⌘1")
                 Text("Transcript").tag(MeetingTab.transcript).help("⌘2")
@@ -257,79 +258,97 @@ struct MeetingView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
         }
-        ToolbarItemGroup(placement: .automatic) {
-            // How saving is going stays up here, in sight wherever the note is scrolled to.
-            if markdown || status == .todo || status == .failed {
+        // What follows goes to the right. (With nothing in the middle of the toolbar, nothing else pushes it there.)
+        if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
+        // How saving is going stays up here, in sight wherever the note is scrolled to.
+        if markdown || status == .todo || status == .failed {
+            ToolbarItem(placement: .automatic) {
                 HStack(spacing: 6) {
                     Text(status.text)
                         .foregroundStyle(status == .failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
                     if status == .failed { Button("Try again") { flush() }.buttonStyle(.link) }
                 }
                 .font(.callout)
+                .toolbarStatusPadding()
             }
-            if tab == .summary, !(files?[.summary] ?? "").trimmed.isEmpty {
-                Menu {
-                    if templates.isEmpty {
-                        Button("Regenerate summary") { regenerate(.summary) }
-                    } else {
-                        // Ticked: what this meeting's summary is written with now.
-                        let current = model.config.summaryTemplate(named: meta.template)?.name
-                        Menu("Regenerate summary") {
-                            Toggle("Default", isOn: Binding(get: { current == nil }, set: { _ in regenerate(.summary, template: .picked(nil)) }))
-                            Divider()
-                            ForEach(templates, id: \.name) { t in
-                                Toggle(t.name, isOn: Binding(get: { current == t.name }, set: { _ in regenerate(.summary, template: .picked(t.name)) }))
-                            }
-                        }
-                    }
-                    if model.config.todosEnabled { Button("Regenerate to-dos") { regenerate(.todos) } }
-                } label: {
-                    // Named on the image too: a toolbar menu is read out by its image's name, "Refresh".
-                    Label { Text("Regenerate") } icon: { Image(systemName: "arrow.clockwise").accessibilityLabel("Regenerate") }
-                }
-                    .accessibilityLabel("Regenerate")
-                    .disabled(model.jobs.summarising.contains(path) || (files?[.transcript] ?? "").trimmed.isEmpty)
-                    .help(model.config.todosEnabled
-                          ? (templates.isEmpty ? "Write the summary or the to-dos again with the current instructions in Settings"
-                             : "Write the summary (with a template, if you pick one) or the to-dos again")
-                          : (templates.isEmpty ? "Write the summary again with the current instructions in Settings"
-                             : "Write the summary again, with a template if you pick one"))
-            }
-            if tab == .summary || tab == .draft, !(files?[.summary] ?? "").trimmed.isEmpty {
-                Button {
-                    // Edits to the summary, to-dos or draft are saved first: the draft is written from them.
-                    flush()
-                    guard pending.isEmpty else { return }
-                    askingForDraft = true
-                } label: { Label("Draft for Sharing…", systemImage: "square.and.pencil") }
-                    .disabled(model.jobs.summarising.contains(path) || model.jobs.drafting.contains(path))
-                    .help(model.config.todosEnabled ? "Write this meeting’s summary and to-dos again for other people to read"
-                          : "Write this meeting’s summary again for other people to read")
-            }
-            if canRenameSpeakers {
-                Button {
-                    // A failed save keeps its text pending; renaming then would have it written back over the new names.
-                    flush()
-                    guard pending.isEmpty else { return }
-                    renamingSpeakers = true
-                } label: { Label("Rename Speakers", systemImage: "person.2") }
-                    .disabled(model.jobs.summarising.contains(path))
-                    .help(model.config.todosEnabled ? "Change who’s who in this meeting: the names in its transcript, summary and to-dos"
-                          : "Change who’s who in this meeting: the names in its transcript and summary")
-            }
-            let what = switch tab {
-            case .summary: model.config.todosEnabled ? "summary and to-dos" : "summary"
-            case .transcript: "transcript"
-            case .notes: "notes"
-            case .draft: "draft for sharing"
-            }
-            Button { copy() } label: { Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") }
-                .help("Copy the \(what), formatted (as Markdown where only plain text can go)")
-            ShareLink(item: shareText, subject: Text(meetingTitle(node))) { Label("Share", systemImage: "square.and.arrow.up") }
-                .help("Send the \(what) with Mail, Messages or another app")
-            Button { model.library.reveal(path) } label: { Label("Show in Finder", systemImage: "arrow.up.forward.square") }
-                .help("Show this meeting’s folder in Finder")
         }
+        ToolbarItem(placement: .automatic) {
+            Menu {
+                actions
+            } label: {
+                // Named on the image too: a toolbar menu is read out by its image's name.
+                Label { Text("More") } icon: { Image(systemName: "ellipsis").accessibilityLabel("More") }
+            }
+            .menuIndicator(.hidden)
+            .accessibilityLabel("More")
+            .help("Regenerate, draft for sharing, rename speakers, copy, share or show in Finder")
+        }
+    }
+
+    /// The meeting's menu: writing it again first, then taking it elsewhere.
+    @ViewBuilder private var actions: some View {
+        let hasSummary = !(files?[.summary] ?? "").trimmed.isEmpty
+        if tab == .summary || tab == .draft, hasSummary {
+            Button {
+                // Edits to the summary, to-dos or draft are saved first: the draft is written from them.
+                flush()
+                guard pending.isEmpty else { return }
+                askingForDraft = true
+            } label: { Label("Draft for Sharing…", systemImage: "square.and.pencil") }
+                .disabled(model.jobs.summarising.contains(path) || model.jobs.drafting.contains(path))
+                .help(model.config.todosEnabled ? "Write this meeting’s summary and to-dos again for other people to read"
+                      : "Write this meeting’s summary again for other people to read")
+        }
+        if tab == .summary, hasSummary {
+            let busy = model.jobs.summarising.contains(path) || (files?[.transcript] ?? "").trimmed.isEmpty
+            if templates.isEmpty {
+                Button { regenerate(.summary) } label: { Label("Regenerate Summary", systemImage: "arrow.clockwise") }
+                    .disabled(busy)
+                    .help("Write the summary again with the current instructions in Settings")
+            } else {
+                // Ticked: what this meeting's summary is written with now.
+                let current = model.config.summaryTemplate(named: meta.template)?.name
+                Menu {
+                    Toggle("Default", isOn: Binding(get: { current == nil }, set: { _ in regenerate(.summary, template: .picked(nil)) }))
+                    Divider()
+                    ForEach(templates, id: \.name) { t in
+                        Toggle(t.name, isOn: Binding(get: { current == t.name }, set: { _ in regenerate(.summary, template: .picked(t.name)) }))
+                    }
+                } label: { Label("Regenerate Summary", systemImage: "arrow.clockwise") }
+                    .disabled(busy)
+                    .help("Write the summary again, with a template if you pick one")
+            }
+            if model.config.todosEnabled {
+                Button { regenerate(.todos) } label: { Label("Regenerate To-dos", systemImage: "checklist") }
+                    .disabled(busy)
+                    .help("Write the to-dos again with the current instructions in Settings")
+            }
+        }
+        if canRenameSpeakers {
+            Button {
+                // A failed save keeps its text pending; renaming then would have it written back over the new names.
+                flush()
+                guard pending.isEmpty else { return }
+                renamingSpeakers = true
+            } label: { Label("Rename Speakers…", systemImage: "person.2") }
+                .disabled(model.jobs.summarising.contains(path))
+                .help(model.config.todosEnabled ? "Change who’s who in this meeting: the names in its transcript, summary and to-dos"
+                      : "Change who’s who in this meeting: the names in its transcript and summary")
+        }
+        Divider()
+        let what = switch tab {
+        case .summary: model.config.todosEnabled ? "summary and to-dos" : "summary"
+        case .transcript: "transcript"
+        case .notes: "notes"
+        case .draft: "draft for sharing"
+        }
+        Button { copy(what) } label: { Label("Copy", systemImage: "doc.on.doc") }
+            .help("Copy the \(what), formatted (as Markdown where only plain text can go)")
+        ShareLink(item: shareText, subject: Text(meetingTitle(node))) { Label("Share", systemImage: "square.and.arrow.up") }
+            .help("Send the \(what) with Mail, Messages or another app")
+        Divider()
+        Button { model.library.reveal(path) } label: { Label("Show in Finder", systemImage: "arrow.up.forward.square") }
+            .help("Show this meeting’s folder in Finder")
     }
 
     /// Rendered or Markdown: how the note below is shown. It sits at the top right of the note, beside its title.
@@ -360,17 +379,14 @@ struct MeetingView: View {
         return parts.filter { !$0.isEmpty }.joined(separator: "\n\n") + "\n"
     }
 
-    private func copy() {
+    private func copy(_ what: String) {
         // Formatted for documents and mail, and the Markdown for anything that only takes plain text.
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(clipboardHTML(shareText), forType: .html)
         pasteboard.setString(shareText, forType: .string)
-        copied = true
-        Task {
-            try? await Task.sleep(for: .seconds(1.5))
-            copied = false
-        }
+        // Said in a note: the menu it was chosen from has closed.
+        model.toast("Copied the \(what)")
     }
 
     /// A meeting saved without checking who's who has Name voices… instead, until Keep as is.
