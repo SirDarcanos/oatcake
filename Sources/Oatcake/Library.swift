@@ -96,18 +96,20 @@ final class Library {
     func trash(_ nodes: [TreeNode]) -> [String] {
         var gone: [String] = []
         var inTrash: [(node: TreeNode, url: URL)] = []
+        // Put back into the Meetings folder they came from, even if another has been chosen since.
+        let from = meetings
         defer {
             whenTrashed()
             refresh()
             if !inTrash.isEmpty, let undo = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" })?.undoManager {
                 let items = inTrash
-                undo.registerUndo(withTarget: self) { $0.putBack(items) }
+                undo.registerUndo(withTarget: self) { $0.putBack(items, into: from) }
                 undo.setActionName("Move to Trash")
             }
         }
         do {
             for node in nodes {
-                if let url = try meetings.trash(node.path) { inTrash.append((node, url)) }
+                if let url = try from.trash(node.path) { inTrash.append((node, url)) }
                 gone.append(node.path)
             }
         } catch {
@@ -124,7 +126,7 @@ final class Library {
     }
 
     /// Undo for Move to Trash: back from the Trash to where they were, the last to go first.
-    private func putBack(_ items: [(node: TreeNode, url: URL)]) {
+    private func putBack(_ items: [(node: TreeNode, url: URL)], into meetings: Meetings) {
         defer { refresh() }
         var back = 0
         do {
