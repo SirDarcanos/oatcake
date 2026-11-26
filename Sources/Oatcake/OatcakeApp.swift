@@ -199,6 +199,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
             return
         }
+        // "Ready to check who's who": clicking it opens that recording's Who's who, if it's still waiting.
+        if let recording = Reminders.recording(readyToCheck: id) {
+            guard action == UNNotificationDefaultActionIdentifier else { return }
+            model.showWindow()
+            if model.jobs.pending.contains(where: { $0.id == recording }) { model.selection = .job(recording) }
+            return
+        }
         guard category == Reminders.category else {
             // Anything else Oatcake says about a recording: clicking it opens Oatcake.
             if action == UNNotificationDefaultActionIdentifier { model.showWindow() }

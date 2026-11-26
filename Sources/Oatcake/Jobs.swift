@@ -260,6 +260,7 @@ final class Jobs {
             analyses.removeValue(forKey: rec.id)?.cancel()
             try Recordings.discard(rec.id)
             reviewDrafts.removeValue(forKey: rec.id)
+            Reminders.withdrawReadyToCheck(rec.id)
             progress.removeValue(forKey: rec.id)
             app.showFolder()
             toast("Recording discarded")
@@ -271,6 +272,7 @@ final class Jobs {
     func saveRecording(_ rec: Recording, decisions: [String: Decision], folder: String, title: String) throws -> String {
         let path = try saveMeeting(config, rec, decisions: decisions, folder: folder, title: title)
         reviewDrafts[rec.id]?.edited = false
+        Reminders.withdrawReadyToCheck(rec.id)
         writeSummary(path)
         tidySavedRecordings()
         return path
