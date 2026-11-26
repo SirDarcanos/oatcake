@@ -31,6 +31,10 @@ main() {
     # certificate means a new fingerprint here, in the same release.
     CERTIFICATE='certificate leaf = H"1d0c58271ef4c8fff761e1d137e4a4d5b1f28a4d"'
     FEED="${OATCAKE_FEED:-https://github.com/$REPO/releases/latest/download/latest.json}"
+    # Only HTTPS, redirects included. A feed for trying a release (OATCAKE_FEED) may be served
+    # over plain HTTP on this Mac.
+    PROTO='=https'
+    [ -z "${OATCAKE_FEED:-}" ] || PROTO='=http,https'
 
     say() { printf '%s\n' "$*"; }
     die() { printf 'Oatcake installer: %s\n' "$*" >&2; exit 1; }
@@ -39,6 +43,11 @@ main() {
     # True when dotted version $1 is at least $2 (major.minor).
     at_least() {
         awk -v a="$1" -v b="$2" 'BEGIN { split(a, x, "."); split(b, y, "."); exit !((x[1] + 0 > y[1] + 0) || (x[1] + 0 == y[1] + 0 && x[2] + 0 >= y[2] + 0)) }'
+    }
+    # True when dotted version $1 is older than $2, part by part.
+    older() {
+        awk -v a="$1" -v b="$2" 'BEGIN { n = split(a, x, "."); m = split(b, y, "."); if (m > n) n = m
+            for (i = 1; i <= n; i++) if (x[i] + 0 != y[i] + 0) exit !(x[i] + 0 < y[i] + 0); exit 1 }'
     }
     # True when $1 is validly signed, unmodified, and carries identifier $2 and Oatcake's certificate.
     signed_by_oatcake() {
@@ -57,7 +66,7 @@ main() {
     trap 'exit 130' INT TERM
 
     say "Checking the latest Oatcake release..."
-    HTTP="$(curl -sSL -o "$TMP/latest.json" -w '%{http_code}' "$FEED" || true)"
+    HTTP="$(curl -sSL --proto "$PROTO" -o "$TMP/latest.json" -w '%{http_code}' "$FEED" || true)"
     case "$HTTP" in
         200) ;;
         404) die "no release is available to install yet ($FEED)." ;;
@@ -111,13 +120,18 @@ main() {
             /usr/bin/open "$DEST"
             exit 0
         fi
+        # Like the app's own updater, this only goes forwards: an older release (a withdrawn one,
+        # say) isn't put over a newer one.
+        if older "$VERSION" "$CURRENT"; then
+            die "Oatcake $CURRENT in $DEST_DIR is newer than $VERSION, the release on offer, so nothing was installed."
+        fi
         say "Upgrading Oatcake $CURRENT to $VERSION in $DEST_DIR"
     else
         say "Installing Oatcake $VERSION into $DEST_DIR"
     fi
 
     say "Downloading $ZIP_NAME ($((ZIP_SIZE / 1000000)) MB)..."
-    curl -fL -# -o "$TMP/$ZIP_NAME" "$ZIP_URL" || die "the download failed ($ZIP_URL)."
+    curl -fL -# --proto "$PROTO" -o "$TMP/$ZIP_NAME" "$ZIP_URL" || die "the download failed ($ZIP_URL)."
     ACTUAL_SIZE="$(/usr/bin/stat -f %z "$TMP/$ZIP_NAME")"
     [ "$ACTUAL_SIZE" = "$ZIP_SIZE" ] || die "the download is $ACTUAL_SIZE bytes, not the $ZIP_SIZE the release promised. Nothing was installed."
     ACTUAL_SHA="$(/usr/bin/shasum -a 256 "$TMP/$ZIP_NAME" | cut -d' ' -f1)"
