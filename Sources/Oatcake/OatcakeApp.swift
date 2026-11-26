@@ -10,12 +10,12 @@ struct OatcakeApp: App {
         Window("Oatcake", id: "main") {
             ContentView()
                 .environment(delegate.model)
-                // Room for the sidebar and the meeting list at their usual widths, and beside them the
-                // widest toolbar a screen has (Who's who's) without it running over the meeting list.
-                .frame(minWidth: 1180, minHeight: 560)
+                // Narrow enough to sit beside the call on half a laptop's screen. A toolbar with more
+                // than fits puts the rest in its » menu, rather than setting the window's width.
+                .frame(minWidth: 720, minHeight: 560)
         }
         .defaultSize(width: 1440, height: 880)
-        // As in Mail: one toolbar across the three columns, the meeting list's folder named over the list.
+        // As in Mail: one toolbar across the columns, the meeting list's folder named over the list.
         .windowToolbarStyle(.unified)
         .commands {
             // View › Hide Sidebar (⌃⌘S), as in Mail.
@@ -325,19 +325,41 @@ struct ContentView: View {
     @Environment(AppModel.self) private var model
     /// The new title being typed for a meeting being renamed.
     @ViewState private var title = ""
+    /// The sidebar is showing, in either layout: hidden in one, it stays hidden in the other.
+    @AppStorage("sidebarShown") private var sidebarShown = true
+
+    /// A folder or All meetings chosen, or a meeting open: the meeting list is beside it.
+    private var listShown: Bool {
+        switch model.selection {
+        case .folder, .meeting: true
+        default: false
+        }
+    }
 
     var body: some View {
         @Bindable var model = model
-        // Laid out as Mail is: folders, the meetings in the one chosen, and the meeting (or whichever
-        // other screen is open). The meeting list stays in its column whatever the right-hand pane shows.
-        NavigationSplitView {
-            SidebarView()
-                .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 520)
-        } content: {
-            MeetingListView()
-                .navigationSplitViewColumnWidth(min: 220, ideal: 300, max: 560)
-        } detail: {
-            DetailView()
+        // Laid out as Mail is: folders, the meetings in the one chosen, and the meeting. Home, To-dos,
+        // a recording and Who's who have nothing to do with the meeting list, so they sit beside the
+        // sidebar alone. A three-column split view can't hide only its middle column, so the window
+        // has a three-column one while the list shows and a two-column one otherwise. (The list and the
+        // meeting split inside a two-column one's right-hand pane would share out every change in the
+        // window's width, and couldn't be told the list's width.)
+        Group {
+            if listShown {
+                NavigationSplitView(columnVisibility: sidebar(hiddenAs: .doubleColumn)) {
+                    SidebarView().keepsWidth("sidebarWidth", min: 200, ideal: 260, max: 520)
+                } content: {
+                    MeetingListView().keepsWidth("meetingListWidth", min: 220, ideal: 300, max: 560)
+                } detail: {
+                    DetailView()
+                }
+            } else {
+                NavigationSplitView(columnVisibility: sidebar(hiddenAs: .detailOnly)) {
+                    SidebarView().keepsWidth("sidebarWidth", min: 200, ideal: 260, max: 520)
+                } detail: {
+                    DetailView()
+                }
+            }
         }
         // Search is modal: while it's open, the window behind it can't be worked through accessibility either.
         .accessibilityHidden(model.searching)
@@ -367,9 +389,28 @@ struct ContentView: View {
             Text("Changes the meeting’s title and its folder’s name.")
         }
     }
+
+    /// The sidebar shown or hidden. The two layouts name a hidden sidebar differently: with the list,
+    /// the two columns left are the list and the meeting; without it, only the screen is left.
+    private func sidebar(hiddenAs hidden: NavigationSplitViewVisibility) -> Binding<NavigationSplitViewVisibility> {
+        Binding(get: { sidebarShown ? .all : hidden }, set: { sidebarShown = $0 != hidden && $0 != .detailOnly })
+    }
 }
 
-/// The right-hand pane.
+private extension View {
+    /// A column that starts at the width it last had. The window's split view remembers its columns'
+    /// widths only while it has as many columns as when they were saved, and it's made again each time
+    /// the meeting list comes or goes.
+    func keepsWidth(_ key: String, min: CGFloat, ideal: CGFloat, max: CGFloat) -> some View {
+        let saved = CGFloat(UserDefaults.standard.double(forKey: key))
+        return navigationSplitViewColumnWidth(min: min, ideal: saved >= min ? Swift.min(saved, max) : ideal, max: max)
+            // Nothing narrower than the column can be is kept: a hidden sidebar is no width at all.
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { if $0 >= min { UserDefaults.standard.set(Double($0), forKey: key) } }
+    }
+}
+
+/// The right-hand pane. A screen without the meeting list beside it names itself in the window's
+/// title; with the list, the title is the list's folder.
 struct DetailView: View {
     @Environment(AppModel.self) private var model
 
@@ -380,7 +421,7 @@ struct DetailView: View {
             switch model.selection {
             case .home:
                 HomeView()
-                    .toolbar { EmptyPaneToolbar() }
+                    .navigationTitle("Home")
                     // Nothing to ask about until something is saved.
                     .safeAreaPadding(.bottom, hasMeetings ? 58 : 0)
                     .overlay(alignment: .bottom) { if hasMeetings { AskBar(path: nil) } }
@@ -393,26 +434,31 @@ struct DetailView: View {
                     blank
                 }
             case .todos:
-                if model.config.todosEnabled { TodosView() } else { blank }
+                if model.config.todosEnabled { TodosView().navigationTitle("To-dos") } else { blank }
             case .new(let event):
                 // Made again only for another event: choosing the same one again keeps what's been typed.
                 NewRecordingView(event: event).id(event?.id)
-                    .toolbar { EmptyPaneToolbar() }
+                    .navigationTitle("New recording")
             case .live:
-                if let rec = model.recording.live { LiveView(rec: rec) } else { blank }
+                if let rec = model.recording.live { LiveView(rec: rec).navigationTitle(rec.title) } else { blank }
             case .job(let id):
-                if let rec = model.jobs.pending.first(where: { $0.id == id }) {
-                    if rec.state == .processed, !model.jobs.isAnalysing(rec.id) {
+                Group {
+                    if let rec = model.jobs.pending.first(where: { $0.id == id }) {
+                        if rec.state == .processed, !model.jobs.isAnalysing(rec.id) {
+                            ReviewView(rec: rec).id(rec.id)
+                        } else {
+                            ProcessingView(rec: rec).id(rec.id)
+                        }
+                    } else if let rec = model.jobs.unchecked.first(where: { $0.id == id }) {
+                        // A meeting saved without checking who's who, having its voices named.
                         ReviewView(rec: rec).id(rec.id)
                     } else {
-                        ProcessingView(rec: rec).id(rec.id)
+                        blank
                     }
-                } else if let rec = model.jobs.unchecked.first(where: { $0.id == id }) {
-                    // A meeting saved without checking who's who, having its voices named.
-                    ReviewView(rec: rec).id(rec.id)
-                } else {
-                    blank
                 }
+                .navigationTitle("Who’s who")
+                // Its toolbar starts with what it is and which call, so the title isn't said twice there.
+                .toolbar(removing: .title)
             case .folder, nil:
                 blank
             }

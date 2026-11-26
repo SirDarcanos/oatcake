@@ -53,19 +53,22 @@ your own, on your Mac or your network, instead.
 
 ## The window
 
-The window is laid out as Mail's is, in three columns: the sidebar, the meetings in the selected
-folder, and the meeting itself (or whichever other screen is open: Home, To-dos, New recording, a
-call being recorded, Who's who). One toolbar runs across the top: over the meeting list, the
-folder's name, how many meetings it has, and the search button; over the right-hand pane, that
-screen's own controls, what it is at the left and what can be done at the right. **View › Hide Sidebar** (⌃⌘S), or the button beside the window's
-buttons, hides the sidebar.
+With a folder or **All meetings** chosen, or a meeting open, the window is laid out as Mail's is,
+in three columns: the sidebar, the meetings in that folder, and the meeting itself. The other
+screens (Home, To-dos, New recording, a call being recorded, Who's who) have the rest of the window
+to themselves beside the sidebar, with their own name as the window's title. One toolbar runs
+across the top: over the meeting list, the folder's name, how many meetings it has, and the search
+button; over the screen on the right, its own controls, what it is at the left and what can be
+done at the right. What doesn't fit goes in the toolbar's » menu. The window can be as narrow as
+720 points, about half a laptop's screen. **View › Hide Sidebar** (⌃⌘S), or the button beside the
+window's buttons, hides the sidebar.
 
 The sidebar has a recording in progress, Home, To-dos, Upcoming, Who's who, folders, and any
 meetings at the top level. A one-off call with no folder of its own is saved at the top level;
 drag it onto a folder to file it. **All meetings**, at the top of the Meetings section, lists every
 meeting, whatever folder it's in. A folder lists only its own meetings, and says so when they're all
 in the folders inside it; an empty folder offers **Record here** under the folder's name, beside the
-list. Drag the divider to resize the meeting list; it keeps that width
+list. Drag the dividers to resize the sidebar and the meeting list; they keep those widths
 when you switch screens. Settings (⌘, or the menu bar item) is its own window, in panes; changes
 apply as you make them (see [Settings](settings.md)). Dates and times are written the way your
 Mac's region writes them ("Thu 29 Oct" or "Thu, Oct 29"), on its 12- or 24-hour clock. A note
@@ -381,7 +384,7 @@ Folders can hold folders. Click the arrow next to a folder's name, or press → 
 its subfolders. Right-click a folder for **New Folder Inside…**, **Rename…** (or press Return),
 **Show in Finder** or **Move to Trash** (or ⌘⌫, which asks first if it holds meetings). Finder and
 the app stay in step: a folder or meeting that goes from Finder while it's open gives way to the
-nearest folder that's still there. The middle column's width drags, like the sidebar's.
+nearest folder that's still there. The meeting list's width drags, like the sidebar's.
 
 ### Rename People
 

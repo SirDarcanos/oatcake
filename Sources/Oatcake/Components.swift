@@ -189,12 +189,12 @@ extension View {
 }
 
 /// A transcript beside a screen's own column (the call's notes, Who's who's voices): 340 points,
-/// narrowing to 220 before that column goes under 380. The meeting list takes its column beside the
-/// pane, so in a narrow window there isn't room for both at full width.
+/// narrowing to 220 before that column goes under 380. In a narrow window there isn't room for both
+/// at full width.
 func sidePanelWidth(in paneWidth: CGFloat) -> CGFloat { min(340, max(220, paneWidth - 380)) }
 
-/// The toolbar over a screen that has nothing of its own up there (Home, New recording): a space, so
-/// the search button stays over the meeting list rather than sliding along to the window's end.
+/// The toolbar beside the meeting list when no meeting is open: a space, so the search button stays
+/// over the list rather than sliding along to the window's end.
 struct EmptyPaneToolbar: ToolbarContent {
     var body: some ToolbarContent {
         if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
