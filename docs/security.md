@@ -17,8 +17,10 @@
 - Updates are installed only from a `latest.json` signed with Oatcake's release key, only if the
   zip matches its checksum, and only if the new app carries the running app's code-signing
   identity (see [Updates](updates.md)).
-- The calendar's private address is kept in `private.json` in Oatcake's data folder, which only
-  your user account can read (mode 0600), and never in `config.json`.
+- Private calendar addresses are kept in `private.json` in Oatcake's data folder, which only
+  your user account can read (mode 0600), and never in `config.json`. Badge colours are chosen in
+  Oatcake, with no extra network requests. Call reminders show the title and time in Notification
+  Center but don’t attach the invitation, attendee list or call link.
 - Files Oatcake rewrites (meeting Markdown, config, voiceprints, calendar, the calendar address)
   are written to a new temporary file and renamed into place, never through an existing file or
   link.

@@ -29,7 +29,7 @@ struct SidebarView: View {
         List(selection: selectionBinding) {
             if let live = model.recording.live { liveRow(live).tag(SidebarItem.live) }
             if model.config.todosEnabled { todosRow.tag(SidebarItem.todos) }
-            if model.calendar.cache != nil { upcoming }
+            if model.calendar.hasCalendars { upcoming }
             if !model.jobs.list.isEmpty {
                 Section("Needs review") {
                     ForEach(model.jobs.list) { job in jobRow(job).tag(SidebarItem.job(job.id)) }
@@ -226,15 +226,19 @@ struct SidebarView: View {
     /// half-minute tick. (They used to sit in a TimelineView, but a Section built inside one stops
     /// SwiftUI with a fatal error in a sidebar list, so the app couldn't open with a calendar set.)
     @ViewBuilder private var upcoming: some View {
-        let calendar = model.calendar.cache!
+        let calendar = model.calendar
         let now = model.calendar.now
         let events = Array(upcomingCalls(model.calendar.events, at: now).prefix(6))
         let next = events.first { $0.startDate > now }
         Section {
             ForEach(events) { event in
-                Button { model.newRecording(event) } label: { eventRow(event, next: next, now: now) }
+                let calendars = calendar.labels(for: event)
+                let names = calendars.map(\.name).joined(separator: ", ")
+                let service = event.callLink.flatMap(callApp).map { " · \($0)" } ?? ""
+                Button { model.newRecording(event) } label: { eventRow(event, next: next, now: now, calendars: calendars) }
                     .buttonStyle(.plain)
-                    .help("\(event.title) · \(hhmm(event.startDate))–\(hhmm(event.endDate))\(event.callLink.map { " · " + (callApp($0) ?? "") } ?? "")")
+                    .accessibilityValue(names)
+                    .help("\(event.title) · \(hhmm(event.startDate))–\(hhmm(event.endDate))\(service) · \(names)")
                     // A call you won't record that you can't rename or decline (someone else's
                     // recurring meeting): only Oatcake stops showing it.
                     .contextMenu {
@@ -246,8 +250,12 @@ struct SidebarView: View {
                         }
                     }
             }
-            if let message = calendarMessage(calendar, events: events) {
-                Text(message).font(.callout).foregroundStyle(calendar.error != nil && calendar.updatedAt == nil ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+            if calendar.hasFailures {
+                Text("Some calendars couldn’t update. Check Settings → Calendars.").font(.callout).foregroundStyle(.secondary)
+            } else if !calendar.hasUpdated {
+                Text("Fetching calendars…").font(.callout).foregroundStyle(.secondary)
+            } else if events.isEmpty {
+                Text("Nothing else today or tomorrow.").font(.callout).foregroundStyle(.secondary)
             }
         } header: {
             HStack {
@@ -255,19 +263,19 @@ struct SidebarView: View {
                 Spacer()
                 Button { model.calendar.refresh(force: true) } label: {
                     Image(systemName: "arrow.clockwise")
-                        .foregroundStyle(calendar.error != nil ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(calendar.hasFailures ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
                         .symbolEffect(.rotate, isActive: model.calendar.fetching)
                 }
                 .buttonStyle(.borderless)
-                .accessibilityLabel("Refresh the calendar")
-                .disabled(model.calendar.fetching)
-                .help("\(calendarTip(calendar)). Refresh now.")
+                .accessibilityLabel("Refresh calendars")
+                .disabled(calendar.fetching)
+                .help("Refresh calendars")
             }
             .padding(.trailing, headerButtonInset)
         }
     }
 
-    private func eventRow(_ e: CalendarEvent, next: CalendarEvent?, now: Date) -> some View {
+    private func eventRow(_ e: CalendarEvent, next: CalendarEvent?, now: Date, calendars: [CalendarController.Label]) -> some View {
         // Status and countdown sit in the time column, so they never cut the title short.
         let recording = model.recording.live?.eventId == e.id
         let starting = model.recording.status.state != .recording
@@ -293,26 +301,11 @@ struct SidebarView: View {
         return HStack(spacing: 6) {
             Text(label).font(.caption.weight(bold ? .semibold : .regular)).monospacedDigit()
                 .foregroundStyle(color).frame(width: 62, alignment: .leading)
+            CalendarBadges(calendars: calendars)
             Text(e.title).lineLimit(1)
             Spacer(minLength: 0)
         }
         .contentShape(Rectangle())
-    }
-
-    private func calendarTip(_ c: CalendarCache) -> String {
-        if model.calendar.fetching { return "Fetching…" }
-        if let failure = c.failure { return failure }
-        if let updated = parseISO(c.updatedAt) { return "Updated \(hhmm(updated))" }
-        return "Not fetched yet"
-    }
-
-    private func calendarMessage(_ c: CalendarCache, events: [CalendarEvent]) -> String? {
-        guard let updated = parseISO(c.updatedAt) else { return c.failure ?? "Fetching your calendar…" }
-        let nothing = events.isEmpty ? "Nothing else today or tomorrow." : nil
-        // Said in words, not only by the arrow turning red: what's listed may be out of date.
-        guard c.error != nil else { return nothing }
-        let when = Calendar.current.isDateInToday(updated) ? hhmm(updated) : "\(shortDate(updated)), \(hhmm(updated))"
-        return [nothing, "The calendar couldn’t be updated. This is how it stood at \(when)."].compactMap { $0 }.joined(separator: " ")
     }
 
     private func jobRow(_ job: Jobs.Job) -> some View {

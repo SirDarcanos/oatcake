@@ -43,7 +43,7 @@ struct HomeView: View {
             HStack {
                 heading("Upcoming")
                 Spacer()
-                if model.calendar.cache != nil {
+                if model.calendar.hasCalendars {
                     Button { model.calendar.refresh(force: true) } label: {
                         Image(systemName: "arrow.clockwise")
                             .symbolEffect(.rotate, isActive: model.calendar.fetching)
@@ -54,15 +54,14 @@ struct HomeView: View {
                     .disabled(model.calendar.fetching)
                 }
             }
-            if let cache = model.calendar.cache {
+            if model.calendar.hasCalendars {
                 let now = model.calendar.now
                 let events = upcomingCalls(model.calendar.events, at: now)
-                if cache.error != nil {
-                    Label(events.isEmpty ? "Couldn’t update the calendar." : "Couldn’t update the calendar. Showing the last fetched events.",
-                          systemImage: "exclamationmark.triangle")
+                if model.calendar.hasFailures {
+                    Label("Some calendars couldn’t update. Check Settings → Calendars.", systemImage: "exclamationmark.triangle")
                         .font(.callout).foregroundStyle(.secondary)
-                } else if cache.updatedAt == nil {
-                    Text("Fetching your calendar…").foregroundStyle(.secondary)
+                } else if !model.calendar.hasUpdated {
+                    Text("Fetching calendars…").foregroundStyle(.secondary)
                 } else if events.isEmpty {
                     Text("No more meetings today or tomorrow.").foregroundStyle(.secondary)
                 }
@@ -88,9 +87,16 @@ struct HomeView: View {
     private func callRow(_ event: CalendarEvent, now: Date, first: Bool) -> some View {
         let day = Calendar.current.isDate(event.startDate, inSameDayAs: now) ? "Today" : "Tomorrow"
         let time = event.startDate <= now ? "In progress" : "\(day) at \(hhmm(event.startDate))"
+        let calendars = model.calendar.labels(for: event)
+        let names = calendars.map(\.name).joined(separator: ", ")
         return HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(event.title).fontWeight(first ? .semibold : .regular)
+                HStack(spacing: 6) {
+                    CalendarBadges(calendars: calendars)
+                    Text(event.title).fontWeight(first ? .semibold : .regular)
+                        .accessibilityLabel("\(event.title), \(names)")
+                }
+                .help(names)
                 Text(first && event.startDate > now ? "Next · \(time)" : time)
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -140,6 +146,7 @@ struct HomeView: View {
                                 Button { model.openMeeting(meeting.path) } label: {
                                     HStack(spacing: 8) {
                                         Image(systemName: "doc.text").foregroundStyle(.secondary).accessibilityHidden(true)
+                                        CalendarBadges(calendars: model.calendar.labels(for: meeting.calendarIDs), describe: true)
                                         Text(meetingTitle(meeting)).foregroundStyle(.primary).lineLimit(1)
                                     }
                                     .frame(maxWidth: .infinity, alignment: .leading)

@@ -43,7 +43,9 @@ public enum Secrets {
     /// Saves a secret, or removes it when the value is blank. The file is written afresh, readable
     /// only by you, and then put in place of the old one: a save that fails keeps the old value.
     public static func set(_ name: SecretName, _ value: String, file: URL = Paths.secretFile) throws {
-        var all = tryJSON([String: String].self, file) ?? [:]
+        var all: [String: String]
+        do { all = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: file)) }
+        catch CocoaError.fileReadNoSuchFile { all = [:] }
         let clean = value.trimmed
         all[name.rawValue] = clean.isEmpty ? nil : clean
         if all.isEmpty {
@@ -73,6 +75,7 @@ public enum Secrets {
     }
 
     static func moveFromKeychain(file: URL, read: (String) -> (status: OSStatus, value: String?), delete: (String) -> Void) -> Bool {
+        guard !CalendarSource.replacesLegacySettings(file) else { return true }
         var done = true
         for name in SecretName.allCases {
             // One already in the file wins, and the Keychain isn't read for it: reading is what asks.
@@ -142,7 +145,7 @@ public enum Secrets {
             }
             guard let name = SecretName(rawValue: key), let data = Data(base64Encoded: value),
                   let plain = decryptOSCrypt(data, password: password) else { continue }
-            if savedValue(name, Paths.secretFile) == nil {
+            if !CalendarSource.replacesLegacySettings(Paths.secretFile), savedValue(name, Paths.secretFile) == nil {
                 do { try set(name, plain) } catch { continue }
             }
             remaining.removeValue(forKey: key)

@@ -95,14 +95,10 @@ enum Reminders {
             content.body = [minutes > 0 ? "In \(minutes) min" : "Starting now", "\(hhmm(event.startDate))–\(hhmm(event.endDate))",
                             event.callLink.flatMap(callApp)].compactMap { $0 }.joined(separator: " · ")
             content.categoryIdentifier = category
-            content.userInfo = ["event": (try? encodeJSON(event)) ?? ""]
+            // The request ID identifies the occurrence; Notification Center doesn’t need the invite.
             content.sound = .default
             try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: event.id, content: content, trigger: nil))
         }
     }
 
-    static func event(from response: UNNotificationResponse) -> CalendarEvent? {
-        (response.notification.request.content.userInfo["event"] as? String)
-            .flatMap { try? JSONDecoder().decode(CalendarEvent.self, from: Data($0.utf8)) }
-    }
 }

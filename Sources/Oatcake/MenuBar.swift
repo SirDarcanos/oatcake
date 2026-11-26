@@ -1,5 +1,5 @@
 // The menu bar item. While a call is being recorded it shows the running time, with Stop in its
-// menu (which asks first, in Oatcake's window, as the window's own Stop does). Otherwise, with a calendar connected (and Settings › Calendar's switch on), it shows the time
+// menu (which asks first, in Oatcake's window, as the window's own Stop does). Otherwise, with a calendar connected (and the switch in Settings › Calendars on), it shows the time
 // until your next call and lists what's coming up.
 //
 // It's drawn by a helper: Oatcake's own program run a second time (with --menu-bar) as a

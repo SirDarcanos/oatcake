@@ -10,8 +10,13 @@ import Testing
     @Test func savesWithoutTheModel() async throws {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-save-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: tmp) }
-        let recDir = tmp.appendingPathComponent("rec"), root = tmp.appendingPathComponent("Meetings")
+        let id = "2026-11-10T14-00-00-000Z"
+        let recDir = tmp.appendingPathComponent(id), root = tmp.appendingPathComponent("Meetings")
         try FileManager.default.createDirectory(at: recDir, withIntermediateDirectories: true)
+        let sourceIDs = [UUID(), UUID()]
+        let call = CallInfo(title: "Weekly sync", folder: "", startedAt: "2026-11-10T14:00:00Z",
+                            eventId: "sample-event", calendarIDs: sourceIDs)
+        try writeAtomic(recDir.appendingPathComponent("call.json"), try encodeJSON(call))
         let analysis = Analysis(title: "Weekly sync", startedAt: "2026-11-10T14:00:00.000Z", endedAt: "2026-11-10T14:25:00.000Z",
                                 lines: [Line(speaker: me, start: 1, end: 3, text: "Morning all."), Line(speaker: "A", start: 4, end: 6, text: "Hi John.")],
                                 speakers: [SpeakerInfo(id: "A", seconds: 40, embedding: nil, suggestion: nil, quotes: [])],
@@ -22,7 +27,8 @@ import Testing
         config.outputDir = root.path
         config.keepAudio = true
         config.llm = LlmConfig(model: LlmConfig.ownServer) // no endpoint: the model can't be reached
-        let rec = Recording(id: "2026-11-10T14-00-00-000Z", dir: recDir, title: "Weekly sync", folder: "", startedAt: Date(), state: .processed)
+        let rec = try #require(Recordings.get(id, recordings: tmp))
+        #expect(rec.calendarIDs == sourceIDs)
 
         let saved = try saveMeeting(config, rec, decisions: ["A": .name("Jane Doe")], folder: "")
         let out = root.appendingPathComponent(saved)
@@ -39,6 +45,10 @@ import Testing
         // meanwhile), and a to-do added in the meantime is kept above the model's.
         let meetings = Meetings(root: root)
         let renamed = try meetings.retitle(saved, to: "Weekly sync with Jane")
+        #expect(try meetings.read(renamed).meta.calendarIDs == sourceIDs)
+        #expect(meetings.tree().find(renamed)?.calendarIDs == sourceIDs)
+        let metadata = readText(root.appendingPathComponent(renamed).appendingPathComponent("meeting.json"))
+        #expect(!metadata.contains("sample-event"))
         try meetings.write(renamed, .todo, "- [ ] Added while the model was writing\n")
         try writeSummary(SummaryDraft(summary: "## Topic\nDone.\n", todo: "- [ ] From the model — Jane Doe\n"), config: config, meeting: renamed)
         let files = try meetings.read(renamed)

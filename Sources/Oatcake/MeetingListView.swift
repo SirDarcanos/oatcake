@@ -156,6 +156,7 @@ struct MeetingListView: View {
     private func row(_ m: TreeNode, everything: Bool, folder: String, hit: SearchHit?) -> some View {
         let date = meetingDate(m)
         let title = meetingTitle(m)
+        let calendars = model.calendar.labels(for: m.calendarIDs)
         return VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Text(date.map(longDate) ?? m.name).fontWeight(.semibold).lineLimit(1)
@@ -170,16 +171,17 @@ struct MeetingListView: View {
                         .background(RoundedRectangle(cornerRadius: 4).fill(Color.fill))
                 }
             }
-            if everything {
+            if everything || !sameAsFolder(title, folder) || !calendars.isEmpty {
                 let parent = parentOf(m.path)
-                if parent.isEmpty {
-                    Text(title).fontWeight(.medium).lineLimit(1)
-                } else {
-                    (Text(folderPath(parent)).fontWeight(.medium) + Text(sameAsFolder(title, parent) ? "" : " · \(title)").foregroundStyle(.secondary))
-                        .lineLimit(1)
+                HStack(spacing: 5) {
+                    CalendarBadges(calendars: calendars, describe: true)
+                    if everything, !parent.isEmpty {
+                        (Text(folderPath(parent)).fontWeight(.medium) + Text(sameAsFolder(title, parent) ? "" : " · \(title)").foregroundStyle(.secondary))
+                            .lineLimit(1)
+                    } else {
+                        Text(title).fontWeight(.medium).lineLimit(1)
+                    }
                 }
-            } else if !sameAsFolder(title, folder) {
-                Text(title).fontWeight(.medium).lineLimit(1)
             }
             if let hit, let file = hit.file, !hit.line.isEmpty {
                 // Found in the meeting's text: the line that has the words, and where it is.

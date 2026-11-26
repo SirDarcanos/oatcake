@@ -180,6 +180,23 @@ struct NewRecordingView: View {
                     }
                 }
             }
+            if let event {
+                let calendars = model.calendar.labels(for: event)
+                if !calendars.isEmpty {
+                    GridRow(alignment: .top) {
+                        Text(calendars.count == 1 ? "Calendar" : "Calendars").foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 5) {
+                            ForEach(calendars) { calendar in
+                                HStack(spacing: 5) {
+                                    CalendarBadges(calendars: [calendar])
+                                    Text(calendar.name).fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                        .frame(maxWidth: 360, alignment: .leading)
+                    }
+                }
+            }
             if let event, !others(event).isEmpty {
                 GridRow(alignment: .top) {
                     Text("Attendees").foregroundStyle(.secondary)
@@ -328,7 +345,8 @@ struct NewRecordingView: View {
             try model.recording.startRecording(title: name, folder: target,
                                      options: .init(eventId: event?.id, prep: notes,
                                                     attendees: event.map { others($0).map(attendeeName) } ?? [],
-                                                    summaryTemplate: model.config.summaryTemplate(named: summaryTemplate)?.name))
+                                                    summaryTemplate: model.config.summaryTemplate(named: summaryTemplate)?.name,
+                                                    calendarIDs: event.map { model.calendar.sourceIDs(for: $0) } ?? []))
         } catch {
             self.error = error.localizedDescription
             starting = false

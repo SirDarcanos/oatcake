@@ -52,7 +52,7 @@ struct AppCommands: Commands {
             Button("New Recording") { model.newRecording() }.keyboardShortcut("n")
             // The sidebar's own buttons for these sit in section headers, out of reach of the keyboard and VoiceOver.
             Button("New Folder") { model.wantsNewFolder = true; model.showWindow() }.keyboardShortcut("n", modifiers: [.command, .shift])
-            Button("Refresh Calendar") { model.calendar.refresh(force: true) }.keyboardShortcut("r").disabled(model.calendar.cache == nil)
+            Button("Refresh Calendars") { model.calendar.refresh(force: true) }.keyboardShortcut("r").disabled(!model.calendar.hasCalendars)
             Divider()
             // As in Finder. A menu command, because a key handler on the list didn't answer to ⌘⌫.
             Button("Move to Trash") { trashMeetings?() }.keyboardShortcut(.delete, modifiers: .command).disabled(trashMeetings == nil)
@@ -160,13 +160,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         // What was pressed, read here: the response itself doesn't cross to the main actor.
-        let category = response.notification.request.content.categoryIdentifier
+        let request = response.notification.request
+        let category = request.content.categoryIdentifier
         let action = response.actionIdentifier
-        let event = Reminders.event(from: response)
-        await MainActor.run { pressed(category: category, action: action, event: event) }
+        let id = request.identifier
+        await MainActor.run { pressed(category: category, action: action, id: id) }
     }
 
-    private func pressed(category: String, action: String, event: CalendarEvent?) {
+    private func pressed(category: String, action: String, id: String) {
         // "On a call?": its button starts recording; clicking it opens New recording.
         if category == Reminders.callCategory {
             if action == Reminders.recordAction {
@@ -186,9 +187,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
             return
         }
-        guard let event else {
+        guard category == Reminders.category else {
             // Anything else Oatcake says about a recording: clicking it opens Oatcake.
             if action == UNNotificationDefaultActionIdentifier { model.showWindow() }
+            return
+        }
+        guard let event = currentEvent(forReminder: id, in: model.calendar.events) else {
+            // The invite may have moved, been ignored or lost its last connected calendar.
+            model.showWindow()
             return
         }
         if action == Reminders.startAction {

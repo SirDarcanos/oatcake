@@ -1,82 +1,128 @@
-// The calendar: its events, fetched from its private address and kept between launches, and the
-// reminders before each call.
-
+// Calendar feeds are fetched and cached independently; every consumer gets the same merged events.
 import Foundation
 import OatcakeCore
 import SwiftUI
 
 @MainActor @Observable
 final class CalendarController {
-    /// What this part asks of the app around it.
     var app = AppServices()
-    /// The events have changed: the menu bar's next call may have.
     var changed: @MainActor () -> Void = {}
     private var config: Config { app.config() }
 
-    /// nil when no calendar address is set.
-    var cache: CalendarCache?
-    /// The calendar's events that can be calls: without the ones Settings › Calendar leaves out by
-    /// title, or the ones ignored from Upcoming.
-    var events: [CalendarEvent] {
-        let config = config
-        return (cache?.events ?? []).filter { !ignoredEvent($0.title, config.ignoredEvents) && !isIgnored($0, config.ignoredCalendarEvents) }
+    struct Label: Identifiable {
+        let id: UUID
+        let name: String
+        let colour: SwatchColour
     }
-    /// The time, moved on every half minute: what Upcoming's countdowns are worked out from.
-    var now = Date()
-    var fetching = false
-    private var calendarFetch: (url: String, task: Task<CalendarCache, Never>)?
-    private var calendarUrlFetched = ""
+
+    private var sources: [CalendarSource] = []
+    private var caches = CalendarFeedCaches()
+    private var merged = MergedCalendar([])
+    private(set) var settingsProblem: String?
+    private var fetches: [UUID: Task<Void, Never>] = [:]
     private var reminded = Set<String>()
     private var timers: [Timer] = []
+    var now = Date()
+
+    var calendars: [Label] { sources.map { Label(id: $0.id, name: $0.name, colour: $0.colour) } }
+    var hasCalendars: Bool { sources.contains { !$0.address.isEmpty } }
+    var fetching: Bool { !fetches.isEmpty }
+    var hasUpdated: Bool { caches.values.contains { $0.updatedAt != nil } }
+    var hasFailures: Bool { caches.values.contains { $0.error != nil } }
+    var nextColour: SwatchColour { CalendarSource.nextColour(sources) }
+    var rawEvents: [CalendarEvent] { merged.events }
+    var events: [CalendarEvent] {
+        let config = config
+        return rawEvents.filter { !ignoredEvent($0.title, config.ignoredEvents) && !isIgnored($0, config.ignoredCalendarEvents) }
+    }
+
+    func sourceIDs(for event: CalendarEvent) -> [UUID] { merged.sourcesByEvent[event.id] ?? [] }
+
+    func labels(for event: CalendarEvent) -> [Label] { labels(for: sourceIDs(for: event)) }
+
+    func labels(for ids: [UUID]?) -> [Label] {
+        guard let ids, !ids.isEmpty else { return [] }
+        return calendars.filter { ids.contains($0.id) }
+    }
+
+    func status(for id: UUID) -> String {
+        guard let source = sources.first(where: { $0.id == id }) else { return "Not fetched yet" }
+        guard !source.address.isEmpty else { return "No address from your shell" }
+        let fetchID = source.fetchID
+        if fetches[fetchID] != nil { return "Updating…" }
+        if let failure = caches[fetchID]?.failure { return failure }
+        if let updated = parseISO(caches[fetchID]?.updatedAt) { return "Updated \(shortWeekday(updated)) at \(hhmm(updated))" }
+        return "Not fetched yet"
+    }
 
     func start() {
-        // An address set in an earlier session counts as already fetched, so this only fetches if stale.
-        calendarUrlFetched = calendarAddress
+        do {
+            sources = try CalendarSource.load()
+            caches.setSources(sources)
+            merge()
+        } catch {
+            settingsProblem = "Oatcake couldn’t read the saved calendar settings. Your private addresses haven’t been changed."
+        }
         refresh()
         checkReminders()
         timers.append(Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in Task { @MainActor in self.refresh() } })
     }
 
-    /// The calendar's private iCal address. "" = no calendar.
-    private var calendarAddress: String { Secrets.get(.calendar).trimmed }
-
-    /// Fetched at most once an hour (checked every 5 minutes, so a Mac that slept catches up),
-    /// straight away when its address changes, and whenever the refresh button is pressed.
     func refresh(force: Bool = false) {
-        let url = calendarAddress
-        guard !url.isEmpty else {
-            cache = nil
-            return
-        }
-        // Joins a fetch already running for this address.
-        if calendarFetch?.url == url { return }
-        let cached = CalendarCache.load()
-        if cache == nil { cache = cached }
-        if !force, url == calendarUrlFetched, !cached.isStale() { return }
-        fetching = true
-        let task = Task { await fetchCalendar(url) }
-        calendarFetch = (url, task)
-        Task {
-            let cache = await task.value
-            // The address changed meanwhile: an older fetch's result is thrown away.
-            guard calendarFetch?.url == url else { return }
-            calendarFetch = nil
-            fetching = false
-            calendarUrlFetched = url
-            try? cache.save()
-            self.cache = cache
-            changed()
+        for source in sources where !source.address.isEmpty {
+            let id = source.fetchID
+            guard fetches[id] == nil else { continue }
+            let previous = caches[id] ?? CalendarCache()
+            guard force || previous.isStale() else { continue }
+            fetches[id] = Task { [weak self] in
+                let cache = await fetchCalendar(source.address, previous: previous)
+                guard let self, !Task.isCancelled else { return }
+                self.fetches[id] = nil
+                if self.caches.receive(cache, from: id) { self.merge() }
+            }
         }
     }
 
-    /// A new (or no) calendar address: forget the old one's events and fetch the new one.
-    func addressChanged() {
-        calendarFetch = nil
-        fetching = false
-        calendarUrlFetched = ""
-        try? FileManager.default.removeItem(at: Paths.calendar)
-        cache = nil
-        if !calendarAddress.isEmpty { refresh(force: true) }
+    func save(id: UUID?, name: String, colour: SwatchColour, address: String) throws {
+        if let settingsProblem { throw OatcakeError(settingsProblem) }
+        let name = name.trimmed
+        guard !name.isEmpty else { throw OatcakeError("Give this calendar a name.") }
+        var updated = sources
+        if let id {
+            guard let index = updated.firstIndex(where: { $0.id == id }) else { return }
+            updated[index].name = name
+            updated[index].colour = colour
+            if !address.trimmed.isEmpty {
+                try updated[index].replaceAddress(CalendarSource.validatedAddress(address))
+            }
+        } else {
+            guard !address.trimmed.isEmpty else { throw OatcakeError("Paste the calendar’s private iCal address.") }
+            updated.append(CalendarSource(name: name, colour: colour, address: try CalendarSource.validatedAddress(address)))
+        }
+        try apply(updated)
+    }
+
+    func remove(_ id: UUID) throws {
+        try apply(sources.filter { $0.id != id })
+    }
+
+    private func apply(_ updated: [CalendarSource]) throws {
+        if let settingsProblem { throw OatcakeError(settingsProblem) }
+        do { try CalendarSource.save(updated) }
+        catch { throw OatcakeError("Oatcake couldn’t save the calendar settings. Nothing was changed.") }
+        let active = Set(updated.map(\.fetchID))
+        for source in sources where !active.contains(source.fetchID) {
+            fetches.removeValue(forKey: source.fetchID)?.cancel()
+        }
+        caches.setSources(updated)
+        sources = updated
+        merge()
+        refresh()
+    }
+
+    private func merge() {
+        merged = MergedCalendar(sources.map { ($0.id, caches[$0.fetchID]?.events ?? []) })
+        changed()
     }
 
     // Call reminders: 5 minutes before each call, a notification whose button opens the call and
@@ -93,8 +139,43 @@ final class CalendarController {
         }
     }
 
-    /// The calendar event happening now (or starting within ten minutes), if any, unless it's in `recorded`.
     func currentEvent(unless recorded: Set<String> = []) -> CalendarEvent? {
         eventHappening(events, at: Date(), unless: recorded)
+    }
+}
+
+struct CalendarBadges: View {
+    let calendars: [CalendarController.Label]
+    var describe = false
+
+    var body: some View {
+        if !calendars.isEmpty {
+            if describe {
+                let names = calendars.map(\.name).joined(separator: ", ")
+                dots.accessibilityElement(children: .ignore).accessibilityLabel(names).help(names)
+            } else {
+                dots.accessibilityHidden(true)
+            }
+        }
+    }
+
+    private var dots: some View {
+        let diameter: CGFloat = 7
+        let step: CGFloat = 5
+        let borderWidth: CGFloat = 1.5
+        return Canvas { context, _ in
+            for (index, calendar) in calendars.enumerated() {
+                let bounds = CGRect(x: CGFloat(index) * step, y: 0, width: diameter, height: diameter)
+                var dot = Path(ellipseIn: bounds)
+                if index + 1 < calendars.count {
+                    // Let the row’s actual background show as a thin border around the dot in front.
+                    let border = bounds.offsetBy(dx: step, dy: 0).insetBy(dx: -borderWidth, dy: -borderWidth)
+                    dot = dot.subtracting(Path(ellipseIn: border))
+                }
+                context.fill(dot, with: .color(calendar.colour.swatch))
+            }
+        }
+        .frame(width: diameter + CGFloat(calendars.count - 1) * step, height: diameter)
+        .fixedSize()
     }
 }

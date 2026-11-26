@@ -14,6 +14,7 @@ public struct TreeNode: Identifiable, Equatable, Hashable, Sendable {
     /// Meetings only, from meeting.json.
     public var title: String?
     public var summaryTemplate: String?
+    public var calendarIDs: [UUID]?
     public var startedAt: Date?
     public var endedAt: Date?
     /// Imported from a Granola export.
@@ -47,6 +48,8 @@ public struct MeetingMeta: Codable, Equatable, Sendable {
     public var startedAt: String?
     public var endedAt: String?
     public var participants: [String]?
+    /// Local calendar identifiers only; never store feed addresses or calendar names with a meeting.
+    public var calendarIDs: [UUID]?
     public var source: String?
     /// The recording it was saved from (Oatcake's own recordings only).
     public var recording: String?
@@ -111,7 +114,7 @@ public final class Meetings: @unchecked Sendable {
                 // A hand-edited meeting.json shouldn't hide the meeting.
                 let meta = tryJSON(MeetingMeta.self, metaFile)
                 return TreeNode(name: name, path: rel, kind: .meeting, title: meta?.title, summaryTemplate: meta?.template,
-                                startedAt: parseISO(meta?.startedAt),
+                                calendarIDs: meta?.calendarIDs, startedAt: parseISO(meta?.startedAt),
                                 endedAt: parseISO(meta?.endedAt), granola: meta?.source == "granola",
                                 preview: preview(full.appendingPathComponent("summary.md")))
             }

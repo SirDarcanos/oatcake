@@ -157,7 +157,7 @@ switches in Settings › General.
 
 While a call is being recorded the menu bar shows its running time, with **Stop Recording…**
 (which asks first) in its menu. Otherwise, with a calendar connected, it shows the time until your
-next call (Settings › Calendar › Show my next call in the menu bar), and its menu lists up to six calls
+next call (Settings › Calendars › Reminders › Show my next call in the menu bar), and its menu lists up to six calls
 coming up today and tomorrow (click one for its New recording screen), **New Recording…**, **Open
 Oatcake** and **Quit Oatcake**. The menu bar item is drawn by a third helper, `Oatcake
 --menu-bar`, a menu-bar-only app: macOS doesn't show a Dock app's menu bar menu while another app

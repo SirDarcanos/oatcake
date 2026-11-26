@@ -18,6 +18,7 @@ public struct Recording: Codable, Identifiable, Equatable, Hashable, Sendable {
     /// The calendar event it was started from, if any, and who else was invited to it.
     public var eventId: String?
     public var attendees: [String]?
+    public var calendarIDs: [UUID]?
     public var startedAt: Date
     /// When recording stopped (from the recorder's meta.json).
     public var endedAt: Date?
@@ -68,6 +69,7 @@ struct CallInfo: Codable {
     var startedAt: String
     var eventId: String?
     var attendees: [String]?
+    var calendarIDs: [UUID]?
     var summaryTemplate: String?
 }
 
@@ -127,11 +129,14 @@ public enum Recordings {
         /// The other people on the event's invite: offered as names in Who's who.
         public var attendees: [String] = []
         public var summaryTemplate: String?
-        public init(eventId: String? = nil, prep: [String] = [], attendees: [String] = [], summaryTemplate: String? = nil) {
+        public var calendarIDs: [UUID]
+        public init(eventId: String? = nil, prep: [String] = [], attendees: [String] = [], summaryTemplate: String? = nil,
+                    calendarIDs: [UUID] = []) {
             self.eventId = eventId
             self.prep = prep
             self.attendees = attendees
             self.summaryTemplate = summaryTemplate
+            self.calendarIDs = calendarIDs
         }
     }
 
@@ -144,10 +149,11 @@ public enum Recordings {
         let id = isoString(startedAt).replacingOccurrences(of: ":", with: "-").replacingOccurrences(of: ".", with: "-")
         let dir = recordings.appendingPathComponent(id, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let calendarIDs = options.calendarIDs.isEmpty ? nil : options.calendarIDs
         try writeAtomic(dir.appendingPathComponent("call.json"),
                         try encodeJSON(CallInfo(title: title, folder: folder, startedAt: isoString(startedAt), eventId: options.eventId,
                                                 attendees: options.attendees.isEmpty ? nil : options.attendees,
-                                                summaryTemplate: options.summaryTemplate)))
+                                                calendarIDs: calendarIDs, summaryTemplate: options.summaryTemplate)))
         let prep = options.prep.map(\.trimmed).filter { !$0.isEmpty }
         if !prep.isEmpty { try saveNotes(id, prep.map { Note(at: nil, text: $0) }, recordings: recordings) }
         try setMic(dir, uid: micUid)
@@ -163,7 +169,8 @@ public enum Recordings {
             throw error
         }
         return Recording(id: id, dir: dir, title: title, folder: folder, summaryTemplate: options.summaryTemplate, eventId: options.eventId,
-                         attendees: options.attendees.isEmpty ? nil : options.attendees, startedAt: startedAt, state: .recording)
+                         attendees: options.attendees.isEmpty ? nil : options.attendees, calendarIDs: calendarIDs,
+                         startedAt: startedAt, state: .recording)
     }
 
     public static func status(_ rec: Recording) -> RecorderStatus {
@@ -238,7 +245,7 @@ public enum Recordings {
             let state: Recording.State = has("saved.json") ? .saved : has("analysis.json") ? .processed : has(RecorderFile.meta) ? .recorded : .recording
             let endedAt = tryJSON(RecorderMeta.self, dir.appendingPathComponent(RecorderFile.meta)).flatMap { parseISO($0.endedAt) }
             return Recording(id: id, dir: dir, title: call.title, folder: call.folder, summaryTemplate: call.summaryTemplate,
-                             eventId: call.eventId, attendees: call.attendees,
+                             eventId: call.eventId, attendees: call.attendees, calendarIDs: call.calendarIDs,
                              startedAt: parseISO(call.startedAt) ?? Date(), endedAt: endedAt, state: state)
         }
     }
