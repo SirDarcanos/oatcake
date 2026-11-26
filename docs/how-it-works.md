@@ -238,10 +238,11 @@ she/her/hers it writes is changed to they/them/their afterwards, with the verb a
 
 ### Reading and editing
 
-Tabs: Summary (with the meeting's to-dos at the top), Transcript and My notes (⌘1–⌘3), and Draft
-for Sharing (⌘4) in a meeting that has [one](#draft-for-sharing), each
+Tabs, at the left of the toolbar: Summary (with the meeting's to-dos at the top), Transcript and
+My notes (⌘1–⌘3), and Draft for Sharing (⌘4) in a meeting that has [one](#draft-for-sharing), each
 Rendered or as editable Markdown from the switch at the top right of the note (saved as you type;
-Summary shows `todo.md` and `summary.md`). **Copy** puts the tab you're on (the summary with its
+Summary shows `todo.md` and `summary.md`). Everything else that can be done to the meeting is in
+the **⋯** menu at the right of the toolbar. **Copy** puts the tab you're on (the summary with its
 to-dos, the transcript, or your notes) on the clipboard under the meeting's title and date,
 formatted for Google Docs, Pages or mail and as Markdown for anything that only takes plain text,
 and **Share** sends the same text with Mail, Messages or another app.
@@ -258,8 +259,8 @@ future meetings.
 ### Regenerate and summary templates
 
 To write a summary or its to-dos again (after changing the instructions in Settings › Summaries,
-say), choose **Regenerate › Regenerate summary** or **Regenerate to-dos** in the Summary tab's
-toolbar and confirm. With [summary templates](settings.md#summaries) set up, Regenerate summary
+say), choose **Regenerate Summary** or **Regenerate To-dos** from the **⋯** menu on the Summary
+tab and confirm. With [summary templates](settings.md#summaries) set up, Regenerate Summary
 lists them: the meeting's summary is written with the one you pick, and the meeting keeps it for
 any summary written of it later. Only that part is asked for and replaced, edits and ticks
 included; the rest of the meeting stays as it is. The old one stays until the new one is ready,
@@ -267,7 +268,8 @@ and stays if it fails or is changed somewhere else meanwhile.
 
 ### Draft for sharing
 
-**Draft for Sharing…** in the Summary tab's toolbar has the model write the meeting's summary and
+**Draft for Sharing…** in the **⋯** menu on the Summary tab has the model write the meeting's
+summary and
 to-dos again for other people to read, following your
 [draft for sharing instructions](settings.md#summaries), plus anything you ask for that draft alone
 ("shorter, and leave out the budget"). It's given the summary and to-dos as they are, with your
@@ -295,7 +297,7 @@ your tasks somewhere else, turn off [Collect to-dos](settings.md#general) in Set
 
 Organise meetings by dragging them onto folders; ⌘-click or ⇧-click selects several, and they all
 move. Right-click a meeting for **Rename…**, **Show in Finder** or **Move to Trash**, or several for
-**Show in Finder** or **Move to Trash** (⌘⌫ in the File menu does the same); **Show in Finder** is in the meeting's toolbar too. Renaming
+**Show in Finder** or **Move to Trash** (⌘⌫ in the File menu does the same); **Show in Finder** is in the meeting's **⋯** menu too. Renaming
 a meeting changes its title (in `meeting.json`) and its folder's name, which keeps its date.
 Folders can hold folders. Click the arrow next to a folder's name to show or hide its subfolders.
 Right-click a folder for **New Folder Inside…**, **Rename…**, **Show in Finder** or **Move to
@@ -304,7 +306,8 @@ column's width drags, like the sidebar's.
 
 ### Rename Speakers
 
-**Rename Speakers** in a meeting's toolbar puts a wrong name right after the meeting is saved, or
+**Rename Speakers…** in a meeting's **⋯** menu puts a wrong name right after the meeting is saved,
+or
 names a "Voice 2": it lists the transcript's speakers, each with their first words, and a field for
 another name. Only that meeting changes: the transcript's labels (never what was said), the names
 in its summary and to-dos, and its people in `meeting.json`. Two names can swap, and giving two

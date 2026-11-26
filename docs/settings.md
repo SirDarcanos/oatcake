@@ -141,7 +141,7 @@ keeps its lowest level; one on Ollama that can't reason at all is asked again wi
   different summary (a one-to-one you lead, one with your own lead, a team meeting). **Add
   Template** starts one as a copy of the summary instructions; change its name and instructions in
   place, or **Delete…** it. Pick one on [New recording](how-it-works.md#1-record) or change it from
-  [Regenerate › Regenerate summary](how-it-works.md#regenerate-and-summary-templates). The meeting
+  [Regenerate Summary](how-it-works.md#regenerate-and-summary-templates). The meeting
   keeps the choice without changing your standard summary instructions.
   A meeting keeps its template by name: once that template is renamed or deleted, the meeting is
   back on the summary instructions, until a template is given that name again. A new name is saved
