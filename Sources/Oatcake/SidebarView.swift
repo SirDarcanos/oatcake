@@ -131,14 +131,22 @@ struct SidebarView: View {
         }
         .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $draft)
-            Button("Rename") { if let node = renaming { model.library.rename(node.path, to: draft) } }.disabled(draft.trimmed.isEmpty)
+            Button("Rename") {
+                guard let node = renaming, !model.library.rename(node.path, to: draft) else { return }
+                askAgain { renaming = node }
+            }
+            .disabled(draft.trimmed.isEmpty)
             Button("Cancel", role: .cancel) {}
         }
         .alert("New folder", isPresented: Binding(get: { newFolderIn != nil }, set: { if !$0 { newFolderIn = nil } })) {
             TextField("Folder name", text: $draft)
             Button("Create") {
                 guard let parent = newFolderIn, !draft.trimmed.isEmpty else { return }
-                if model.library.createFolder(in: parent, named: draft) != nil, !parent.isEmpty { open.insert(parent) }
+                if model.library.createFolder(in: parent, named: draft) == nil {
+                    askAgain { newFolderIn = parent }
+                } else if !parent.isEmpty {
+                    open.insert(parent)
+                }
             }
             .disabled(draft.trimmed.isEmpty)
             Button("Cancel", role: .cancel) {}
@@ -321,6 +329,15 @@ struct SidebarView: View {
     /// "21:10" today, otherwise "4 Nov at 21:10": tells two recordings of the same call apart.
     private func jobWhen(_ d: Date) -> String {
         Calendar.current.isDateInToday(d) ? timeOfDay(d) : dateAndTime(d)
+    }
+}
+
+/// A name or title that couldn't be used (the note at the bottom of the window says why) is asked for
+/// again with what was typed, once the alert that took it has gone.
+@MainActor func askAgain(_ ask: @escaping @MainActor () -> Void) {
+    Task {
+        try? await Task.sleep(for: .milliseconds(300))
+        ask()
     }
 }
 

@@ -325,6 +325,8 @@ struct ContentView: View {
     @Environment(AppModel.self) private var model
     /// The new title being typed for a meeting being renamed.
     @ViewState private var title = ""
+    /// Renaming is being asked again after it failed: the title stays as typed.
+    @ViewState private var keepTitle = false
     /// The sidebar is showing, in either layout: hidden in one, it stays hidden in the other.
     @AppStorage("sidebarShown") private var sidebarShown = true
 
@@ -380,10 +382,17 @@ struct ContentView: View {
             Text(confirmation.text)
         }
         // Rename… from any of a meeting's menus.
-        .onChange(of: model.renaming) { title = model.renaming.map(meetingTitle) ?? "" }
+        .onChange(of: model.renaming) {
+            if let node = model.renaming, !keepTitle { title = meetingTitle(node) }
+            keepTitle = false
+        }
         .alert("Rename meeting", isPresented: Binding(get: { model.renaming != nil }, set: { if !$0 { model.renaming = nil } })) {
             TextField("Title", text: $title)
-            Button("Rename") { if let node = model.renaming { model.library.retitle(node.path, to: title) } }.disabled(title.trimmed.isEmpty)
+            Button("Rename") {
+                guard let node = model.renaming, !model.library.retitle(node.path, to: title) else { return }
+                askAgain { keepTitle = true; model.renaming = node }
+            }
+            .disabled(title.trimmed.isEmpty)
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Changes the meeting’s title and its folder’s name.")

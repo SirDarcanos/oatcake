@@ -382,7 +382,9 @@ several) and opens the next one, as in Mail, and ⌘Z puts back what was just mo
 its folder (into Finder or a mail, say), or its summary where only text goes.
 Folders can hold folders. Click the arrow next to a folder's name, or press → and ←, to show or hide
 its subfolders. Right-click a folder for **New Folder Inside…**, **Rename…** (or press Return),
-**Show in Finder** or **Move to Trash** (or ⌘⌫, which asks first if it holds meetings). Finder and
+**Show in Finder** or **Move to Trash** (or ⌘⌫, which asks first if it holds meetings). A folder
+or meeting that can't be created or renamed (another already has the name, say) is asked about
+again with what you typed, and the note at the bottom of the window says why. Finder and
 the app stay in step: a folder or meeting that goes from Finder while it's open gives way to the
 nearest folder that's still there. The meeting list's width drags, like the sidebar's.
 
