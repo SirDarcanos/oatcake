@@ -10,6 +10,8 @@ public enum Paths {
     public static let voiceprints = data.appendingPathComponent("voiceprints.json")
     public static let config = data.appendingPathComponent("config.json")
     public static let prep = data.appendingPathComponent("prep.json")
+    /// Which call reminders have gone out (SentReminders).
+    public static let reminders = data.appendingPathComponent("reminders.json")
     /// The calendar's private address (Secrets). Not "secrets.json": that's the Electron version's file.
     public static let secretFile = data.appendingPathComponent("private.json")
     public static let updateLog = data.appendingPathComponent("update.log")

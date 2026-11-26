@@ -142,7 +142,7 @@ public struct Config: Codable, Equatable, Sendable {
     public var keepAudio: Bool
     /// The microphone to record. nil follows the Mac's input (System Settings › Sound).
     public var mic: MicChoice?
-    /// A notification 5 minutes before each call, with a button to open it and start recording.
+    /// Notifications before each call (reminderMinutes), with a button to open it and start recording.
     public var callReminders: Bool
     /// Look for a new release 20 seconds after launch and once a day.
     public var updateCheck: Bool
@@ -187,6 +187,8 @@ public struct Config: Codable, Equatable, Sendable {
     public static let defaultIgnoredEvents = ["Focus time", "Out of office", "Working location", "Task"]
     /// Events ignored one at a time from Upcoming, or a recurring one's whole series (isIgnored).
     public var ignoredCalendarEvents: [IgnoredEvent] = []
+    /// How many minutes before each call its reminders come, one reminder for each (5 and 1, say).
+    public var reminderMinutes = [5]
 
     public var meetingsRoot: URL { URL(fileURLWithPath: outputDir, isDirectory: true) }
 
@@ -260,6 +262,7 @@ public struct Config: Codable, Equatable, Sendable {
         sharingInstructions = (try? c.decodeIfPresent(String.self, forKey: .sharingInstructions)) ?? base.sharingInstructions
         ignoredEvents = (try? c.decodeIfPresent([String].self, forKey: .ignoredEvents)) ?? base.ignoredEvents
         ignoredCalendarEvents = (try? c.decodeIfPresent([IgnoredEvent].self, forKey: .ignoredCalendarEvents)) ?? base.ignoredCalendarEvents
+        reminderMinutes = (try? c.decodeIfPresent([Int].self, forKey: .reminderMinutes)) ?? base.reminderMinutes
         afterCall = (try? c.decodeIfPresent(AfterCall.self, forKey: .afterCall)) ?? base.afterCall
         todosEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .todosEnabled)) ?? base.todosEnabled
         mcpEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .mcpEnabled)) ?? false
@@ -290,6 +293,7 @@ public struct Config: Codable, Equatable, Sendable {
         try c.encode(sharingInstructions, forKey: .sharingInstructions)
         try c.encode(ignoredEvents, forKey: .ignoredEvents)
         try c.encode(ignoredCalendarEvents, forKey: .ignoredCalendarEvents)
+        try c.encode(reminderMinutes, forKey: .reminderMinutes)
         try c.encode(afterCall, forKey: .afterCall)
         try c.encode(todosEnabled, forKey: .todosEnabled)
         try c.encode(mcpEnabled, forKey: .mcpEnabled)
@@ -298,7 +302,7 @@ public struct Config: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case mcpEnabled, mcpApprovedRoot
-        case myName, outputDir, asrModel, llm, keepAudio, mic, callReminders, updateCheck, runInBackground, callNotice, autoStop, liveTranscript, liveVoices, jargon, menuBarNextCall, summaryInstructions, todoInstructions, summaryTemplates, sharingInstructions, ignoredEvents, ignoredCalendarEvents, afterCall, todosEnabled
+        case myName, outputDir, asrModel, llm, keepAudio, mic, callReminders, updateCheck, runInBackground, callNotice, autoStop, liveTranscript, liveVoices, jargon, menuBarNextCall, summaryInstructions, todoInstructions, summaryTemplates, sharingInstructions, ignoredEvents, ignoredCalendarEvents, afterCall, todosEnabled, reminderMinutes
     }
 
     /// For the model: how to spell the names and terms you've listed, or "" when there are none.

@@ -7,6 +7,8 @@ import SwiftUI
 final class CalendarController {
     var app = AppServices()
     var changed: @MainActor () -> Void = {}
+    /// The calendar event being recorded now, if any: it isn't reminded of.
+    var recordingEvent: @MainActor () -> String? = { nil }
     private var config: Config { app.config() }
 
     struct Label: Identifiable {
@@ -20,7 +22,7 @@ final class CalendarController {
     private var merged = MergedCalendar([])
     private(set) var settingsProblem: String?
     private var fetches: [UUID: Task<Void, Never>] = [:]
-    private var reminded = Set<String>()
+    private var reminded = SentReminders()
     private var timers: [Timer] = []
     var now = Date()
 
@@ -56,6 +58,7 @@ final class CalendarController {
     }
 
     func start() {
+        reminded = SentReminders.load()
         do {
             sources = try CalendarSource.load()
             caches.setSources(sources)
@@ -126,18 +129,15 @@ final class CalendarController {
         changed()
     }
 
-    // Call reminders: 5 minutes before each call, a notification whose button opens the call and
-    // starts recording it. Clicking the notification itself opens New recording for the event.
+    // Call reminders: before each call, as many minutes before as Settings › Calendars says (once
+    // for each), a notification whose button opens the call and starts recording it. Clicking the
+    // notification itself opens New recording for the event.
     func checkReminders() {
         guard config.callReminders else { return }
-        let now = Date()
-        for event in events where !event.allDay && !reminded.contains(event.id) {
-            let until = event.startDate.timeIntervalSince(now)
-            // In the five minutes before it starts (or the first minute after, if the Mac was asleep).
-            guard until <= 300, until >= -60 else { continue }
-            reminded.insert(event.id)
-            Reminders.show(event)
-        }
+        let due = reminded.due(events, minutes: config.reminderMinutes, at: Date(), recording: recordingEvent())
+        guard !due.isEmpty else { return }
+        try? reminded.save()
+        due.forEach(Reminders.show)
     }
 
     func currentEvent(unless recorded: Set<String> = []) -> CalendarEvent? {

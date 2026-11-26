@@ -476,4 +476,40 @@ import Testing
         #expect(days.count == 20)
         #expect(days.allSatisfy { gregorian.date(byAdding: .day, value: 1, to: $0.startDate) == $0.endDate })
     }
+
+    /// Reminders: each call once for each of its times, one reminder when several have come at once,
+    /// none for the call being recorded, and none again after Oatcake is opened again.
+    @Test func callReminders() throws {
+        func event(_ id: String, _ start: String, allDay: Bool = false) -> CalendarEvent {
+            CalendarEvent(id: id, title: id, start: start, end: "2026-11-18T11:00:00.000Z", allDay: allDay, attendees: [])
+        }
+        let call = event("Weekly sync", "2026-11-18T10:00:00.000Z"), offsite = event("Offsite", "2026-11-18T00:00:00.000Z", allDay: true)
+        let recorded = event("Being recorded", "2026-11-18T10:00:00.000Z")
+        let events = [offsite, call, recorded]
+        func at(_ time: String) -> Date { parseISO("2026-11-18T\(time)Z")! }
+        var sent = SentReminders()
+        let due = { (sent: inout SentReminders, time: String) in sent.due(events, minutes: [5, 1], at: at(time), recording: recorded.id).map(\.id) }
+        #expect(due(&sent, "09:54:00").isEmpty)
+        #expect(due(&sent, "09:55:00") == ["Weekly sync"] && due(&sent, "09:56:00").isEmpty)
+        #expect(due(&sent, "09:59:00") == ["Weekly sync"] && due(&sent, "09:59:30").isEmpty && due(&sent, "10:00:30").isEmpty)
+
+        // Opened a minute before: one reminder for both times, and none after it.
+        var late = SentReminders()
+        #expect(due(&late, "09:59:10") == ["Weekly sync"] && due(&late, "09:59:40").isEmpty)
+        // Too late to remind: more than a minute after it started.
+        var later = SentReminders()
+        #expect(due(&later, "10:01:10").isEmpty)
+
+        // Kept in a file, so opening Oatcake again doesn't remind again.
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-reminders-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        var first = SentReminders()
+        #expect(due(&first, "09:56:00") == ["Weekly sync"])
+        try first.save(to: file)
+        var reopened = SentReminders.load(file)
+        #expect(reopened == first && due(&reopened, "09:57:00").isEmpty && due(&reopened, "09:59:00") == ["Weekly sync"])
+
+        // Older settings without the times have the one reminder they had, 5 minutes before.
+        #expect(try JSONDecoder().decode(Config.self, from: Data("{}".utf8)).reminderMinutes == [5])
+    }
 }

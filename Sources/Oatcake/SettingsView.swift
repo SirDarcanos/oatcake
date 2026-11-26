@@ -195,9 +195,12 @@ struct SettingsView: View {
         Section("Reminders") {
             Toggle(isOn: bind(\.callReminders)) {
                 Text("Remind me before calls")
-                Text("5 minutes before each call, a notification with a button that opens the call and starts recording, ready for notes.")
+                Text("Before each call, a notification with a button that opens the call and starts recording, ready for notes.")
             }
-            if model.config.callReminders { notificationsHint }
+            if model.config.callReminders {
+                ReminderTimesRows(minutes: bind(\.reminderMinutes))
+                notificationsHint
+            }
             Toggle(isOn: bind(\.menuBarNextCall)) {
                 Text("Show my next call in the menu bar")
                 Text("The time until it starts, with what’s coming up in its menu.")

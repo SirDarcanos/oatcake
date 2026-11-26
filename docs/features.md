@@ -42,7 +42,8 @@ Everything Oatcake does today, with a link to where each is described. Planned w
   folder named like it or a new one for a recurring meeting. [Calendar settings](settings.md#calendars)
 - **Join the call** on Home opens a Meet, Zoom or Teams call without starting a recording.
   [Calendar settings](settings.md#calendars)
-- A reminder 5 minutes before each call, whose button opens the call and starts recording.
+- Reminders before each call (5 minutes before, or as many as you like at the times you choose),
+  whose button opens the call and starts recording.
   [Calendar settings](settings.md#calendars)
 - Your next call in the menu bar, with what's coming up in its menu.
   [The menu bar](how-it-works.md#the-menu-bar)
