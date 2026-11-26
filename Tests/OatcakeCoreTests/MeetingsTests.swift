@@ -33,6 +33,47 @@ import Testing
         #expect(meetings.recordingAudio(rel)?.path == audio.resolvingSymlinksInPath().path)
     }
 
+    /// A folder in the Meetings folder that's a link to somewhere outside it isn't listed, read or
+    /// written through, though what it leads to looks like a meeting. A link to a meeting inside the
+    /// folder works as that meeting.
+    @Test func linksOutOfTheFolderAreRefused() throws {
+        let fm = FileManager.default
+        let tmp = fm.temporaryDirectory.appendingPathComponent("oatcake-linked-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: tmp) }
+        let root = tmp.appendingPathComponent("Meetings")
+        let outside = tmp.appendingPathComponent("Elsewhere/2026-11-05 1400 Weekly sync")
+        let inside = root.appendingPathComponent("Team/2026-11-06 1000 Planning")
+        for dir in [outside, inside] {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            try #"{"title":"Weekly sync"}"#.write(to: dir.appendingPathComponent("meeting.json"), atomically: true, encoding: .utf8)
+            try "First line of prose.\n".write(to: dir.appendingPathComponent("summary.md"), atomically: true, encoding: .utf8)
+        }
+        try fm.createSymbolicLink(atPath: root.appendingPathComponent("Linked meeting").path, withDestinationPath: "../Elsewhere/2026-11-05 1400 Weekly sync")
+        try fm.createSymbolicLink(atPath: root.appendingPathComponent("Linked folder").path, withDestinationPath: outside.deletingLastPathComponent().path)
+        try fm.createSymbolicLink(atPath: root.appendingPathComponent("Planning").path, withDestinationPath: "Team/2026-11-06 1000 Planning")
+        let meetings = Meetings(root: root)
+
+        let tree = meetings.tree()
+        #expect(tree.find("Linked meeting") == nil && tree.find("Linked folder") == nil)
+        #expect(Set(tree.allMeetings.map(\.path)) == ["Planning", "Team/2026-11-06 1000 Planning"])
+        for rel in ["Linked meeting", "Linked folder/2026-11-05 1400 Weekly sync"] {
+            #expect(throws: OatcakeError.self) { try meetings.read(rel) }
+            #expect(throws: OatcakeError.self) { try meetings.write(rel, .summary, "Written through the link.") }
+            #expect(throws: OatcakeError.self) { try meetings.addTodo(rel, "Send the deck") }
+        }
+        #expect(throws: OatcakeError.self) { try meetings.createFolder(in: "Linked folder", named: "New") }
+        #expect(meetings.search("prose", in: [("Linked meeting", "Weekly sync")]).isEmpty)
+        #expect(readText(outside.appendingPathComponent("summary.md")) == "First line of prose.\n")
+        #expect(try fm.contentsOfDirectory(atPath: outside.path).sorted() == ["meeting.json", "summary.md"])
+        #expect(try fm.contentsOfDirectory(atPath: outside.deletingLastPathComponent().path) == ["2026-11-05 1400 Weekly sync"])
+
+        // The link inside the folder is read and written as the meeting it leads to.
+        #expect(tree.find("Planning")?.preview == "First line of prose.")
+        #expect(try meetings.read("Planning").summary == "First line of prose.\n")
+        try meetings.write("Planning", .notes, "Bring the figures.")
+        #expect(readText(inside.appendingPathComponent("notes.md")) == "Bring the figures.")
+    }
+
     @Test func folderNames() {
         var c = DateComponents()
         (c.year, c.month, c.day, c.hour, c.minute) = (2026, 11, 5, 14, 0)

@@ -136,8 +136,9 @@ public final class Meetings: @unchecked Sendable {
         let fm = FileManager.default
         try? fm.createDirectory(at: root, withIntermediateDirectories: true)
         var found = Set<String>()
-        func walk(_ rel: String) -> TreeNode {
-            let full = (try? resolveInside(root, rel)) ?? root
+        func walk(_ rel: String) -> TreeNode? {
+            // A link that leads out of the Meetings folder isn't listed: nothing could be read through it.
+            guard let full = try? resolveInside(root, rel) else { return nil }
             let name = rel.isEmpty ? root.lastPathComponent : (rel as NSString).lastPathComponent
             let metaFile = full.appendingPathComponent("meeting.json")
             if !rel.isEmpty, let modified = modificationDate(metaFile) {
@@ -149,7 +150,7 @@ public final class Meetings: @unchecked Sendable {
                 return node
             }
             let entries = (try? fm.contentsOfDirectory(at: full, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles])) ?? []
-            var children = entries.filter { fm.isDirectory($0) }.map { walk(rel.isEmpty ? $0.lastPathComponent : rel + "/" + $0.lastPathComponent) }
+            var children = entries.filter { fm.isDirectory($0) }.compactMap { walk(rel.isEmpty ? $0.lastPathComponent : rel + "/" + $0.lastPathComponent) }
             // Folders first (A–Z), then meetings, newest first.
             children.sort {
                 if $0.kind != $1.kind { return $0.kind == .folder }
@@ -159,7 +160,7 @@ public final class Meetings: @unchecked Sendable {
             }
             return TreeNode(name: name, path: rel, kind: .folder, children: children)
         }
-        let tree = walk("")
+        let tree = walk("") ?? TreeNode(name: root.lastPathComponent, path: "", kind: .folder)
         // What was kept for meetings that have gone (renamed, moved, in the Trash) goes too.
         let inMeeting = { (file: String) in found.contains((file as NSString).deletingLastPathComponent) }
         lock.withLock {
@@ -183,11 +184,9 @@ public final class Meetings: @unchecked Sendable {
 
     /// The saved recording, not the temporary tracks or speaker clips used to process a call.
     public func recordingAudio(_ rel: String) -> URL? {
+        // The folder can't be a link out of the Meetings folder (resolveInside); the file can't be a link at all.
         guard !rel.isEmpty, let dir = try? resolveInside(root, rel) else { return nil }
-        let base = root.resolvingSymlinksInPath().standardizedFileURL
-        let folder = dir.resolvingSymlinksInPath().standardizedFileURL
-        guard folder.path.hasPrefix(base.path + "/") else { return nil }
-        let file = folder.appendingPathComponent("audio.m4a")
+        let file = dir.appendingPathComponent("audio.m4a")
         guard let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
               values.isRegularFile == true, values.isSymbolicLink != true else { return nil }
         return file

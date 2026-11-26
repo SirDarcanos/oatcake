@@ -57,14 +57,36 @@ public func writeAtomic(_ url: URL, _ text: String, permissions: Int? = nil) thr
     try writeAtomic(url, Data(text.utf8), permissions: permissions)
 }
 
-/// Resolves a path relative to `root`, refusing anything that escapes it.
+/// Resolves a path relative to `root`, refusing anything that escapes it, as written or through a
+/// symbolic link: a link inside `root` counts only if it leads somewhere inside `root` too.
 public func resolveInside(_ root: URL, _ rel: String) throws -> URL {
     let base = root.standardizedFileURL
     let full = (rel.isEmpty ? base : base.appendingPathComponent(rel)).standardizedFileURL
-    if full.path != base.path && !full.path.hasPrefix(base.path + "/") {
-        throw OatcakeError("Path is outside the Meetings folder: \(rel)")
+    let outside = OatcakeError("Path is outside the Meetings folder: \(rel)")
+    guard full.path == base.path || full.path.hasPrefix(base.path + "/") else { throw outside }
+    // Only links below `root` need following: without one, a path is where it says (`root` itself
+    // may be a link; it's the folder you chose). This runs for every meeting each time the tree is
+    // read, so it's an lstat for each part, and `root` is resolved only once a link turns up.
+    var realRoot: String?
+    var path = base.path
+    var info = stat()
+    for part in full.path.dropFirst(base.path.count).split(separator: "/") {
+        path += "/" + part
+        // Nothing there (yet): nothing further along to follow.
+        guard lstat(path, &info) == 0 else { break }
+        guard info.st_mode & S_IFMT == S_IFLNK else { continue }
+        realRoot = realRoot ?? realPath(base.path)
+        // A link that leads nowhere, or round in a loop, leads nowhere inside either.
+        guard let realRoot, let target = realPath(path), target == realRoot || target.hasPrefix(realRoot + "/") else { throw outside }
     }
     return full
+}
+
+/// The path with every link in it followed, or nil when one can't be.
+private func realPath(_ path: String) -> String? {
+    guard let resolved = realpath(path, nil) else { return nil }
+    defer { free(resolved) }
+    return String(cString: resolved)
 }
 
 /// The path of `url` relative to `root` ("" for root itself).

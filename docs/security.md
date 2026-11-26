@@ -1,8 +1,11 @@
 # Security
 
 - Every path the window acts on is checked to stay inside the Meetings folder or the recordings
-  folder. The Meetings folder itself is only changed through the folder picker. The app itself
-  never records: the recorder app captures audio on its own.
+  folder, with symbolic links followed: a folder in the Meetings folder that's a link to somewhere
+  outside it isn't listed, read or written through, even if it holds a meeting, while a link to
+  a meeting elsewhere inside it works as that meeting. The MCP server follows no links at all. The
+  Meetings folder itself is only changed through the folder picker. The app itself never records:
+  the recorder app captures audio on its own.
 - Summaries and answers are drawn as Markdown with any HTML shown as text. Links in Ask's answers
   to anything but a meeting are shown as text, not made clickable.
 - Speech models are fetched from pinned commits (see [Speech models](models.md#speech-models)).
