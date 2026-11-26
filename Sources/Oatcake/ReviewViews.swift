@@ -81,6 +81,7 @@ struct ProcessingView: View {
                     .toolbarStatusPadding()
             }
             .withoutCapsule()
+            if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
             if progress?.error == nil {
                 ToolbarItem(placement: .automatic) { Button("Discard…") { model.jobs.discard(rec) } }
             }
@@ -233,6 +234,7 @@ struct ReviewView: View {
                 .toolbarStatusPadding()
         }
         .withoutCapsule()
+        if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
         ToolbarItemGroup(placement: .automatic) {
             Toggle(isOn: $showTranscript) { Text("Transcript") }.toggleStyle(.button)
             if !rechecking { Button("Discard…") { model.jobs.discard(rec) }.disabled(saved) }

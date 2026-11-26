@@ -248,12 +248,12 @@ struct MeetingView: View {
 
     // MARK: Toolbar
 
-    /// Over the meeting, as Mail puts a message's buttons over the message: the tabs; how saving is
-    /// going, while there's something to say; and one menu with everything that can be done to the
-    /// meeting. macOS gathers them at the right, before search. (.navigation would put the tabs over
-    /// the meeting list, and a flexible space doesn't move them left.)
+    /// Over the meeting: the tabs at the left; at the right, how saving is going, while there's
+    /// something to say, and one menu with everything that can be done to it. (.navigation would
+    /// put the tabs over the meeting list.)
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .automatic) { tabPicker }
+        if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
         // How saving is going stays up here, in sight wherever the note is scrolled to. Words, not a
         // button: no capsule behind them.
         if markdown || status == .todo || status == .failed {

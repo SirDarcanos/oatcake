@@ -19,6 +19,9 @@ struct MeetingListView: View {
     @ViewState private var draft = ""
     /// What the last search of every meeting's text found, and the words it was for.
     @ViewState private var found: (query: String, hits: [SearchHit])?
+    /// The column's width, which the search field above it follows. The folder's name and count take
+    /// about 175 points of the toolbar there; a wider field runs on over the meeting.
+    @ViewState private var width: CGFloat = 300
 
     var body: some View {
         // The top level lists every meeting, each labelled with the folder it's in; so does a search.
@@ -71,8 +74,19 @@ struct MeetingListView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .textBackgroundColor))
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .navigationTitle(title)
         .navigationSubtitle(subtitle)
+        // Over the list it fills: it searches every meeting, and the list shows what it finds.
+        // (.searchable puts its field at the window's right-hand end, over the meeting.)
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                ToolbarSearchField(text: Binding(get: { model.searchText }, set: { model.searchText = $0 }),
+                                   prompt: "Search meetings", focusRequest: model.searchRequest)
+                    .frame(width: min(220, max(100, width - 180)))
+                    .help("Search every meeting’s title, folder, summary, to-dos, notes and transcript (⌥⌘F)")
+            }
+        }
         // A meeting opened from elsewhere (the sidebar, a search, a reminder) ends a selection of several.
         .onChange(of: selectedPath) { picked = [] }
         // Searched again when the words change, and when a meeting does.

@@ -11,8 +11,7 @@ struct OatcakeApp: App {
             ContentView()
                 .environment(delegate.model)
                 // Room for the sidebar and the meeting list at their usual widths, and beside them the
-                // widest toolbar a screen has (Who's who's, search folded to its button) without it
-                // running over the meeting list.
+                // widest toolbar a screen has (Who's who's) without it running over the meeting list.
                 .frame(minWidth: 1180, minHeight: 560)
         }
         .defaultSize(width: 1440, height: 880)
@@ -215,7 +214,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
 struct ContentView: View {
     @Environment(AppModel.self) private var model
-    @FocusState private var searching: Bool
 
     var body: some View {
         @Bindable var model = model
@@ -231,10 +229,6 @@ struct ContentView: View {
         } detail: {
             DetailView()
         }
-        // At the right-hand end of the toolbar, as in Mail. It searches every meeting, and the list shows what it finds.
-        .searchable(text: $model.searchText, placement: .toolbar, prompt: "Search meetings")
-        .searchFocused($searching)
-        .onChange(of: model.searchRequest) { searching = true }
         .overlay(alignment: .bottom) {
             // Only one that says something went wrong takes clicks (to dismiss it).
             if let text = model.toastText { ToastView(text: text, isError: model.toastIsError) { model.dismissToast() }.allowsHitTesting(model.toastIsError) }
@@ -263,6 +257,7 @@ struct DetailView: View {
             switch model.selection {
             case .home:
                 HomeView()
+                    .toolbar { EmptyPaneToolbar() }
                     // Nothing to ask about until something is saved.
                     .safeAreaPadding(.bottom, hasMeetings ? 58 : 0)
                     .overlay(alignment: .bottom) { if hasMeetings { AskBar(path: nil) } }
@@ -278,6 +273,7 @@ struct DetailView: View {
                 if model.config.todosEnabled { TodosView() } else { blank }
             case .new(let event, let key):
                 NewRecordingView(event: event).id(key)
+                    .toolbar { EmptyPaneToolbar() }
             case .live:
                 if let rec = model.recording.live { LiveView(rec: rec) } else { blank }
             case .job(let id):
@@ -305,5 +301,6 @@ struct DetailView: View {
         Text(listedIn(model.library.tree?.find(model.folder) ?? model.library.tree).isEmpty ? "" : "Select a meeting")
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .toolbar { EmptyPaneToolbar() }
     }
 }

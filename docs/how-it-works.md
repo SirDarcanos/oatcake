@@ -55,9 +55,9 @@ your own, on your Mac or your network, instead.
 
 The window is laid out as Mail's is, in three columns: the sidebar, the meetings in the selected
 folder, and the meeting itself (or whichever other screen is open: Home, To-dos, New recording, a
-call being recorded, Who's who). One toolbar runs across the top: the folder's name and how many
-meetings it has sit over the meeting list, each screen's own controls over the right-hand pane,
-and search at the far right. **View › Hide Sidebar** (⌃⌘S), or the button beside the window's
+call being recorded, Who's who). One toolbar runs across the top: over the meeting list, the
+folder's name, how many meetings it has, and search; over the right-hand pane, that screen's own
+controls, what it is at the left and what can be done at the right. **View › Hide Sidebar** (⌃⌘S), or the button beside the window's
 buttons, hides the sidebar.
 
 The sidebar has a recording in progress, Home, To-dos, Upcoming, Needs review, folders, and any
@@ -73,7 +73,7 @@ button to start a new recording or return to the one in progress. When to-dos ar
 also shows up to five open items, earliest due first, with their assignees and due dates. Add or
 tick off to-dos on Home, or choose **View all to-dos** to manage the full list.
 
-⌘N starts a new recording, ⌥⌘F searches every meeting from the search field in the toolbar (its
+⌘N starts a new recording, ⌥⌘F searches every meeting from the search field over the meeting list (its
 title, folder, summary, to-dos, notes and transcript; the meeting list shows what it finds, and a
 meeting found by its text shows the line with the words and opens there), and ⌘F finds words in
 the transcript you're reading. ⇧⌘N makes a
@@ -251,7 +251,7 @@ Tabs, in the toolbar over the meeting: Summary (with the meeting's to-dos at the
 and My notes (⌘1–⌘3), and Draft (⌘4) in a meeting that has a [draft for sharing](#draft-for-sharing), each
 Rendered or as editable Markdown from the switch at the top right of the note (saved as you type;
 Summary shows `todo.md` and `summary.md`). Everything else that can be done to the meeting is in
-the **⋯** menu beside the tabs. **Copy** puts the tab you're on (the summary with its
+the **⋯** menu at the right of the toolbar. **Copy** puts the tab you're on (the summary with its
 to-dos, the transcript, or your notes) on the clipboard under the meeting's title and date,
 formatted for Google Docs, Pages or mail and as Markdown for anything that only takes plain text,
 and **Share** sends the same text with Mail, Messages or another app.

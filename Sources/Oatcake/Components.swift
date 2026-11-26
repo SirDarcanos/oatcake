@@ -154,6 +154,14 @@ extension View {
 /// pane, so in a narrow window there isn't room for both at full width.
 func sidePanelWidth(in paneWidth: CGFloat) -> CGFloat { min(340, max(220, paneWidth - 380)) }
 
+/// The toolbar over a screen that has nothing of its own up there (Home, New recording): a space, so
+/// the search field stays over the meeting list rather than sliding along to the window's end.
+struct EmptyPaneToolbar: ToolbarContent {
+    var body: some ToolbarContent {
+        if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
+    }
+}
+
 extension ToolbarContent {
     /// A title or a status in the toolbar, without the glass capsule macOS 26 draws behind toolbar
     /// items: in one, words read as a button.
@@ -290,3 +298,46 @@ struct SettingsPaneLink: View {
 /// SwiftUI's State property wrapper. In the macOS 27 SDK `@State` is a macro whose plugin ships only
 /// with Xcode, so with the Command Line Tools alone views use the property wrapper through this name.
 typealias ViewState<Value> = SwiftUI.State<Value>
+
+/// A search field for the toolbar: AppKit's own, so it looks and behaves as one (Escape clears it).
+/// A new `focusRequest` (⌥⌘F) puts the cursor in it.
+struct ToolbarSearchField: NSViewRepresentable {
+    @Binding var text: String
+    var prompt: String
+    var focusRequest: Int
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let field = NSSearchField()
+        field.placeholderString = prompt
+        field.sendsSearchStringImmediately = true
+        field.delegate = context.coordinator
+        // Its action also comes from the ✕ that clears it, which isn't typing.
+        field.target = context.coordinator
+        field.action = #selector(Coordinator.searched(_:))
+        context.coordinator.focused = focusRequest
+        return field
+    }
+
+    func updateNSView(_ field: NSSearchField, context: Context) {
+        context.coordinator.text = $text
+        if field.stringValue != text { field.stringValue = text }
+        if context.coordinator.focused != focusRequest {
+            context.coordinator.focused = focusRequest
+            DispatchQueue.main.async { field.window?.makeFirstResponder(field) }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+
+    final class Coordinator: NSObject, NSSearchFieldDelegate {
+        var text: Binding<String>
+        var focused = 0
+        init(text: Binding<String>) { self.text = text }
+        func controlTextDidChange(_ note: Notification) {
+            if let field = note.object as? NSSearchField { searched(field) }
+        }
+        @objc func searched(_ field: NSSearchField) {
+            if text.wrappedValue != field.stringValue { text.wrappedValue = field.stringValue }
+        }
+    }
+}

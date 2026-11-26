@@ -144,6 +144,7 @@ struct TodosView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
             }
+            if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
             ToolbarItemGroup(placement: .automatic) {
                 Picker("Group by", selection: $grouping) {
                     Text("Due date").tag(Grouping.due)

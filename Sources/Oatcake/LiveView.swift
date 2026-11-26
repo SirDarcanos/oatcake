@@ -78,6 +78,7 @@ struct LiveView: View {
             .toolbarStatusPadding()
         }
         .withoutCapsule()
+        if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
         if model.config.liveTranscript {
             ToolbarItem(placement: .automatic) {
                 Toggle(isOn: Binding(get: { showTranscript }, set: { showTranscript = $0; UserDefaults.standard.set($0, forKey: "liveTranscriptShown") })) {
