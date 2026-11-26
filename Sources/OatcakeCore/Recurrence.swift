@@ -157,7 +157,8 @@ func parseCalendar(_ calendar: ICalComponent, from: Date, to: Date) -> [Calendar
             let c = eventCalendar.dateComponents([.year, .month, .day], from: instant)
             return String(format: "%04d%02d%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
         }
-        let instants = Set(rule.occurrences(start: event.start, until: to) + rdates.filter { $0 < to })
+        // From early enough that one still going at the window's start is included.
+        let instants = Set(rule.occurrences(start: event.start, from: from.addingTimeInterval(-max(0, event.duration)), until: to) + rdates.filter { $0 < to })
         for instant in instants.sorted() where !excluded.contains(instant) && (excludedDays.isEmpty || !excludedDays.contains(day(instant))) {
             emit(instant)
         }
@@ -231,8 +232,10 @@ struct RecurrenceRule {
     }
 
     /// Occurrence start instants from DTSTART up to (not including) `limit`. Weekly meetings that began
-    /// years ago are a few hundred periods; the cap guards against odd rules.
-    func occurrences(start: ICalTime, until limit: Date) -> [Date] {
+    /// years ago are a few hundred periods; the cap guards against odd rules. An hourly or finer rule
+    /// with no COUNT starts at the last of its steps at or before `from` instead: from DTSTART, one that
+    /// began long ago (minutely, a fortnight; hourly, a couple of years) would reach the cap before the window.
+    func occurrences(start: ICalTime, from: Date = .distantPast, until limit: Date) -> [Date] {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = start.zone
         let until = until ?? untilDay.flatMap { calendar.date(from: $0) }
@@ -281,7 +284,19 @@ struct RecurrenceRule {
         }
 
         var period = 0
-        while period < 20_000 {
+        let step: Double? = switch frequency {
+        case .HOURLY: 3600
+        case .MINUTELY: 60
+        case .SECONDLY: 1
+        default: nil
+        }
+        // Each step is a whole number of hours, minutes or seconds from DTSTART, so the one to start at
+        // is a division; the BY filters are applied to each step as before.
+        if let step, count == nil, from > start.date {
+            period = Int(from.timeIntervalSince(start.date) / (step * Double(interval)))
+        }
+        let firstPeriod = period
+        while period - firstPeriod < 20_000 {
             var candidates: [Date] = []
             switch frequency {
             case .HOURLY, .MINUTELY, .SECONDLY:

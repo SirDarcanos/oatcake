@@ -460,6 +460,15 @@ import Testing
             == ["2026-11-10T09:00:00.000Z", "2026-11-10T11:00:00.000Z", "2026-11-10T13:00:00.000Z"])
         #expect(starts(feed("DTSTART:20261110T090000Z", "RRULE:FREQ=MINUTELY;INTERVAL=30;COUNT=3"), from: november.from, to: november.to)
             == ["2026-11-10T09:00:00.000Z", "2026-11-10T09:30:00.000Z", "2026-11-10T10:00:00.000Z"])
+        // Ones with no end that began long before the window (more steps ago than the expansion takes
+        // from DTSTART): every seventh hour since 2000 (the one at 22:00 is still going at 01:00), every
+        // sixth on Tuesdays only, and every seventh minute since January.
+        #expect(starts(feed("DTSTART:20000101T000000Z", "DTEND:20000101T040000Z", "RRULE:FREQ=HOURLY;INTERVAL=7"), from: "2026-11-10T01:00:00Z", to: "2026-11-10T13:00:00Z")
+            == ["2026-11-09T22:00:00.000Z", "2026-11-10T05:00:00.000Z", "2026-11-10T12:00:00.000Z"])
+        #expect(starts(feed("DTSTART:20000101T000000Z", "RRULE:FREQ=HOURLY;INTERVAL=6;BYDAY=TU"), from: "2026-11-09T00:00:00Z", to: "2026-11-12T00:00:00Z")
+            == ["2026-11-10T00:00:00.000Z", "2026-11-10T06:00:00.000Z", "2026-11-10T12:00:00.000Z", "2026-11-10T18:00:00.000Z"])
+        #expect(starts(feed("DTSTART:20260101T000000Z", "RRULE:FREQ=MINUTELY;INTERVAL=7"), from: "2026-11-10T10:00:00Z", to: "2026-11-10T10:30:00Z")
+            == ["2026-11-10T10:05:00.000Z", "2026-11-10T10:12:00.000Z", "2026-11-10T10:19:00.000Z", "2026-11-10T10:26:00.000Z"])
 
         // RFC 5545's own example (section 3.8.5.3): every 20th Monday of the year.
         #expect(starts(feed("DTSTART;TZID=America/New_York:19970519T090000", "RRULE:FREQ=YEARLY;BYDAY=20MO"), from: "1997-01-01T00:00:00Z", to: "2000-01-01T00:00:00Z")
