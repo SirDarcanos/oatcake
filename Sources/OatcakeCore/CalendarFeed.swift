@@ -133,12 +133,15 @@ public func upcomingCalls(_ events: [CalendarEvent], at now: Date, calendar: Cal
 }
 
 /**
- * The event happening at `now` (or starting within ten minutes), if any. None if that event is in
- * `recorded` (by ID): a call that finishes early and is followed by another while its slot is still on
- * the clock (a quick debrief, say) would otherwise be named after the first call and get its invite.
+ * The event happening at `now` (or starting within ten minutes), if any: of those that have started,
+ * the one that started last, so a call inside a longer block (a conference day, say) is the call;
+ * otherwise the next to start. None if that event is in `recorded` (by ID): a call that finishes
+ * early and is followed by another while its slot is still on the clock (a quick debrief, say)
+ * would otherwise be named after the first call and get its invite.
  */
 public func eventHappening(_ events: [CalendarEvent], at now: Date, unless recorded: Set<String> = []) -> CalendarEvent? {
-    let event = events.first { !$0.allDay && $0.startDate.addingTimeInterval(-600) <= now && $0.endDate > now }
+    let near = events.filter { !$0.allDay && $0.startDate.addingTimeInterval(-600) <= now && $0.endDate > now }
+    let event = near.filter { $0.startDate <= now }.max { $0.startDate < $1.startDate } ?? near.min { $0.startDate < $1.startDate }
     return event.flatMap { recorded.contains($0.id) ? nil : $0 }
 }
 

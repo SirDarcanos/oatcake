@@ -160,6 +160,13 @@ import Testing
         #expect(eventHappening([renewal, next], at: at("09:47:00"), unless: ["Renewal sync"]) == nil)
         #expect(eventHappening([renewal, next], at: at("09:51:00"), unless: ["Renewal sync"]) == nil)
         #expect(eventHappening([renewal, next], at: at("09:51:00"), unless: ["Other call"])?.id == "Renewal sync")
+        // A call inside a longer block is the call, once it has started; before, the block is still what's on.
+        let conference = event("Conference", "2026-11-18T09:00:00Z", "2026-11-18T17:00:00Z")
+        let call = event("Partner call", "2026-11-18T14:00:00Z", "2026-11-18T14:30:00Z")
+        #expect(eventHappening([conference, call], at: at("14:01:00"))?.id == "Partner call")
+        #expect(eventHappening([call, conference], at: at("14:01:00"))?.id == "Partner call")
+        #expect(eventHappening([conference, call], at: at("13:55:00"))?.id == "Conference")
+        #expect(eventHappening([conference, call], at: at("14:31:00"))?.id == "Conference")
     }
 
     @Test func callLinks() {
