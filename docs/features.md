@@ -38,7 +38,7 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 - Upcoming calls from multiple private iCal feeds, in one list on Home and in the sidebar, with a
   coloured dot for each source calendar. The names and dots are shown in New recording, and
   the dots carry over to saved meetings. [Calendar settings](settings.md#calendars)
-- **Start recording** on Home, or clicking a call in the sidebar, opens New recording for it, in the
+- Clicking a call under Upcoming, on Home or in the sidebar, opens New recording for it, in the
   folder named like it or a new one for a recurring meeting. [Calendar settings](settings.md#calendars)
 - **Join the call** on Home opens a Meet, Zoom or Teams call without starting a recording.
   [Calendar settings](settings.md#calendars)

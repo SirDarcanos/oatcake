@@ -265,7 +265,7 @@ struct TodosView: View {
 
     private var addField: some View {
         HStack(spacing: 10) {
-            Image(systemName: "circle").font(.system(size: 15)).foregroundStyle(.quaternary)
+            Image(systemName: "plus.circle").font(.system(size: 15)).foregroundStyle(.quaternary)
                 .accessibilityHidden(true)
             TextField("Add a to-do, then Return", text: $draft)
                 .textFieldStyle(.plain)

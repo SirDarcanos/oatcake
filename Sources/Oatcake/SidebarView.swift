@@ -96,7 +96,7 @@ struct SidebarView: View {
             Button("Rename") { if let node = renaming { model.library.rename(node.path, to: draft) } }
             Button("Cancel", role: .cancel) {}
         }
-        .alert("New Folder", isPresented: Binding(get: { newFolderIn != nil }, set: { if !$0 { newFolderIn = nil } })) {
+        .alert("New folder", isPresented: Binding(get: { newFolderIn != nil }, set: { if !$0 { newFolderIn = nil } })) {
             TextField("Folder name", text: $draft)
             Button("Create") {
                 guard let parent = newFolderIn, !draft.trimmed.isEmpty else { return }
@@ -172,7 +172,7 @@ struct SidebarView: View {
             if recording {
                 RecDot()
             } else if failed {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).font(.caption)
+                Image(systemName: "xmark.octagon.fill").foregroundStyle(.red).font(.caption)
             } else {
                 Circle().fill(.secondary).frame(width: 7, height: 7)
             }
@@ -213,32 +213,8 @@ struct SidebarView: View {
         let events = Array(upcomingCalls(model.calendar.events, at: now).prefix(6))
         let next = events.first { $0.startDate > now }
         Section {
-            ForEach(events) { event in
-                let calendars = calendar.labels(for: event)
-                let names = calendars.map(\.name).joined(separator: ", ")
-                let service = event.callLink.flatMap(callApp).map { " · \($0)" } ?? ""
-                Button { model.newRecording(event) } label: { eventRow(event, next: next, now: now, calendars: calendars) }
-                    .buttonStyle(.plain)
-                    .accessibilityValue(names)
-                    .help("\(event.title) · \(timeOfDay(event.startDate))–\(timeOfDay(event.endDate))\(service) · \(names)")
-                    // A call you won't record that you can't rename or decline (someone else's
-                    // recurring meeting): only Oatcake stops showing it.
-                    .contextMenu {
-                        if event.seriesId != nil {
-                            Button("Ignore This One") { model.ignore(event, series: false) }
-                            Button("Ignore This and Following Events") { model.ignore(event, series: true) }
-                        } else {
-                            Button("Ignore This Event") { model.ignore(event, series: false) }
-                        }
-                    }
-            }
-            if calendar.hasFailures {
-                Text("Some calendars couldn’t update. Check Settings → Calendars.").font(.callout).foregroundStyle(.secondary)
-            } else if !calendar.hasUpdated {
-                Text("Fetching calendars…").font(.callout).foregroundStyle(.secondary)
-            } else if events.isEmpty {
-                Text("Nothing else today or tomorrow.").font(.callout).foregroundStyle(.secondary)
-            }
+            ForEach(events) { event in UpcomingRow(event: event, next: next, now: now) }
+            UpcomingNote(empty: events.isEmpty)
         } header: {
             HStack {
                 Text("Upcoming")
@@ -257,46 +233,13 @@ struct SidebarView: View {
         }
     }
 
-    private func eventRow(_ e: CalendarEvent, next: CalendarEvent?, now: Date, calendars: [CalendarController.Label]) -> some View {
-        // Status and countdown sit in the time column, so they never cut the title short.
-        let recording = model.recording.live?.eventId == e.id
-        let starting = model.recording.status.state != .recording
-        let minsToNext = next.map { Int(ceil($0.startDate.timeIntervalSince(now) / 60)) } ?? .max
-        let label: String
-        let color: AnyShapeStyle
-        var bold = true
-        if recording {
-            label = starting ? "Starting…" : "Recording"
-            color = starting ? AnyShapeStyle(.secondary) : AnyShapeStyle(.red)
-            bold = !starting
-        } else if e == next && minsToNext <= 60 {
-            label = "in \(shortDuration(Double(minsToNext) * 60))"
-            color = AnyShapeStyle(.tint)
-        } else if e.startDate <= now {
-            label = "Now"
-            color = AnyShapeStyle(.tint)
-        } else {
-            label = Calendar.current.isDate(e.startDate, inSameDayAs: now) ? timeOfDay(e.startDate) : dayAndTime(e.startDate)
-            color = AnyShapeStyle(.secondary)
-            bold = false
-        }
-        return HStack(spacing: 6) {
-            Text(label).font(.caption.weight(bold ? .semibold : .regular)).monospacedDigit()
-                .foregroundStyle(color).frame(width: 62, alignment: .leading)
-            CalendarBadges(calendars: calendars)
-            Text(e.title).lineLimit(1)
-            Spacer(minLength: 0)
-        }
-        .contentShape(Rectangle())
-    }
-
     private func jobRow(_ job: Jobs.Job) -> some View {
         HStack(spacing: 9) {
             Group {
                 switch job.status {
                 case .processing: ProgressView().controlSize(.mini)
                 case .review: Circle().fill(.tint).frame(width: 8, height: 8)
-                case .failed: Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red).font(.caption)
+                case .failed: Image(systemName: "xmark.octagon.fill").foregroundStyle(.red).font(.caption)
                 }
             }
             .frame(width: 14)
@@ -319,6 +262,97 @@ struct SidebarView: View {
     /// "21:10" today, otherwise "4 Nov at 21:10": tells two recordings of the same call apart.
     private func jobWhen(_ d: Date) -> String {
         Calendar.current.isDateInToday(d) ? timeOfDay(d) : dateAndTime(d)
+    }
+}
+
+/// Said when nothing is left on the calendar today or tomorrow: under Upcoming, and in the menu bar's menu.
+let noMoreCalls = "No more calls today or tomorrow"
+
+/// One call under Upcoming, the same in the sidebar and on Home: click it for New recording with it
+/// filled in, or right-click it to ignore it.
+struct UpcomingRow: View {
+    @Environment(AppModel.self) private var model
+    let event: CalendarEvent
+    /// The next call to start, which counts down.
+    let next: CalendarEvent?
+    let now: Date
+
+    var body: some View {
+        let calendars = model.calendar.labels(for: event)
+        let names = calendars.map(\.name).joined(separator: ", ")
+        let service = event.callLink.flatMap(callApp).map { " · \($0)" } ?? ""
+        Button { model.newRecording(event) } label: { label(calendars) }
+            .buttonStyle(.plain)
+            .accessibilityValue(names)
+            .help("\(event.title) · \(timeOfDay(event.startDate))–\(timeOfDay(event.endDate))\(service) · \(names)")
+            // A call you won't record that you can't rename or decline (someone else's
+            // recurring meeting): only Oatcake stops showing it.
+            .contextMenu {
+                if event.seriesId != nil {
+                    Button("Ignore This One") { model.ignore(event, series: false) }
+                    Button("Ignore This and Following Events") { model.ignore(event, series: true) }
+                } else {
+                    Button("Ignore This Event") { model.ignore(event, series: false) }
+                }
+            }
+    }
+
+    private func label(_ calendars: [CalendarController.Label]) -> some View {
+        // Status and countdown sit in the time column, so they never cut the title short.
+        let e = event
+        let recording = model.recording.live?.eventId == e.id
+        let starting = model.recording.status.state != .recording
+        let minsToNext = next.map { Int(ceil($0.startDate.timeIntervalSince(now) / 60)) } ?? .max
+        let label: String
+        let color: AnyShapeStyle
+        var bold = true
+        if recording {
+            label = starting ? "Starting…" : "Recording"
+            color = starting ? AnyShapeStyle(.secondary) : AnyShapeStyle(.red)
+            bold = !starting
+        } else if e == next && minsToNext <= 60 {
+            label = "in \(shortDuration(Double(minsToNext) * 60))"
+            color = AnyShapeStyle(.tint)
+        } else if e.startDate <= now {
+            label = "Now"
+            color = AnyShapeStyle(.tint)
+        } else {
+            label = Calendar.current.isDate(e.startDate, inSameDayAs: now) ? timeOfDay(e.startDate) : dayAndTime(e.startDate)
+            color = AnyShapeStyle(.secondary)
+            bold = false
+        }
+        return HStack(spacing: 6) {
+            // At least the column's width, and more for a 12-hour clock's "Thu 10:30 pm".
+            Text(label).font(.caption.weight(bold ? .semibold : .regular)).monospacedDigit()
+                .foregroundStyle(color).fixedSize().frame(minWidth: 62, alignment: .leading)
+            CalendarBadges(calendars: calendars)
+            Text(e.title).lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+/// What Upcoming says when it has no calls to list, or can't be sure it has them all.
+struct UpcomingNote: View {
+    @Environment(AppModel.self) private var model
+    let empty: Bool
+
+    var body: some View {
+        Group {
+            if model.calendar.hasFailures {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Some calendars couldn’t update.")
+                    SettingsPaneLink(pane: "calendar", title: "Settings › Calendars").buttonStyle(.link)
+                }
+            } else if !model.calendar.hasUpdated {
+                Text("Fetching calendars…")
+            } else if empty {
+                Text("\(noMoreCalls).")
+            }
+        }
+        .font(.callout)
+        .foregroundStyle(.secondary)
     }
 }
 

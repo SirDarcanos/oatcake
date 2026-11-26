@@ -480,7 +480,7 @@ final class AppModel {
         if let live = recording.live, recording.recorderFailure == nil {
             return ("Stop recording and quit?",
                     "Oatcake is recording “\(live.title)”. Quitting stops the recording. What’s been recorded so far is transcribed the next time you open Oatcake.",
-                    "Stop Recording and Quit")
+                    "Stop recording and quit")
         }
         var doing: [String] = []
         var after: [String] = []

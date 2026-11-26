@@ -1,6 +1,6 @@
 // Checking for and installing new releases; the mechanics are in OatcakeCore's Update. A check runs
 // 20 seconds after launch and then once a day (unless turned off in Settings), and from Settings'
-// Check Now. Installing never starts while a call is being recorded, analysed or saved.
+// Check now. Installing never starts while a call is being recorded, analysed or saved.
 
 import AppKit
 import OatcakeCore

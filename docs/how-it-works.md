@@ -71,7 +71,8 @@ at the bottom of the window says what just happened; one that says something wen
 until you click it.
 
 Oatcake opens on **Home**, or on a recording that was still going when it was last closed. Home
-shows upcoming calls (the one on now or next has **Join the call** and **Start recording**). The
+shows upcoming calls, the same rows as the sidebar's Upcoming (click one for New recording,
+right-click to ignore it), with **Join the call** beside the one on now or next. The
 sidebar's **New recording** button is beside it, or **Return to recording** during a call. When to-dos are enabled, Home
 also shows up to five open items, earliest due first, with their assignees and due dates. Add or
 tick off to-dos on Home, or choose **View all to-dos** to manage the full list.

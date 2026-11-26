@@ -100,7 +100,7 @@ struct Notice<Content: View>: View {
         HStack(alignment: .top, spacing: 10) {
             switch tone {
             case .amber: Image(systemName: "exclamationmark.triangle").foregroundStyle(Color.amber)
-            case .red: Image(systemName: "exclamationmark.triangle").foregroundStyle(.red)
+            case .red: Image(systemName: "xmark.octagon").foregroundStyle(.red)
             case .grey: Image(systemName: "doc.text").foregroundStyle(.secondary)
             case .blue: ProgressView().controlSize(.small)
             }
@@ -244,7 +244,7 @@ struct ToastView: View {
     var dismiss: () -> Void = {}
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            if isError { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red) }
+            if isError { Image(systemName: "xmark.octagon.fill").foregroundStyle(.red) }
             Text(text).font(.callout.weight(.medium)).fixedSize(horizontal: false, vertical: true)
             if isError { Image(systemName: "xmark").font(.caption.weight(.semibold)).foregroundStyle(.secondary) }
         }

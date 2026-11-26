@@ -325,7 +325,7 @@ struct MeetingView: View {
         if tab == .summary, hasSummary {
             let busy = model.jobs.summarising.contains(path) || (files?[.transcript] ?? "").trimmed.isEmpty
             if templates.isEmpty {
-                Button { regenerate(.summary) } label: { Label("Regenerate Summary", systemImage: "arrow.clockwise") }
+                Button { regenerate(.summary) } label: { Label("Regenerate Summary", systemImage: "sparkles") }
                     .disabled(busy)
                     .help("Write the summary again with the current instructions in Settings")
             } else {
@@ -337,7 +337,7 @@ struct MeetingView: View {
                     ForEach(templates, id: \.name) { t in
                         Toggle(t.name, isOn: Binding(get: { current == t.name }, set: { _ in regenerate(.summary, template: .picked(t.name)) }))
                     }
-                } label: { Label("Regenerate Summary", systemImage: "arrow.clockwise") }
+                } label: { Label("Regenerate Summary", systemImage: "sparkles") }
                     .disabled(busy)
                     .help("Write the summary again, with a template if you pick one")
             }
@@ -738,7 +738,7 @@ struct MeetingView: View {
                     }
                 }
                 HStack(spacing: 10) {
-                    Image(systemName: "circle").font(.system(size: 15)).foregroundStyle(.quaternary)
+                    Image(systemName: "plus.circle").font(.system(size: 15)).foregroundStyle(.quaternary)
                     TextField("Add a to-do, then Return", text: $newTodo)
                         .textFieldStyle(.plain)
                         .help("Add an owner or due date with dashes: Send the deck - Jane - due Fri, Nov 6")
@@ -925,7 +925,7 @@ private struct DraftForSharingSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Draft for Sharing").font(.headline)
+            Text("Draft for sharing").font(.headline)
             Text("Oatcake’s model writes this meeting’s \(todos ? "summary and to-dos" : "summary") again for other people to read, following your draft for sharing instructions in Settings › Summaries. It doesn’t read the transcript or your notes.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -948,7 +948,7 @@ private struct DraftForSharingSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(replacing ? "Replace Draft" : "Write Draft") {
+                Button(replacing ? "Replace draft" : "Write draft") {
                     write(request.trimmed)
                     dismiss()
                 }

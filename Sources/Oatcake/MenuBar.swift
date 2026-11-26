@@ -206,7 +206,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
             let now = Date()
             let endOfTomorrow = Calendar.current.date(byAdding: .day, value: 2, to: Calendar.current.startOfDay(for: now)) ?? now
             listed = Array(events.filter { $0.startDate < endOfTomorrow }.prefix(6))
-            if listed.isEmpty { add("Nothing else today or tomorrow", nil) }
+            if listed.isEmpty { add(noMoreCalls, nil) }
             for (index, event) in listed.enumerated() {
                 let when = event.startDate <= now ? "Now" : Calendar.current.isDate(event.startDate, inSameDayAs: now)
                     ? timeOfDay(event.startDate) : dayAndTime(event.startDate)

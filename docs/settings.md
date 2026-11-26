@@ -6,7 +6,7 @@ window, with a pane for each part of Oatcake; changes apply as you make them. Th
 and private addresses (see [Calendars](#calendars)). If `config.json` can't be read, Oatcake starts
 on its defaults, says so when it opens, and keeps the file beside it as `config.unreadable.json`. A
 switch that works by notification says so when notifications are turned off for Oatcake in System
-Settings, with **Open Notification Settings**.
+Settings, with **Open notification settings**.
 
 ## General
 
@@ -38,7 +38,7 @@ Settings, with **Open Notification Settings**.
 
 ## Calendars
 
-- **Add Calendar…** connects a calendar. Give it a name and paste its private iCal address (Google
+- **Add calendar…** connects a calendar. Give it a name and paste its private iCal address (Google
   Calendar › Settings › your calendar › Integrate calendar › “Secret address in iCal format”).
   In the Add or Edit dialog, click the colour dot to open the same swatch picker as in People.
   Repeat for each calendar. **Edit…** changes the name or colour, replaces the
@@ -51,7 +51,8 @@ Settings, with **Open Notification Settings**.
   in Settings. The other feeds continue to update.
 
   Home and the sidebar show one chronological list of timed events in progress or starting today
-  or tomorrow, leaving out events you declined. The sidebar shows up to six. The coloured dots
+  or tomorrow, leaving out events you declined, in the same rows ("No more calls today or
+  tomorrow." when there are none). The sidebar shows up to six. The coloured dots
   identify the source calendars; hover over the event to see their names. When the same invitation
   and start time appear on more than one feed, it gets one row with all its dots and one reminder.
   With no calendars connected, Home offers **Connect calendar** and the sidebar hides Upcoming.
@@ -61,8 +62,8 @@ Settings, with **Open Notification Settings**.
   local calendar IDs, not names or addresses. The dots reflect your current colours and disappear
   if you remove a calendar. Older meetings without calendar information don’t get a dot.
 
-  On Home, **Join the call** opens the call link without recording. **Start recording** (or clicking an event in
-  the sidebar) opens New recording for it, named after it, in the folder with the same name
+  On Home, **Join the call** opens the call link without recording. Clicking an event, on Home or in
+  the sidebar, opens New recording for it, named after it, in the folder with the same name
   or path ("John & Jane 1:1" finds "John & Jane 1-1", "Product – Weekly sync" finds "Product ›
   Weekly sync"), or offering a new folder for a recurring event with none. **Join the call** opens
   its Meet, Zoom or Teams link (only links on those services' own domains count, so a look-alike
@@ -92,14 +93,14 @@ Settings, with **Open Notification Settings**.
 - **Ignored events:** a call you can't rename (someone else's recurring meeting) can be ignored on
   its own: right-click it in Upcoming for **Ignore This Event**, or for a recurring one **Ignore
   This One** or **Ignore This and Following Events**. That's kept in `config.json`, nothing changes
-  in your calendar, and **Stop Ignoring** here brings one back (the list shows once there are
+  in your calendar, and **Stop ignoring** here brings one back (the list shows once there are
   some). An occurrence its organiser moves shows again (its ID includes its start), and so does the
   rest of a series changed with Google's "this and following events" (that gives it a new UID).
 
 ## People
 
 The voices Oatcake recognises. **Rename…** one ("John" to "John Smith") to change the name it
-suggests from now on. **Merge Into** (once there are two or more) makes two people one, under the
+suggests from now on. **Merge into** (once there are two or more) makes two people one, under the
 name you pick from its menu: both sets of fingerprints are kept, up to the 10 newest, and it asks
 first; renaming to a name that's already there does the same. **Forget…** stops it recognising
 them. Meetings already saved keep the names they were saved with (to change
@@ -126,7 +127,7 @@ their chosen colour with them, and so does merging them into someone who hasn't 
   own, is how many tokens it's set to hold (Ollama's `num_ctx`, llama.cpp's `-c`): Oatcake sends no
   more than that at once, splitting a long call into parts if it has to. It doesn't change the
   server's setting, so match it to the server. Empty means 32,768, and Oatcake needs at least
-  16,384. **Download Now** fetches the
+  16,384. **Download now** fetches the
   chosen model straight away rather than at your first call, **Stop** stops a download, **Remove…**
   deletes it (or **Remove partial download…**), each asking first, and **Test** asks it for one word. A model on a
   server of your own that reasons first can still be reasoning when the test's room for that word
@@ -138,7 +139,7 @@ their chosen colour with them, and so does merging them into someone who hasn't 
 
 One section for each thing the model writes, each with its instructions and its reasoning switch
 side by side. Instructions show as Oatcake's own or yours; **Edit…** opens them below (saved as
-you type), and **Restore Default…** there brings Oatcake's own back. **Reasoning** is whether the
+you type), and **Restore default…** there brings Oatcake's own back. **Reasoning** is whether the
 model thinks a task through before it replies: slower, and not always better. Each switch says
 how it did in Oatcake's tests. With a server of yours they're shown but can't be changed, as it
 decides for itself, until you choose the **Reasoning switch** it takes in Settings › Models:
@@ -211,7 +212,7 @@ intended folder there.
 
 ## Updates
 
-- **Check Now**, and what's new in a release that's waiting, with **Install and relaunch…**, which asks first as the sidebar's **Update…** does (or the
+- **Check now**, and what's new in a release that's waiting, with **Install and relaunch…**, which asks first as the sidebar's **Update…** does (or the
   install line to copy, for a copy that can't update itself).
 - **Check for updates automatically** (on to start with): once a day. Nothing is installed until
   you choose to. See [Updates](updates.md).
