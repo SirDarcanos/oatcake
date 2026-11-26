@@ -12,6 +12,7 @@ private func eventWhen(_ e: CalendarEvent) -> String {
 
 struct NewRecordingView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.undoManager) private var undoManager
     let event: CalendarEvent?
 
     @ViewState private var folder = topLevel
@@ -223,15 +224,18 @@ struct NewRecordingView: View {
     /// refreshes the tree, and that mustn't reset the list (a mis-tick stays visible to undo).
     private var candidateKey: String { folder + "\n" + candidates.map(\.path).joined(separator: "\n") }
 
-    /// Open to-dos from the latest earlier meeting in this folder that had any.
+    /// Open to-dos from the latest earlier meeting in this folder that had any. Only their todo.md
+    /// files are read, off the main thread.
     private func loadPrevious() async {
         previous = nil
         ticked = []
-        for m in candidates {
-            guard let todo = try? model.library.readMeeting(m.path).todo, !parseTodos(todo).isEmpty else { continue }
-            previous = (m.path, meetingDate(m), todo)
-            return
-        }
+        let meetings = model.library.meetings, paths = candidates.map(\.path)
+        let found = await Task.detached {
+            paths.lazy.compactMap { path in (try? meetings.readTodo(path)).flatMap { parseTodos($0).isEmpty ? nil : (path, $0) } }.first
+        }.value
+        // Another folder was chosen meanwhile: its own read is on its way.
+        guard !Task.isCancelled, let found, let m = candidates.first(where: { $0.path == found.0 }) else { return }
+        previous = (found.0, meetingDate(m), found.1)
     }
 
     private var openTodos: [Todo] {
@@ -247,10 +251,9 @@ struct NewRecordingView: View {
                 Text("Ticking one ticks it in that meeting").font(.caption).foregroundStyle(.secondary)
             }
             ForEach(openTodos, id: \.line) { t in
-                HStack(spacing: 10) {
-                    TodoCheckbox(checked: t.done, what: t.text) { tick(t) }
-                    Text(t.text).strikethrough(t.done).foregroundStyle(t.done ? .secondary : .primary)
-                    Spacer()
+                TodoRow(todo: t, alignment: .center, tick: { tick(t) }) {
+                    EmptyView()
+                } trailing: {
                     Text(ownerLabel(t.owner, model.config.myName)).foregroundStyle(.secondary)
                 }
             }
@@ -260,17 +263,13 @@ struct NewRecordingView: View {
     private func tick(_ t: Todo) {
         guard let p = previous else { return }
         // The file is ticked as it is now, not written over with the copy this screen has been holding.
-        do {
-            guard try model.library.toggleTodo(p.path, line: t.line, text: t.text) else {
-                // It isn't in the file as it's shown here: nothing was ticked, and the list is read again.
-                model.toast(todoChangedMessage)
+        model.library.tick(p.path, t, undo: undoManager) { [previous = $previous, ticked = $ticked] text in
+            guard let text else {
                 Task { await loadPrevious() }
                 return
             }
-            previous = (p.path, p.date, toggleTodo(p.todo, line: t.line))
-            ticked.insert(t.line)
-        } catch {
-            model.toast(error.localizedDescription, isError: true)
+            previous.wrappedValue = (p.path, p.date, text)
+            ticked.wrappedValue.insert(t.line)
         }
     }
 

@@ -38,6 +38,37 @@ import Testing
         #expect(addTodo("", "Two") == "- [ ] Two\n")
     }
 
+    /// A to-do edited from the To-dos page: found as a tick finds it, its box kept, and typed back the way it was written.
+    @Test func editedTodos() {
+        let md = "- [ ] New first\n- [x] Send the deck — Jane — due Fri, Nov 6 — [12:34]\n"
+        #expect(editTodo(md, line: 0, text: "Send the deck", to: " Send the slides — Jane ") == "- [ ] New first\n- [x] Send the slides — Jane\n")
+        #expect(editTodo(md, line: 1, text: "Send the deck", to: nil) == "- [ ] New first\n")
+        #expect(editTodo(md, line: 1, text: "Gone since", to: "x") == nil)
+        let todo = parseTodos(md)[1]
+        #expect(typedForm(todo) == "Send the deck - Jane - due Fri, Nov 6 - [12:34]")
+        #expect(parseTodos("- [ ] " + typedTodo(typedForm(todo))).first.map { [$0.text, $0.owner, $0.due, $0.stamp] } == ["Send the deck", "Jane", "Fri, Nov 6", "12:34"])
+    }
+
+    /// The To-dos page's groups by due date. Weeks are counted in calendar days: in New York the clocks
+    /// go back on Sunday 1 November 2026, and next week's Sunday (the 8th) is still next week from Monday the 26th.
+    @Test func dueGroups() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        let day = { (month: Int, d: Int) in calendar.date(from: DateComponents(year: 2026, month: month, day: d))! }
+        let monday = day(10, 26)
+        let item = { (due: Date?, done: Bool) in
+            TodoItem(todo: Todo(line: 0, done: done, text: "Send the deck", owner: "", due: "", stamp: ""),
+                     meeting: MeetingTodos(path: "", title: "To-dos", startedAt: nil, todo: ""), dueDate: due)
+        }
+        let group = { (due: Date?) in item(due, false).dueGroup(today: monday.addingTimeInterval(15 * 3600), calendar: calendar) }
+        #expect(group(day(10, 23)) == .overdue && item(day(10, 23), true).dueGroup(today: monday, calendar: calendar) == .dueEarlier)
+        #expect(group(monday) == .today && group(day(10, 27)) == .thisWeek && group(day(11, 1)) == .thisWeek)
+        #expect(group(day(11, 2)) == .nextWeek && group(day(11, 8)) == .nextWeek && group(day(11, 9)) == .later && group(nil) == .noDate)
+        // Sunday's week is that day alone.
+        #expect(item(day(11, 2), false).dueGroup(today: day(11, 1), calendar: calendar) == .nextWeek)
+        #expect(DueGroup.allCases.sorted() == DueGroup.allCases && DueGroup.overdue.title == "Overdue")
+    }
+
     @Test func transcripts() {
         let lines = parseTranscript("**[00:05] John Smith:** Hello there\n\n[1:02:03] **Jane:** Hi\n[0:20] System audio (Jane Roe): yes\n[0:21] Microphone: me")
         #expect(lines.map(\.speaker) == ["John Smith", "Jane", "Jane Roe", "Microphone"])

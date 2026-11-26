@@ -131,9 +131,32 @@ public func toggleTodo(_ markdown: String, line: Int) -> String {
  * when it's no longer there.
  */
 public func toggleTodo(_ markdown: String, line: Int, text: String) -> String? {
+    findTodo(markdown, line: line, text: text).map { toggleTodo(markdown, line: $0.line) }
+}
+
+private func findTodo(_ markdown: String, line: Int, text: String) -> Todo? {
     let todos = parseTodos(markdown)
-    guard let found = todos.first(where: { $0.line == line && $0.text == text }) ?? todos.first(where: { $0.text == text }) else { return nil }
-    return toggleTodo(markdown, line: found.line)
+    return todos.first(where: { $0.line == line && $0.text == text }) ?? todos.first(where: { $0.text == text })
+}
+
+/// todo.md with the to-do `text` (found as toggleTodo finds it) written as `body` instead, its tick
+/// kept, or taken out when `body` is nil. nil when it's no longer there.
+public func editTodo(_ markdown: String, line: Int, text: String, to body: String?) -> String? {
+    guard let found = findTodo(markdown, line: line, text: text) else { return nil }
+    var lines = markdown.components(separatedBy: "\n")
+    if let body {
+        guard let box = lines[found.line].range(of: #"^\s*[-*]\s+\[( |x|X)\]\s+"#, options: .regularExpression) else { return nil }
+        lines[found.line] = lines[found.line][..<box.upperBound] + body.trimmed
+    } else {
+        lines.remove(at: found.line)
+    }
+    return lines.joined(separator: "\n")
+}
+
+/// A to-do as it would be typed to make it again: "Send the deck - Jane - due Fri, Nov 6", for editing it.
+public func typedForm(_ todo: Todo) -> String {
+    [todo.text, todo.owner, todo.due.isEmpty ? "" : "due \(todo.due)", todo.stamp.isEmpty ? "" : "[\(todo.stamp)]"]
+        .filter { !$0.isEmpty }.joined(separator: " - ")
 }
 
 /**
@@ -197,6 +220,42 @@ public struct TodoItem: Identifiable, Equatable, Sendable {
     public func isOverdue(today: Date = Calendar.current.startOfDay(for: Date())) -> Bool {
         !todo.done && dueDate.map { $0 < today } == true
     }
+
+    /**
+     * Its group on the To-dos page grouped by due date. Weeks are calendar weeks: "This week" runs
+     * to Sunday, "Next week" the seven days after. They're counted in days on the calendar, not in
+     * steps of 24 hours, which in a week the clocks change in end the week an hour out, putting next
+     * week's Sunday under Later.
+     */
+    public func dueGroup(today: Date, calendar: Calendar = gregorian) -> DueGroup {
+        guard let due = dueDate else { return .noDate }
+        let today = calendar.startOfDay(for: today)
+        if due < today { return todo.done ? .dueEarlier : .overdue }
+        if calendar.isDate(due, inSameDayAs: today) { return .today }
+        let weekday = calendar.component(.weekday, from: today)
+        guard let sunday = calendar.date(byAdding: .day, value: (8 - weekday) % 7, to: today),
+              let nextSunday = calendar.date(byAdding: .day, value: 7, to: sunday) else { return .later }
+        return due <= sunday ? .thisWeek : due <= nextSunday ? .nextWeek : .later
+    }
+}
+
+/// The To-dos page's groups by due date, in the order they're listed.
+public enum DueGroup: Int, CaseIterable, Comparable, Sendable {
+    case overdue, dueEarlier, today, thisWeek, nextWeek, later, noDate
+
+    public var title: String {
+        switch self {
+        case .overdue: "Overdue"
+        case .dueEarlier: "Was due earlier"
+        case .today: "Today"
+        case .thisWeek: "This week"
+        case .nextWeek: "Next week"
+        case .later: "Later"
+        case .noDate: "No due date"
+        }
+    }
+
+    public static func < (a: DueGroup, b: DueGroup) -> Bool { a.rawValue < b.rawValue }
 }
 
 /**

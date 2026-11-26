@@ -1,9 +1,17 @@
 import OatcakeCore
 import SwiftUI
 
+/// What the To-dos page was showing, for when you come back to it.
+@MainActor private enum Remembered {
+    static var status = TodosView.Status.open
+    static var grouping = TodosView.Grouping.due
+    static var owner = TodosView.Owner.everyone
+}
+
 /// Every meeting's to-dos in one place. Ticking one updates that meeting's todo.md.
 struct TodosView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.undoManager) private var undoManager
     private let homePreview: Bool
 
     init(homePreview: Bool = false) {
@@ -15,17 +23,19 @@ struct TodosView: View {
     /// Whose to-dos are listed.
     enum Owner: Hashable { case everyone, mine, named(String) }
 
-    @ViewState private var status = Status.open
-    @ViewState private var grouping = Grouping.due
-    @ViewState private var owner = Owner.everyone
+    @ViewState private var status = Remembered.status
+    @ViewState private var grouping = Remembered.grouping
+    @ViewState private var owner = Remembered.owner
     @ViewState private var adding = false
     @ViewState private var draft = ""
+    /// The to-do of your own list being edited in place (its item ID), and what it says so far.
+    @ViewState private var editing: String?
+    @ViewState private var edited = ""
+    @FocusState private var editFocused: Bool
     /// A list's text straight after a tick or an add here, until the app has read it back from disk,
     /// so two quick ticks in one meeting don't undo each other.
     @ViewState private var local: [String: String] = [:]
     @FocusState private var addFocused: Bool
-
-    private let day: TimeInterval = 86_400
 
     var body: some View {
         let myName = model.config.myName
@@ -46,6 +56,9 @@ struct TodosView: View {
         .onChange(of: model.library.todoMeetings) {
             local = local.filter { path, text in model.library.todoMeetings.first { $0.path == path }?.todo != text }
         }
+        .onChange(of: status) { Remembered.status = status }
+        .onChange(of: grouping) { Remembered.grouping = grouping }
+        .onChange(of: owner) { Remembered.owner = owner }
     }
 
     @ViewBuilder private func preview(_ items: [TodoItem], today: Date, myName: String) -> some View {
@@ -109,11 +122,9 @@ struct TodosView: View {
                 Text("\(open.count) open\(overdue.isEmpty ? "" : " · \(overdue.count) overdue")\(sources.isEmpty ? "" : " · from \(sources)"). Ticking one ticks it in its meeting too.")
                     .foregroundStyle(.secondary).padding(.top, 6)
                 addField.padding(.top, 22)
-                // How adding works, only while adding.
-                if addFocused {
-                    Text("Saved in your Meetings folder’s own todo.md, as yours unless you name someone: Send the deck - Jane - due Fri, Nov 6. To add one to a meeting, use the to-dos at the top of its summary.")
-                        .font(.caption).foregroundStyle(.secondary).padding(.top, 6)
-                }
+                // How adding works, shown whether or not the field has the keyboard.
+                Text("Saved in your Meetings folder’s own todo.md, as yours unless you name someone: Send the deck - Jane - due Fri, Nov 6. To add one to a meeting, use the to-dos at the top of its summary.")
+                    .font(.caption).foregroundStyle(.secondary).padding(.top, 6)
                 ForEach(groups, id: \.key) { group in
                     HStack(spacing: 6) {
                         if grouping == .owner, let o = group.items.first?.todo.owner, !o.isEmpty { Avatar(name: o, size: 18) }
@@ -148,6 +159,7 @@ struct TodosView: View {
             }
             if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
             ToolbarItemGroup(placement: .automatic) {
+                // Each value says what it chooses: how the list is grouped, and whose to-dos are in it.
                 Picker("Group by", selection: $grouping) {
                     Text("By due date").tag(Grouping.due)
                     Text("By folder").tag(Grouping.folder)
@@ -159,7 +171,6 @@ struct TodosView: View {
                     Text("Mine").tag(Owner.mine)
                     ForEach(owners.sorted(), id: \.self) { Text("\($0)’s").tag(Owner.named($0)) }
                 }
-                // Each value says what it chooses: how the list is grouped, and whose to-dos are in it.
                 .fixedSize()
             }
         }
@@ -172,17 +183,6 @@ struct TodosView: View {
     }
 
     private func grouped(_ list: [TodoItem], today: Date, myName: String) -> [Group] {
-        // Calendar weeks: "This week" runs to Sunday, "Next week" the seven days after.
-        let weekday = Calendar.current.component(.weekday, from: today)
-        let endOfWeek = today.addingTimeInterval(Double((8 - weekday) % 7) * day)
-        func bucket(_ t: TodoItem) -> (String, String) {
-            guard let d = t.dueDate else { return ("6", "No due date") }
-            if d < today { return t.todo.done ? ("1", "Was due earlier") : ("0", "Overdue") }
-            if d == today { return ("2", "Today") }
-            if d <= endOfWeek { return ("3", "This week") }
-            if d <= endOfWeek.addingTimeInterval(7 * day) { return ("4", "Next week") }
-            return ("5", "Later")
-        }
         func key(_ t: TodoItem) -> (String, String) {
             switch grouping {
             case .folder:
@@ -192,7 +192,8 @@ struct TodosView: View {
                 if isMe(t.todo.owner, myName) { return ("0", "You") }
                 return t.todo.owner.isEmpty ? ("2", "No owner") : ("1" + t.todo.owner, t.todo.owner)
             case .due:
-                return bucket(t)
+                let group = t.dueGroup(today: today)
+                return ("\(group.rawValue)", group.title)
             }
         }
         var groups: [String: Group] = [:]
@@ -203,39 +204,53 @@ struct TodosView: View {
         return groups.values.sorted { $0.key < $1.key }
     }
 
-    private func row(_ item: TodoItem, today: Date, myName: String, showOwner: Bool) -> some View {
+    @ViewBuilder private func row(_ item: TodoItem, today: Date, myName: String, showOwner: Bool) -> some View {
+        if editing == item.id {
+            editRow(item)
+        } else if item.meeting.path.isEmpty {
+            // Your own list's to-dos are only here, so they're put right here.
+            todoRow(item, today: today, myName: myName, showOwner: showOwner)
+                .contextMenu {
+                    Button("Edit") {
+                        edited = typedForm(item.todo)
+                        editing = item.id
+                    }
+                    Button("Delete", role: .destructive) { change(item, to: nil) }
+                }
+        } else {
+            todoRow(item, today: today, myName: myName, showOwner: showOwner)
+        }
+    }
+
+    private func todoRow(_ item: TodoItem, today: Date, myName: String, showOwner: Bool) -> some View {
         let late = item.isOverdue(today: today)
         let folder = item.meeting.path.isEmpty ? "" : parentOf(item.meeting.path)
         let date = item.meeting.startedAt.map { compactDate($0) } ?? ""
-        return HStack(alignment: homePreview ? .center : .top, spacing: 10) {
-            TodoCheckbox(checked: item.todo.done, what: item.todo.text) { tick(item) }
-                .padding(.top, homePreview ? 0 : 1)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(item.todo.text).strikethrough(item.todo.done).textSelection(.enabled)
-                HStack(spacing: 8) {
-                    if item.meeting.path.isEmpty {
-                        Text("Your list").foregroundStyle(.secondary)
-                    } else {
-                        Button {
-                            model.openMeeting(item.meeting.path, jump: Jump(tab: .summary))
-                        } label: {
-                            HStack(spacing: 5) {
-                                Circle().fill(folder.isEmpty ? Color.secondary : Color.accentColor).frame(width: 6, height: 6)
-                                // The meeting itself, so two to-dos with the same words from different meetings can be told apart.
-                                Text("\(item.meeting.title)\(date.isEmpty ? "" : " · \(date)")")
-                            }
+        return TodoRow(todo: item.todo, alignment: homePreview ? .center : .top, tick: { tick(item) }) {
+            HStack(spacing: 8) {
+                if item.meeting.path.isEmpty {
+                    Text("Your list").foregroundStyle(.secondary)
+                } else {
+                    Button {
+                        model.openMeeting(item.meeting.path, jump: Jump(tab: .summary))
+                    } label: {
+                        HStack(spacing: 5) {
+                            Circle().fill(folder.isEmpty ? Color.secondary : Color.accentColor).frame(width: 6, height: 6)
+                            // The meeting itself, so two to-dos with the same words from different meetings can be
+                            // told apart. One line, cut in the middle, so the date at the end stays.
+                            Text("\(item.meeting.title)\(date.isEmpty ? "" : " · \(date)")").lineLimit(1).truncationMode(.middle)
                         }
-                        .buttonStyle(.link)
-                        .help("Open this meeting")
                     }
-                    if !item.todo.stamp.isEmpty {
-                        Chip(text: item.todo.stamp) { model.openMeeting(item.meeting.path, jump: Jump(tab: .transcript, stamp: item.todo.stamp)) }
-                    }
+                    .buttonStyle(.link)
+                    .help("Open this meeting")
                 }
-                .font(.caption)
+                if !item.todo.stamp.isEmpty {
+                    Chip(text: item.todo.stamp) { model.openMeeting(item.meeting.path, jump: Jump(tab: .transcript, stamp: item.todo.stamp)) }
+                }
             }
-            Spacer(minLength: 8)
-            // Grouped by owner, the group heading already names them.
+        } trailing: {
+            // Grouped by owner, the group heading already names them. The owner and the due date
+            // take the width they need (up to a limit), and the task has the rest.
             if showOwner {
                 HStack(spacing: 5) {
                     if !item.todo.owner.isEmpty {
@@ -244,7 +259,8 @@ struct TodosView: View {
                     }
                 }
                 .font(.callout)
-                .frame(width: 150, alignment: homePreview ? .trailing : .leading)
+                .frame(maxWidth: 150, alignment: homePreview ? .trailing : .leading)
+                .fixedSize()
             }
             // Overdue says so in more than red.
             HStack(spacing: 4) {
@@ -254,15 +270,36 @@ struct TodosView: View {
                 .accessibilityLabel(late ? "Overdue, due \(dueLabel(item, today: today))" : dueLabel(item, today: today))
                 .font(.callout).monospacedDigit()
                 .foregroundStyle(late ? AnyShapeStyle(.red) : item.dueDate == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.secondary))
-                // Room for the overdue mark beside "Mon, Nov 23".
-                .frame(width: 112, alignment: .trailing)
+                .frame(maxWidth: 112, alignment: .trailing)
+                .fixedSize()
+        }
+        .padding(.vertical, 7)
+    }
+
+    /// One of your own list's to-dos, being put right: Return saves it, Escape leaves it as it was.
+    private func editRow(_ item: TodoItem) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "pencil").font(.system(size: 13)).foregroundStyle(.tertiary).frame(width: 15)
+                .accessibilityHidden(true)
+            TextField("To-do", text: $edited, prompt: Text("Send the deck - Jane - due Fri, Nov 6"))
+                .textFieldStyle(.plain)
+                .focused($editFocused)
+                .onAppear { editFocused = true }
+                .onSubmit {
+                    editing = nil
+                    if !edited.trimmed.isEmpty { change(item, to: typedTodo(edited, owner: model.config.myName)) }
+                }
+                .onExitCommand { editing = nil }
+                // Clicking elsewhere leaves it as it was, as Escape does.
+                .onChange(of: editFocused) { if !editFocused { editing = nil } }
         }
         .padding(.vertical, 7)
     }
 
     private func dueLabel(_ item: TodoItem, today: Date) -> String {
         guard let due = item.dueDate else { return "No date" }
-        let d = Int((due.timeIntervalSince(today) / day).rounded())
+        // Days on the calendar: a day the clocks change on is still one day.
+        let d = gregorian.dateComponents([.day], from: gregorian.startOfDay(for: today), to: due).day ?? 0
         return d == 0 ? "Today" : d == 1 ? "Tomorrow" : item.todo.due
     }
 
@@ -294,19 +331,65 @@ struct TodosView: View {
 
     /// A list as its file is now. The file is changed as it stands, never written over with what
     /// this page last read, so this is what's shown until the app has read it back too.
-    private func onDisk(_ path: String) -> String? { try? model.library.readMeeting(path).todo }
+    private func onDisk(_ path: String) -> String? { model.library.readTodo(path) }
 
     private func tick(_ item: TodoItem) {
+        let path = item.meeting.path
+        model.library.tick(path, item.todo, undo: undoManager) { [local = $local] text in
+            // nil: nothing was ticked, and the list is read again.
+            withAnimation { local.wrappedValue[path] = text }
+            if text != nil { model.toast("Saved to \(path.isEmpty ? "Meetings" : folderPath(path)) › todo.md") }
+        }
+    }
+
+    /// One of your own list's to-dos written differently, or deleted (`body` nil).
+    private func change(_ item: TodoItem, to body: String?) {
+        let path = item.meeting.path
         do {
-            guard try model.library.toggleTodo(item.meeting.path, line: item.todo.line, text: item.todo.text) else {
-                // It isn't in the file as it's shown here: nothing was ticked, and the list is read again.
-                withAnimation { local[item.meeting.path] = nil }
-                return model.toast(todoChangedMessage)
+            guard try model.library.editTodo(path, line: item.todo.line, text: item.todo.text, to: body) else {
+                // It isn't in the file as it's shown here: nothing was changed, and the list is read again.
+                withAnimation { local[path] = nil }
+                return model.toast("That to-do has changed in todo.md since this list was read, so it wasn’t changed. The list has been read again.")
             }
-            withAnimation { local[item.meeting.path] = onDisk(item.meeting.path) }
-            model.toast("Saved to \(item.meeting.path.isEmpty ? "Meetings" : folderPath(item.meeting.path)) › todo.md")
+            withAnimation { local[path] = onDisk(path) }
+            model.toast("Saved to Meetings › todo.md")
         } catch {
             model.toast(error.localizedDescription, isError: true)
         }
+    }
+}
+
+/**
+ * One to-do as it's listed, in a meeting, on the To-dos page and Home, and on New recording: its
+ * box, which ticks it, its task, a line of detail under it (`caption`) and anything beside it
+ * (`trailing`). Ticking is Library.tick wherever it's done.
+ */
+struct TodoRow<Caption: View, Trailing: View>: View {
+    let todo: Todo
+    /// The task as shown, when it's more than its words (Find's marks in a meeting).
+    var task: AttributedString?
+    var alignment = VerticalAlignment.top
+    let tick: () -> Void
+    @ViewBuilder var caption: Caption
+    @ViewBuilder var trailing: Trailing
+
+    var body: some View {
+        HStack(alignment: alignment, spacing: 10) {
+            TodoCheckbox(checked: todo.done, what: todo.text, action: tick)
+                .padding(.top, alignment == .top ? 1 : 0)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(task ?? AttributedString(todo.text))
+                    .strikethrough(todo.done).foregroundStyle(todo.done ? .secondary : .primary).textSelection(.enabled)
+                caption.font(.caption)
+            }
+            Spacer(minLength: 8)
+            trailing
+        }
+    }
+}
+
+extension TodoRow where Trailing == EmptyView {
+    init(todo: Todo, task: AttributedString? = nil, alignment: VerticalAlignment = .top, tick: @escaping () -> Void, @ViewBuilder caption: () -> Caption) {
+        self.init(todo: todo, task: task, alignment: alignment, tick: tick, caption: caption, trailing: { EmptyView() })
     }
 }

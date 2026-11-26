@@ -41,6 +41,7 @@ private enum FileKey: Hashable {
 
 struct MeetingView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.undoManager) private var undoManager
     let node: TreeNode
     let jump: Jump?
 
@@ -207,9 +208,9 @@ struct MeetingView: View {
         }
     }
 
-    /// A tick, or a to-do added, on the Summary tab. What's shown changes at once; the file is changed
-    /// as it is now rather than written over with what's shown, so to-dos that have arrived since
-    /// this was read (the summary's own, say) are kept.
+    /// A to-do added on the Summary tab. What's shown changes at once; the file is changed as it is
+    /// now rather than written over with what's shown, so to-dos that have arrived since this was
+    /// read (the summary's own, say) are kept.
     private func changeTodos(shown: String, _ change: () throws -> Bool) {
         files?[.todos] = shown
         do {
@@ -218,14 +219,28 @@ struct MeetingView: View {
                 model.toast(todoChangedMessage)
                 return load()
             }
-            status = .todo
-            Task {
-                try? await Task.sleep(for: .seconds(2))
-                if status == .todo { status = .quiet }
-            }
+            todosSaved()
         } catch {
             model.toast(error.localizedDescription, isError: true)
             load()
+        }
+    }
+
+    /// A tick here, as everywhere (Library.tick): what's shown is the file as it is afterwards, or,
+    /// when nothing was ticked, the meeting read again.
+    private func tick(_ todo: Todo) {
+        model.library.tick(path, todo, undo: undoManager) { [files = $files] text in
+            guard let text else { return load() }
+            files.wrappedValue?[.todos] = text
+            todosSaved()
+        }
+    }
+
+    private func todosSaved() {
+        status = .todo
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            if status == .todo { status = .quiet }
         }
     }
 
@@ -712,17 +727,15 @@ struct MeetingView: View {
                 // No to-dos yet: just the field to add one.
                 if !todos.isEmpty { SectionLabel(text: "To-dos\(open > 0 ? " · \(open) open" : "")") }
                 ForEach(todos, id: \.line) { t in
-                    HStack(alignment: .top, spacing: 10) {
-                        TodoCheckbox(checked: t.done, what: t.text) {
-                            changeTodos(shown: toggleTodo(todoText, line: t.line)) { try model.library.toggleTodo(path, line: t.line, text: t.text) }
+                    let detail = [t.owner.isEmpty ? nil : ownerLabel(t.owner, model.config.myName), t.due.isEmpty ? nil : "due \(t.due)"].compactMap { $0 }
+                    // The time in the call goes on the line under the to-do, after its owner and due date, as on the To-dos page.
+                    TodoRow(todo: t, task: marked(t.text), tick: { tick(t) }) {
+                        if !detail.isEmpty || !t.stamp.isEmpty {
+                            HStack(spacing: 8) {
+                                if !detail.isEmpty { Text(detail.joined(separator: " · ")).foregroundStyle(.secondary) }
+                                if !t.stamp.isEmpty { Chip(text: t.stamp) { jumpTo(t.stamp) } }
+                            }
                         }
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(marked(t.text)).strikethrough(t.done).foregroundStyle(t.done ? .secondary : .primary).textSelection(.enabled)
-                            let detail = [t.owner.isEmpty ? nil : ownerLabel(t.owner, model.config.myName), t.due.isEmpty ? nil : "due \(t.due)"].compactMap { $0 }
-                            if !detail.isEmpty { Text(detail.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary) }
-                        }
-                        Spacer(minLength: 0)
-                        if !t.stamp.isEmpty { Chip(text: t.stamp) { jumpTo(t.stamp) } }
                     }
                 }
                 HStack(spacing: 10) {

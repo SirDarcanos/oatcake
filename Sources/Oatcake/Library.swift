@@ -155,6 +155,39 @@ final class Library {
         refresh()
     }
 
+    /// Rewrites a to-do in todo.md as it is now, or takes it out (`body` nil). False when it isn't
+    /// in the file any more: nothing was written.
+    func editTodo(_ path: String, line: Int, text: String, to body: String?) throws -> Bool {
+        let changed = try meetings.editTodo(path, line: line, text: text, to: body)
+        refresh()
+        return changed
+    }
+
+    /// A meeting's todo.md alone, as it is now; nil when it can't be read.
+    func readTodo(_ path: String) -> String? { try? meetings.readTodo(path) }
+
+    /**
+     * Ticks or unticks a to-do, wherever it's shown, in todo.md as it is now (toggleTodo), and ⌘Z
+     * ticks it back. `shown` is given the file as it is afterwards, for the screen to show at once,
+     * or nil when nothing was ticked: the to-do isn't in the file as shown (which the toast says)
+     * or the file couldn't be written. The screen then reads its to-dos again.
+     */
+    func tick(_ path: String, _ todo: Todo, undo: UndoManager?, shown: @escaping @MainActor (String?) -> Void) {
+        do {
+            guard try toggleTodo(path, line: todo.line, text: todo.text) else {
+                toast(todoChangedMessage)
+                return shown(nil)
+            }
+            shown(readTodo(path))
+            undo?.registerUndo(withTarget: self) { library in
+                MainActor.assumeIsolated { library.tick(path, todo, undo: undo, shown: shown) }
+            }
+        } catch {
+            toast(error.localizedDescription, isError: true)
+            shown(nil)
+        }
+    }
+
     /// Rename speakers…: other names for a saved meeting's speakers, in that meeting only.
     func renameSpeakers(_ path: String, _ renames: [String: String]) {
         attempt { try meetings.renameSpeakers(path, renames, me: config.myName) }
