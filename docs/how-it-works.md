@@ -61,7 +61,9 @@ across the top: over the meeting list, the folder's name, how many meetings it h
 button; over the screen on the right, its own controls, what it is at the left and what can be
 done at the right. What doesn't fit goes in the toolbar's » menu. The window can be as narrow as
 720 points, about half a laptop's screen. **View › Hide Sidebar** (⌃⌘S), or the button beside the
-window's buttons, hides the sidebar.
+window's buttons, hides the sidebar. With the meeting list showing in a window too narrow for the
+sidebar as well, the sidebar makes way, as in Mail, and comes back when the window is wider; show
+it to have it anyway.
 
 The sidebar has a recording in progress, Home, To-dos, Upcoming, Who's who, folders, and any
 meetings at the top level. A one-off call with no folder of its own is saved at the top level;

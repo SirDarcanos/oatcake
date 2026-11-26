@@ -329,6 +329,11 @@ struct ContentView: View {
     @ViewState private var keepTitle = false
     /// The sidebar is showing, in either layout: hidden in one, it stays hidden in the other.
     @AppStorage("sidebarShown") private var sidebarShown = true
+    /// The window is too narrow for the sidebar, the meeting list and a meeting that can be read.
+    @ViewState private var tooNarrow = false
+    /// The three-column layout's sidebar is out of the way for lack of room, as in Mail: it comes back
+    /// when there's room again (unless it was hidden on purpose), or when it's shown on purpose.
+    @ViewState private var squeezed = false
 
     /// A folder or All meetings chosen, or a meeting open: the meeting list is beside it.
     private var listShown: Bool {
@@ -352,13 +357,16 @@ struct ContentView: View {
         // nothing promises it, so they're removed before either split view is made (at launch, and
         // each time the list comes or goes) and each column starts at the width KeepsWidth kept.
         let _ = UserDefaults.standard.removeObject(forKey: savedColumnFrames)
-        let sidebarWidth = KeepsWidth(key: "sidebarWidth", range: 200...520, ideal: 260, shown: sidebarShown)
+        let sidebarWidth = KeepsWidth(key: "sidebarWidth", range: 200...520, ideal: 260)
+        let listWidth = KeepsWidth(key: "meetingListWidth", range: 220...560, ideal: 300)
+        // Below about 420 points a meeting's title wraps a letter to a line.
+        let needed = sidebarWidth.start + listWidth.start + 420
         Group {
             if listShown {
-                NavigationSplitView(columnVisibility: sidebar(hiddenAs: .doubleColumn)) {
+                NavigationSplitView(columnVisibility: sidebar(hiddenAs: .doubleColumn, squeezable: true)) {
                     SidebarView().modifier(sidebarWidth)
                 } content: {
-                    MeetingListView().modifier(KeepsWidth(key: "meetingListWidth", range: 220...560, ideal: 300))
+                    MeetingListView().modifier(listWidth)
                 } detail: {
                     DetailView()
                 }
@@ -370,6 +378,8 @@ struct ContentView: View {
                 }
             }
         }
+        .onGeometryChange(for: Bool.self) { $0.size.width < needed } action: { tooNarrow = $0; squeezed = $0 }
+        .onChange(of: listShown) { squeezed = tooNarrow }
         // Search is modal: while it's open, the window behind it can't be worked through accessibility either.
         .accessibilityHidden(model.searching)
         .overlay { if model.searching { SearchOverlay() } }
@@ -408,8 +418,18 @@ struct ContentView: View {
 
     /// The sidebar shown or hidden. The two layouts name a hidden sidebar differently: with the list,
     /// the two columns left are the list and the meeting; without it, only the screen is left.
-    private func sidebar(hiddenAs hidden: NavigationSplitViewVisibility) -> Binding<NavigationSplitViewVisibility> {
-        Binding(get: { sidebarShown ? .all : hidden }, set: { sidebarShown = $0 != hidden && $0 != .detailOnly })
+    /// `squeezable`: the three-column layout, whose sidebar makes way when the window is too narrow.
+    private func sidebar(hiddenAs hidden: NavigationSplitViewVisibility, squeezable: Bool = false) -> Binding<NavigationSplitViewVisibility> {
+        // Read when asked, not when the binding was made: an older binding is still answered after
+        // the sidebar has made way, and would take that for the person hiding it.
+        let shown = { sidebarShown && !(squeezable && squeezed) }
+        return Binding(get: { shown() ? .all : hidden }, set: { visibility in
+            let showing = visibility != hidden && visibility != .detailOnly
+            // The split view hands back what it was given; only a change is the person's own.
+            guard showing != shown() else { return }
+            sidebarShown = showing
+            squeezed = false
+        })
     }
 }
 
@@ -418,26 +438,36 @@ struct ContentView: View {
 private let savedColumnFrames = "NSSplitView Subview Frames main, SidebarNavigationSplitView"
 
 /// A column that starts at the width it last had, in place of the split view's own saved frames
-/// (see ContentView). A width is kept once it has held for half a second while the column shows and
-/// is one it can be dragged to: not one passed through as the sidebar slides away, or as the split
-/// view is first laid out. The column's width has to be the last modifier: under the others, the
-/// split view ignored it and opened the sidebar at 144 points, narrower than its minimum.
+/// (see ContentView). Only a width the person drags it to is kept, not one the window forces on it.
+/// The column's width has to be the last modifier: under the others, the split view ignored it and
+/// opened the sidebar at 144 points, narrower than its minimum.
 private struct KeepsWidth: ViewModifier {
     let key: String
     let range: ClosedRange<CGFloat>
     let ideal: CGFloat
-    var shown = true
-    @ViewState private var width: CGFloat = 0
+    /// The window's split view last resized its columns by moving a divider.
+    @ViewState private var dividerMoved = false
+
+    /// The width the column starts at: the one kept, or else its usual width.
+    var start: CGFloat {
+        let saved = CGFloat(UserDefaults.standard.double(forKey: key))
+        return range.contains(saved) ? saved : ideal
+    }
 
     func body(content: Content) -> some View {
-        let saved = CGFloat(UserDefaults.standard.double(forKey: key))
         content
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-            .task(id: [width, shown ? 1 : 0]) {
-                guard shown, range.contains(width), (try? await Task.sleep(for: .milliseconds(500))) != nil else { return }
+            // A divider dragged moves it; a window resized doesn't. The split view moves its dividers
+            // itself too, as it lays out its columns (seen in a test), so a width is kept only while
+            // the mouse is being dragged as well.
+            .onReceive(NotificationCenter.default.publisher(for: NSSplitView.didResizeSubviewsNotification)) { note in
+                guard (note.object as? NSView)?.window?.identifier?.rawValue == "main" else { return }
+                dividerMoved = note.userInfo?["NSSplitViewDividerIndex"] != nil
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+                guard dividerMoved, NSApp.currentEvent?.type == .leftMouseDragged, range.contains(width) else { return }
                 UserDefaults.standard.set(Double(width), forKey: key)
             }
-            .navigationSplitViewColumnWidth(min: range.lowerBound, ideal: range.contains(saved) ? saved : ideal, max: range.upperBound)
+            .navigationSplitViewColumnWidth(min: range.lowerBound, ideal: start, max: range.upperBound)
     }
 }
 
