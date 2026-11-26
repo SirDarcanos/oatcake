@@ -8,7 +8,8 @@ git push --follow-tags
 ```
 
 The Release workflow (`.github/workflows/release.yml`) waits for its approver, then runs the
-tests and builds the app on a GitHub Mac runner, and only then puts the release certificate on
+tests and builds the app on a GitHub Mac runner (the `xcode-27` image, with Xcode 27.2 and its
+macOS 27.2 SDK, which decides how macOS draws the app), and only then puts the release certificate on
 the runner and signs the app, the recorder and llama.cpp's server with it, for the hardened
 runtime (it stops if any of them ends up signed any other way). It zips the app, writes and signs
 `latest.json` (`Scripts/sign-manifest.swift`) with the commit subjects since the previous tag as
