@@ -121,7 +121,10 @@ if [[ -n "${OATCAKE_SIGN_KEYCHAIN:-}" ]]; then KEYCHAIN=(--keychain "$OATCAKE_SI
 # load its own code into Oatcake or the recorder (and so borrow the recorder's microphone
 # permission). The recorder says it uses the microphone, which the hardened runtime asks it to,
 # and so does Oatcake, because macOS counts the recorder's use as Oatcake's
-# (Resources/Oatcake.entitlements); llama.cpp's server may load the libraries that came with it.
+# (Resources/Oatcake.entitlements); llama.cpp's server may load the libraries that came with it
+# (or any other beside it, so Oatcake checks its own signature over the app before each start:
+# ModelServer.checkSealed). Re-signing changes every file, so they can't be checked against the
+# release's own SHA-256s once they're in the app.
 for file in "${LLAMA_FILES[@]}"; do
     if [[ "$file" == llama-server ]]; then
         codesign --force --options runtime --entitlements Resources/Llama.entitlements --sign "$IDENTITY" ${KEYCHAIN[@]+"${KEYCHAIN[@]}"} "$LLAMA/$file"

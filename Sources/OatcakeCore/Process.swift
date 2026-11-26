@@ -7,7 +7,7 @@ import Foundation
 public enum ShellEnvironment {
     public static func childEnvironment() -> [String: String] {
         var env = ProcessInfo.processInfo.environment
-        env.removeValue(forKey: "OATCAKE_CALENDAR_URL")
+        env.removeValue(forKey: CalendarSource.environmentVariable)
         return env
     }
 }
@@ -68,16 +68,8 @@ final class Locked<Value: Sendable>: @unchecked Sendable {
     }
 }
 
-/// Whether a process ID is a running copy of the program whose path ends with `name`: a pid file
-/// outlives its process when that crashes, and macOS gives process IDs out again.
-func isRunning(_ pid: pid_t, program name: String) -> Bool {
-    guard pid > 1 else { return false }
-    var path = [CChar](repeating: 0, count: 4096)
-    guard proc_pidpath(pid, &path, UInt32(path.count)) > 0 else { return false }
-    return path.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }.hasSuffix("/" + name)
-}
-
-/// The process ID a file holds, when that process is still running and is `name`.
+/// The process ID a file holds, when that process is still running and is `name` (isRunning, which
+/// the recorder uses too, is RecorderContract's).
 func runningPid(in file: URL, program name: String) -> pid_t? {
     guard let text = try? String(contentsOf: file, encoding: .utf8), let pid = pid_t(text.trimmed), isRunning(pid, program: name) else { return nil }
     return pid
@@ -109,6 +101,12 @@ public enum ChildProcess {
         public func terminate() { process.terminate() }
     }
 
+    /**
+     * Runs a helper to the end. It's over when the process has exited and both its pipes have said
+     * end-of-file to their own readers: reading what was left from the termination handler instead
+     * raced a reader that had the helper's last piece of output in hand, and lost its last line (an
+     * analysis helper's reason for failing, say).
+     */
     public static func run(_ executable: URL, _ arguments: [String],
                            onStart: (@Sendable (Handle) -> Void)? = nil, onLine: (@Sendable (String) -> Void)? = nil) async throws -> Result {
         let process = Process()
@@ -120,69 +118,92 @@ public enum ChildProcess {
         process.standardOutput = stdout
         process.standardError = stderr
 
-        let collected = Collected()
-        stdout.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            if data.isEmpty { return }
-            collected.appendOut(data, onLine: onLine)
-        }
-        stderr.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            if !data.isEmpty { collected.appendErr(data) }
-        }
         return try await withCheckedThrowingContinuation { continuation in
+            let collected = Collected(onLine: onLine, continuation: continuation)
+            stdout.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                if data.isEmpty {
+                    handle.readabilityHandler = nil
+                    collected.ended(.out)
+                } else {
+                    collected.appendOut(data)
+                }
+            }
+            stderr.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                if data.isEmpty {
+                    handle.readabilityHandler = nil
+                    collected.ended(.err)
+                } else {
+                    collected.appendErr(data)
+                }
+            }
             process.terminationHandler = { p in
-                stdout.fileHandleForReading.readabilityHandler = nil
-                stderr.fileHandleForReading.readabilityHandler = nil
-                // Whatever arrived after the last readability callback.
-                collected.appendOut(stdout.fileHandleForReading.readDataToEndOfFile(), onLine: onLine)
-                collected.appendErr(stderr.fileHandleForReading.readDataToEndOfFile())
-                collected.flush(onLine: onLine)
-                continuation.resume(returning: Result(status: p.terminationReason == .uncaughtSignal ? -p.terminationStatus : p.terminationStatus,
-                                                      stdout: collected.out, stderr: collected.err))
+                collected.exited(p.terminationReason == .uncaughtSignal ? -p.terminationStatus : p.terminationStatus)
             }
             do {
                 try process.run()
             } catch {
-                continuation.resume(throwing: error)
+                stdout.fileHandleForReading.readabilityHandler = nil
+                stderr.fileHandleForReading.readabilityHandler = nil
+                collected.failed(error)
                 return
             }
             onStart?(Handle(process: process))
         }
     }
 
-    // Sendable by its lock: output arrives on the pipes' own threads and is read from the caller's.
+    // Sendable by its lock: output arrives on each pipe's own thread, and the exit on another.
     private final class Collected: @unchecked Sendable {
+        enum Stream { case out, err }
         private let lock = NSLock()
+        private let onLine: (@Sendable (String) -> Void)?
+        private var continuation: CheckedContinuation<Result, Error>?
         private var outData = Data()
         private var errData = Data()
-        private var pending = Data()
-        var out: String { lock.withLock { String(decoding: outData, as: UTF8.self) } }
-        var err: String { lock.withLock { String(decoding: errData, as: UTF8.self) } }
+        private var lines = LineBuffer()
+        private var open: Set<Stream> = [.out, .err]
+        private var status: Int32?
 
-        func appendOut(_ data: Data, onLine: (@Sendable (String) -> Void)?) {
-            guard !data.isEmpty else { return }
-            var lines: [String] = []
-            lock.withLock {
+        init(onLine: (@Sendable (String) -> Void)?, continuation: CheckedContinuation<Result, Error>) {
+            self.onLine = onLine
+            self.continuation = continuation
+        }
+
+        func appendOut(_ data: Data) {
+            let complete = lock.withLock { () -> [String] in
                 outData.append(data)
-                guard onLine != nil else { return }
-                pending.append(data)
-                while let newline = pending.firstIndex(of: 0x0A) {
-                    lines.append(String(decoding: pending[pending.startIndex..<newline], as: UTF8.self))
-                    pending = Data(pending[pending.index(after: newline)...])
-                }
+                return onLine == nil ? [] : lines.add(data)
             }
-            lines.forEach { onLine?($0) }
+            complete.forEach { onLine?($0) }
         }
 
         func appendErr(_ data: Data) { lock.withLock { errData.append(data) } }
 
-        func flush(onLine: (@Sendable (String) -> Void)?) {
-            let rest = lock.withLock { () -> String in
-                defer { pending = Data() }
-                return String(decoding: pending, as: UTF8.self)
+        /// A pipe has reached its end. Standard output's last line may have had no newline.
+        func ended(_ pipe: Stream) {
+            let last = lock.withLock { pipe == .out && onLine != nil ? lines.finish() : nil }
+            if let last { onLine?(last) }
+            finishIfDone { $0.open.remove(pipe) }
+        }
+
+        func exited(_ status: Int32) { finishIfDone { $0.status = status } }
+
+        func failed(_ error: Error) {
+            lock.withLock { () -> CheckedContinuation<Result, Error>? in
+                defer { continuation = nil }
+                return continuation
+            }?.resume(throwing: error)
+        }
+
+        private func finishIfDone(_ change: (Collected) -> Void) {
+            let done = lock.withLock { () -> (CheckedContinuation<Result, Error>, Result)? in
+                change(self)
+                guard open.isEmpty, let status, let continuation else { return nil }
+                self.continuation = nil
+                return (continuation, Result(status: status, stdout: String(decoding: outData, as: UTF8.self), stderr: String(decoding: errData, as: UTF8.self)))
             }
-            if !rest.isEmpty { onLine?(rest) }
+            done.map { $0.0.resume(returning: $0.1) }
         }
     }
 }

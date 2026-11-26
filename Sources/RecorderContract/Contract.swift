@@ -4,7 +4,8 @@
 
 import Foundation
 
-/// Both tracks are 16 kHz mono PCM16.
+/// Both tracks are 16 kHz mono PCM16. (Earlier meta.json files say so in a sampleRate of their own,
+/// which nothing reads.)
 public let recorderSampleRate = 16_000
 
 /// The files in a recording's folder that the two programs share.
@@ -60,14 +61,21 @@ public struct RecorderStatus: Codable, Equatable, Sendable {
     public var systemLevel: Double?
     /// The input being recorded right now; nil when there's none.
     public var micDevice: MicChoice?
+    /// Seconds from the start to each track's first sample, once it has one: what meta.json will say,
+    /// kept here as well for a recorder that goes without finishing.
+    public var micOffset: Double?
+    public var systemOffset: Double?
 
-    public init(state: State, error: String? = nil, elapsed: Double? = nil, micLevel: Double? = nil, systemLevel: Double? = nil, micDevice: MicChoice? = nil) {
+    public init(state: State, error: String? = nil, elapsed: Double? = nil, micLevel: Double? = nil, systemLevel: Double? = nil, micDevice: MicChoice? = nil,
+                micOffset: Double? = nil, systemOffset: Double? = nil) {
         self.state = state
         self.error = error
         self.elapsed = elapsed
         self.micLevel = micLevel
         self.systemLevel = systemLevel
         self.micDevice = micDevice
+        self.micOffset = micOffset
+        self.systemOffset = systemOffset
     }
 }
 
@@ -76,17 +84,16 @@ public struct RecorderMeta: Codable, Equatable, Sendable {
     /// ISO 8601.
     public var startedAt: String
     public var endedAt: String
-    public var sampleRate: Int?
     /// Seconds from startedAt to each track's first sample, for lining the two up.
     public var micOffset: Double
     public var systemOffset: Double
-    /// Written by Oatcake, not the recorder: the recorder went without finishing, so the offsets are a guess.
+    /// Written by Oatcake, not the recorder: the recorder went without finishing and without saying
+    /// where a track that has audio starts, so the offsets are a guess.
     public var interrupted: Bool?
 
-    public init(startedAt: String, endedAt: String, sampleRate: Int? = recorderSampleRate, micOffset: Double, systemOffset: Double, interrupted: Bool? = nil) {
+    public init(startedAt: String, endedAt: String, micOffset: Double, systemOffset: Double, interrupted: Bool? = nil) {
         self.startedAt = startedAt
         self.endedAt = endedAt
-        self.sampleRate = sampleRate
         self.micOffset = micOffset
         self.systemOffset = systemOffset
         self.interrupted = interrupted

@@ -140,8 +140,10 @@ public enum Recordings {
         }
     }
 
+    /// Makes a recording's folder and gets ready for its recorder, which `launchRecorder` then starts.
+    /// Returns the recording and the socket its recorder is to ask at.
     public static func start(title: String, folder: String, micUid: String?, options: StartOptions = StartOptions(),
-                             recordings: URL = Paths.recordings) throws -> Recording {
+                             recordings: URL = Paths.recordings) throws -> (recording: Recording, socket: String) {
         guard FileManager.default.exists(recorderApp) else {
             throw OatcakeError("The recorder isn't built. Run Scripts/bundle.sh.")
         }
@@ -149,28 +151,44 @@ public enum Recordings {
         let id = isoString(startedAt).replacingOccurrences(of: ":", with: "-").replacingOccurrences(of: ".", with: "-")
         let dir = recordings.appendingPathComponent(id, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let calendarIDs = options.calendarIDs.isEmpty ? nil : options.calendarIDs
-        try writeAtomic(dir.appendingPathComponent("call.json"),
-                        try encodeJSON(CallInfo(title: title, folder: folder, startedAt: isoString(startedAt), eventId: options.eventId,
-                                                attendees: options.attendees.isEmpty ? nil : options.attendees,
-                                                calendarIDs: calendarIDs, summaryTemplate: options.summaryTemplate)))
-        let prep = options.prep.map(\.trimmed).filter { !$0.isEmpty }
-        if !prep.isEmpty { try saveNotes(id, prep.map { Note(at: nil, text: $0) }, recordings: recordings) }
-        try setMic(dir, uid: micUid)
-        try writeAtomic(dir.appendingPathComponent(RecorderFile.owner), String(getpid()))
-        // The recorder only records for Oatcake: it asks at this socket whether this folder's recording is wanted.
-        let socket = try door.expect(dir)
-        // Launched through LaunchServices, so it runs as an app of its own and not as Oatcake's child
-        // (macOS still counts the microphone and system audio it uses as Oatcake's).
+        // A folder left half-made would come back at the next launch as an empty recording to review.
         do {
-            try runCapturing("/usr/bin/open", ["-n", "-g", recorderApp.path, "--args", "--out", dir.path, RecorderGate.argument, socket])
+            let calendarIDs = options.calendarIDs.isEmpty ? nil : options.calendarIDs
+            try writeAtomic(dir.appendingPathComponent("call.json"),
+                            try encodeJSON(CallInfo(title: title, folder: folder, startedAt: isoString(startedAt), eventId: options.eventId,
+                                                    attendees: options.attendees.isEmpty ? nil : options.attendees,
+                                                    calendarIDs: calendarIDs, summaryTemplate: options.summaryTemplate)))
+            let prep = options.prep.map(\.trimmed).filter { !$0.isEmpty }
+            if !prep.isEmpty { try saveNotes(id, prep.map { Note(at: nil, text: $0) }, recordings: recordings) }
+            try setMic(dir, uid: micUid)
+            try writeAtomic(dir.appendingPathComponent(RecorderFile.owner), String(getpid()))
+            // The recorder only records for Oatcake: it asks at this socket whether this folder's recording is wanted.
+            let socket = try door.expect(dir)
+            let rec = Recording(id: id, dir: dir, title: title, folder: folder, summaryTemplate: options.summaryTemplate, eventId: options.eventId,
+                                attendees: options.attendees.isEmpty ? nil : options.attendees, calendarIDs: calendarIDs,
+                                startedAt: startedAt, state: .recording)
+            return (rec, socket)
         } catch {
-            door.forget(dir)
+            try? FileManager.default.removeItem(at: dir)
             throw error
         }
-        return Recording(id: id, dir: dir, title: title, folder: folder, summaryTemplate: options.summaryTemplate, eventId: options.eventId,
-                         attendees: options.attendees.isEmpty ? nil : options.attendees, calendarIDs: calendarIDs,
-                         startedAt: startedAt, state: .recording)
+    }
+
+    /**
+     * Starts a recording's recorder, through LaunchServices, so it runs as an app of its own and not
+     * as Oatcake's child (macOS still counts the microphone and system audio it uses as Oatcake's).
+     * `open` can take a while, the first time especially, so it's waited for off the caller's thread.
+     */
+    public static func launchRecorder(_ rec: Recording, socket: String) async throws {
+        let app = recorderApp.path
+        do {
+            _ = try await Task.detached {
+                try runCapturing("/usr/bin/open", ["-n", "-g", app, "--args", "--out", rec.dir.path, RecorderGate.argument, socket])
+            }.value
+        } catch {
+            door.forget(rec.dir)
+            throw error
+        }
     }
 
     public static func status(_ rec: Recording) -> RecorderStatus {
@@ -192,7 +210,7 @@ public enum Recordings {
 
     /// The recorder's process ID, while that process is still running and is our recorder.
     static func recorderPid(_ rec: Recording) -> pid_t? {
-        runningPid(in: rec.dir.appendingPathComponent(RecorderFile.pid), program: "oatcake-recorder")
+        runningPid(in: rec.dir.appendingPathComponent(RecorderFile.pid), program: ProgramName.recorder)
     }
 
     public static func isRunning(_ rec: Recording) -> Bool { recorderPid(rec) != nil }
@@ -210,6 +228,11 @@ public enum Recordings {
     /// Whether the recorder captured anything at all.
     public static func hasAudio(_ rec: Recording) -> Bool { audioTracks.contains { size(rec.dir.appendingPathComponent($0)) > 0 } }
 
+    /// Seconds of audio in the longer of the two tracks.
+    public static func audioSeconds(_ rec: Recording) -> Double {
+        Double(audioTracks.map { size(rec.dir.appendingPathComponent($0)) }.max() ?? 0) / 2 / Double(sampleRate)
+    }
+
     private static let audioTracks = [RecorderFile.micTrack, RecorderFile.systemTrack]
 
     private static func size(_ file: URL) -> Int64 {
@@ -220,6 +243,8 @@ public enum Recordings {
      * A recording whose recorder stopped without writing meta.json: it crashed, was killed, or never got
      * past the permission prompt. Writes a meta.json from what's on disk, so the audio it did capture is
      * processed like any other recording (and can be discarded from Needs review if there's nothing).
+     * Where each track starts is in the recorder's last status; a track with audio that it doesn't
+     * give one for is taken as starting with the recording, a guess Who's who mentions.
      */
     public static func finishInterrupted(_ rec: Recording) {
         let fm = FileManager.default
@@ -227,12 +252,43 @@ public enum Recordings {
         let modified = (audioTracks + [RecorderFile.status])
             .compactMap { (try? fm.attributesOfItem(atPath: rec.dir.appendingPathComponent($0).path))?[.modificationDate] as? Date }
             .max() ?? rec.startedAt
-        // The tracks are taken as starting together: their offsets are unknown.
+        let status = tryJSON(RecorderStatus.self, rec.dir.appendingPathComponent(RecorderFile.status))
+        let mic = status?.micOffset, system = status?.systemOffset
+        let guessed = (mic == nil && size(rec.dir.appendingPathComponent(RecorderFile.micTrack)) > 0)
+            || (system == nil && size(rec.dir.appendingPathComponent(RecorderFile.systemTrack)) > 0)
         let meta = RecorderMeta(startedAt: isoString(rec.startedAt), endedAt: isoString(modified),
-                                micOffset: 0, systemOffset: 0, interrupted: true)
+                                micOffset: mic ?? 0, systemOffset: system ?? 0, interrupted: guessed ? true : nil)
         if let text = try? encodeJSON(meta) { try? writeAtomic(rec.dir.appendingPathComponent(RecorderFile.meta), text) }
         try? fm.removeItem(at: rec.dir.appendingPathComponent(RecorderFile.pid))
     }
+
+    /**
+     * The recordings waiting to be processed or reviewed: recorded and processed ones, and one still
+     * "recording" whose recorder has gone (no meta.json, no recorder running, not one of `live`).
+     * That's a recorder that couldn't write meta.json and Oatcake couldn't either (the disk was full),
+     * which would otherwise stay out of sight until Oatcake was reopened.
+     */
+    public static func waiting(except live: Set<String>, recordings: URL = Paths.recordings) -> [Recording] {
+        list(recordings: recordings).compactMap { rec in
+            var rec = rec
+            switch rec.state {
+            case .recorded, .processed: return rec
+            case .recording where !live.contains(rec.id) && !isRunning(rec):
+                rec.state = .recorded
+                return rec
+            default: return nil
+            }
+        }
+    }
+
+    /// The analysis helper writes this beside analysis.json, and Oatcake takes it away once it has done
+    /// its own part (suggesting names, then saving the call by itself if Settings says to). One still
+    /// there at launch was cut short by a quit, and that part is done again.
+    static let lastStepFile = "last-step"
+
+    public static func lastStepPending(_ rec: Recording) -> Bool { FileManager.default.exists(rec.dir.appendingPathComponent(lastStepFile)) }
+
+    public static func lastStepDone(_ rec: Recording) { try? FileManager.default.removeItem(at: rec.dir.appendingPathComponent(lastStepFile)) }
 
     public static func list(recordings: URL = Paths.recordings) -> [Recording] {
         let fm = FileManager.default
@@ -305,33 +361,54 @@ public enum Recordings {
     /**
      * Clears away the working folders of recordings that have been saved as meetings. One whose audio
      * was kept (Keep call audio) first has it written into its meeting's folder as audio.m4a, so it's
-     * with the meeting and goes to the Trash with it; if that meeting can't be found, the folder is
-     * left as it is. Slow for kept audio, so it's run in the background: at launch and after each save.
+     * with the meeting and goes to the Trash with it; if that can't be written, the folder stays to be
+     * tried again, and what went wrong is returned to be said. One whose meeting has gone (to the
+     * Trash, say) goes too, so its meeting isn't searched for through the whole Meetings folder every
+     * time: to the Trash if it still holds audio, deleted if not. Not when the whole Meetings folder is
+     * missing (a drive that isn't plugged in): that's no sign of what happened to one meeting. Slow for
+     * kept audio, so it's run in the background: at launch and after each save.
      */
-    public static func tidySaved(meetingsRoot: URL, recordings: URL = Paths.recordings) {
+    @discardableResult
+    public static func tidySaved(meetingsRoot: URL, recordings: URL = Paths.recordings,
+                                 trash: (URL) -> Void = { try? FileManager.default.trashItem(at: $0, resultingItemURL: nil) }) -> [String] {
         let fm = FileManager.default
+        var problems: [String] = []
         for id in (try? fm.contentsOfDirectory(atPath: recordings.path)) ?? [] {
             let dir = recordings.appendingPathComponent(id, isDirectory: true)
             guard let saved = savedInfo(dir) else { continue }
-            if audioTracks.contains(where: { size(dir.appendingPathComponent($0)) > 0 }) {
-                guard let meeting = savedMeeting(id, saved.meeting, under: meetingsRoot) else { continue }
-                let audio = meeting.appendingPathComponent("audio.m4a")
-                if !fm.exists(audio), (try? exportAudio(recording: dir, to: audio)) == nil { continue }
-            }
-            if saved.isUnchecked {
-                // Its meeting has gone (to the Trash, say), so there's nothing left to name: the clips
-                // and the analysis go too. Not when the whole Meetings folder is missing (a drive
-                // that isn't plugged in): that's no sign of what happened to one meeting.
-                if fm.exists(meetingsRoot), savedMeeting(id, saved.meeting, under: meetingsRoot) == nil {
-                    try? fm.removeItem(at: dir)
-                    continue
-                }
-                // Its voices can still be named: the analysis and clips stay, the tracks have gone to the meeting.
-                deleteTracks(dir)
+            let hasTracks = audioTracks.contains { size(dir.appendingPathComponent($0)) > 0 }
+            guard hasTracks || saved.isUnchecked else {
+                try? fm.removeItem(at: dir)
                 continue
             }
-            try? fm.removeItem(at: dir)
+            guard let meeting = savedMeeting(id, saved.meeting, under: meetingsRoot) else {
+                // Audio that never reached its meeting is the only copy, so it goes to the Trash, where
+                // it can still be got back, rather than being deleted.
+                if fm.exists(meetingsRoot) {
+                    if hasTracks { trash(dir) } else { try? fm.removeItem(at: dir) }
+                }
+                continue
+            }
+            if hasTracks {
+                let audio = meeting.appendingPathComponent("audio.m4a")
+                if !fm.exists(audio) {
+                    do {
+                        try exportAudio(recording: dir, to: audio)
+                    } catch {
+                        let title = tryJSON(CallInfo.self, dir.appendingPathComponent("call.json"))?.title ?? id
+                        problems.append("The call audio of “\(title)” couldn’t be kept with its meeting: \(error.localizedDescription)")
+                        continue
+                    }
+                }
+            }
+            // Its voices can still be named: the analysis and clips stay, the tracks have gone to the meeting.
+            if saved.isUnchecked {
+                deleteTracks(dir)
+            } else {
+                try? fm.removeItem(at: dir)
+            }
         }
+        return problems
     }
 
     /// The meeting folder a saved recording went to: where saved.json says, or wherever it has been

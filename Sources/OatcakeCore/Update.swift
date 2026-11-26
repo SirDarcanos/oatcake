@@ -92,41 +92,60 @@ public enum Update {
     /// Downloads the release zip into dir, checking its size and SHA-256 against the manifest.
     public static func downloadZip(_ manifest: Manifest, into dir: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         guard let url = URL(string: manifest.zip.url) else { throw OatcakeError("The update's address isn't valid.") }
-        let bytes: URLSession.AsyncBytes, response: URLResponse
-        do {
-            (bytes, response) = try await URLSession.shared.bytes(for: URLRequest(url: url, timeoutInterval: 60))
-        } catch {
-            throw OatcakeError("Couldn't download the update. Check your connection and try again.")
-        }
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 else { throw OatcakeError("The download failed (HTTP \(status)).") }
+        let body = Pieces()
+        let session = URLSession(configuration: .ephemeral, delegate: body, delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        session.dataTask(with: URLRequest(url: url, timeoutInterval: 60)).resume()
         let file = dir.appendingPathComponent(manifest.zip.name)
         FileManager.default.createFile(atPath: file.path, contents: nil, attributes: [.posixPermissions: 0o600])
         let handle = try FileHandle(forWritingTo: file)
         defer { try? handle.close() }
         var hash = SHA256()
         var received = 0
-        var buffer = Data()
-        buffer.reserveCapacity(1 << 20)
-        for try await byte in bytes {
-            buffer.append(byte)
-            if buffer.count >= 1 << 20 {
-                received += buffer.count
-                if received > manifest.zip.size { throw OatcakeError("The download is bigger than the release said it would be.") }
-                hash.update(data: buffer)
-                try handle.write(contentsOf: buffer)
-                buffer.removeAll(keepingCapacity: true)
-                progress(Double(received) / Double(manifest.zip.size))
-            }
+        for try await piece in body.pieces {
+            let before = received
+            received += piece.count
+            if received > manifest.zip.size { throw OatcakeError("The download is bigger than the release said it would be.") }
+            hash.update(data: piece)
+            try handle.write(contentsOf: piece)
+            // Told once a megabyte, not for every piece.
+            if received >> 20 != before >> 20 { progress(Double(received) / Double(manifest.zip.size)) }
         }
-        received += buffer.count
-        hash.update(data: buffer)
-        try handle.write(contentsOf: buffer)
         guard received == manifest.zip.size else { throw OatcakeError("The download stopped early (\(received) of \(manifest.zip.size) bytes).") }
         let digest = hash.finalize().map { String(format: "%02x", $0) }.joined()
         guard digest == manifest.zip.sha256 else { throw OatcakeError("The download doesn't match the release's checksum.") }
         progress(1)
         return file
+    }
+
+    /// A download's body in the pieces the system hands over, rather than a byte at a time. It ends
+    /// with an error for an answer other than 200, or for a request that got no answer at all.
+    // Sendable by arrangement: `answered` is only touched from the session's delegate queue, which
+    // runs one callback at a time.
+    private final class Pieces: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+        let (pieces, more) = AsyncThrowingStream<Data, Error>.makeStream()
+        private var answered = false
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+                        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+            answered = true
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard status == 200 else {
+                more.finish(throwing: OatcakeError("The download failed (HTTP \(status))."))
+                return completionHandler(.cancel)
+            }
+            completionHandler(.allow)
+        }
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) { more.yield(data) }
+
+        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+            if error != nil, !answered {
+                more.finish(throwing: OatcakeError("Couldn't download the update. Check your connection and try again."))
+            } else {
+                more.finish(throwing: error)
+            }
+        }
     }
 
     static func plistValue(_ app: URL, _ key: String) -> String? {
@@ -213,19 +232,25 @@ public enum Update {
     /usr/bin/open "$dest"
     """#
 
-    /// Starts the swap; the caller quits straight after. Its output goes to update.log in Oatcake's data folder.
+    /// Starts the swap; the caller quits straight after. Its output goes to update.log in Oatcake's
+    /// data folder. If it can't be started, the staged copy is removed rather than left beside the app.
     public static func swapAfterExit(installed: URL, staged: URL, log file: URL = Paths.updateLog) throws {
-        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if !FileManager.default.exists(file) { FileManager.default.createFile(atPath: file.path, contents: nil) }
-        let log = try FileHandle(forWritingTo: file)
-        log.seekToEndOfFile()
-        let process = Process()
-        // A child process outlives Oatcake: it's handed to launchd when Oatcake exits.
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", swapScript, "oatcake-update", String(getpid()), installed.path, staged.path]
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = log
-        process.standardError = log
-        try process.run()
+        do {
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if !FileManager.default.exists(file) { FileManager.default.createFile(atPath: file.path, contents: nil) }
+            let log = try FileHandle(forWritingTo: file)
+            log.seekToEndOfFile()
+            let process = Process()
+            // A child process outlives Oatcake: it's handed to launchd when Oatcake exits.
+            process.executableURL = URL(fileURLWithPath: "/bin/sh")
+            process.arguments = ["-c", swapScript, "oatcake-update", String(getpid()), installed.path, staged.path]
+            process.standardInput = FileHandle.nullDevice
+            process.standardOutput = log
+            process.standardError = log
+            try process.run()
+        } catch {
+            try? FileManager.default.removeItem(at: staged)
+            throw error
+        }
     }
 }

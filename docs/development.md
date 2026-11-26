@@ -26,7 +26,10 @@ icon is `assets/icon.svg`; `assets/Oatcake.icns` is built from `assets/icon.png`
 `Scripts/bundle.sh` also puts llama.cpp's server in the app: one fixed build from llama.cpp's
 releases, downloaded once into `.build/llama` and checked against its SHA-256. A copy run straight
 from `swift build` has no llama.cpp beside it; point `OATCAKE_LLAMA_DIR` at a folder that holds
-`llama-server` and its libraries (`build/Oatcake.app/Contents/Resources/llama` will do).
+`llama-server` and its libraries (`build/Oatcake.app/Contents/Resources/llama` will do). Only the
+llama.cpp inside an app is checked before it starts (against the app's signature; see
+[Security](security.md)), so a bundled copy whose files you've changed won't start the model:
+build it again.
 
 macOS draws an app the way apps built with its SDK look: one that says it was built before
 macOS 26 gets no Liquid Glass. Swift 6.4's default build system records the deployment target
@@ -64,11 +67,20 @@ A development copy has the same bundle ID as an installed Oatcake, so macOS can 
 one of its notification buttons to the installed copy, which then acts on your own data. Leave a
 test copy's notifications alone.
 
+It also shares the installed copy's UserDefaults (the `local.oatcake` defaults domain), which
+`OATCAKE_DATA_DIR` doesn't move: the notes that the permissions given to versions before 0.5.0
+have been withdrawn (`earlierPermissionsWithdrawn`) and that the Electron version's files have
+been cleared away (`electronCleanUpDone`), the newest release the updater has been offered
+(`newestVersionOffered`), and small things like the sidebar's open folders. So a release-signed
+test copy on a Mac where Oatcake has never run 0.5.0 or later withdraws the installed copy's
+microphone and system-audio permissions too.
+
 ## Layout
 
 - `Sources/OatcakeRecorder/` — system-audio + mic recorder (helper app)
-- `Sources/RecorderContract/` — the files the recorder and Oatcake pass between them, and the
-  check that the recorder only records for Oatcake
+- `Sources/RecorderContract/` — the files the recorder and Oatcake pass between them, the
+  check that the recorder only records for Oatcake, and the recorder's decisions (keeping its
+  tracks lined up, restarting a capture, stopping by itself), where tests can reach them
 - `Sources/OatcakeCore/` — recordings, speech pipeline, voiceprints, the language model and its
   download, summaries and templates, meeting folders, renaming speakers, calendar and its private
   address, Granola and Quill imports, Ask, updates, the MCP server

@@ -233,6 +233,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Quitting asks first when it would end a recording or interrupt work that's under way.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         MainActor.assumeIsolated {
+            // Typing from the last moments is written first, so the question knows what couldn't be.
+            model.saveEdits()
             guard let question = model.quitQuestion else { return .terminateNow }
             let alert = NSAlert()
             alert.messageText = question.title
@@ -251,7 +253,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        MainActor.assumeIsolated { model.recording.stopAllRecorders() }
+        MainActor.assumeIsolated {
+            model.saveEdits()
+            model.recording.stopAllRecorders()
+        }
     }
 
     /// Reminders show even while Oatcake is in front.
@@ -288,6 +293,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             }
             return
         }
+        // "Ready to check who's who": clicking it opens that recording's Who's who, if it's still waiting.
+        if let recording = Reminders.recording(readyToCheck: id) {
+            guard action == UNNotificationDefaultActionIdentifier else { return }
+            model.showWindow()
+            if model.jobs.pending.contains(where: { $0.id == recording }) { model.selection = .job(recording) }
+            return
+        }
         guard category == Reminders.category else {
             // Anything else Oatcake says about a recording: clicking it opens Oatcake.
             if action == UNNotificationDefaultActionIdentifier { model.showWindow() }
@@ -296,6 +308,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         guard let event = currentEvent(forReminder: id, in: model.calendar.events) else {
             // The invite may have moved, been ignored or lost its last connected calendar.
             model.showWindow()
+            if action == Reminders.startAction {
+                model.toast("That call isn’t on your calendar any more, so nothing was opened or recorded.", isError: true)
+            }
             return
         }
         if action == Reminders.startAction {
@@ -406,7 +421,7 @@ struct DetailView: View {
 
     /// An empty folder says so (with Record here) in the middle column; this pane stays blank.
     private var blank: some View {
-        Text(listedIn(model.library.tree?.find(model.folder) ?? model.library.tree).isEmpty ? "" : "Select a meeting")
+        Text(newestIn(model.library.tree?.find(model.folder) ?? model.library.tree, 1).isEmpty ? "" : "Select a meeting")
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .toolbar { EmptyPaneToolbar() }

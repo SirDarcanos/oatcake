@@ -1,6 +1,8 @@
-// The calendar's private address, typed into Settings, kept in private.json in Oatcake's own data
-// folder, which only you can read. The window can save it and learn whether it's saved, but never
-// reads it back. (It's the only secret left: the language model runs on this Mac and needs no key.)
+// The one calendar address earlier versions kept, moved into private.json in Oatcake's own data
+// folder, which only you can read: from the Keychain (0.4.0 to 0.5.2) and from the Electron
+// version's secrets.json. CalendarSource keeps the connected calendars, addresses and all, in the
+// same file now, and takes an address these moves left there as the first of them. (Calendar
+// addresses are the only secrets: the language model runs on this Mac and needs no key.)
 //
 // It isn't in the Keychain any more. A Keychain item remembers the exact build that made it, and
 // every release of a self-signed app is a new build to macOS, so each update asked for your login
@@ -12,33 +14,10 @@ import Security
 
 public enum SecretName: String, CaseIterable, Sendable {
     case calendar
-
-    /// One already in the environment when Oatcake started (e.g. from your shell) is the fallback.
-    var environmentVariable: String {
-        switch self {
-        case .calendar: "OATCAKE_CALENDAR_URL"
-        }
-    }
 }
 
 public enum Secrets {
     static let service = "Oatcake"
-
-    /// The saved value, or the one inherited from the environment, or "".
-    public static func get(_ name: SecretName, file: URL = Paths.secretFile) -> String {
-        if let saved = savedValue(name, file), !saved.isEmpty { return saved }
-        return ProcessInfo.processInfo.environment[name.environmentVariable] ?? ""
-    }
-
-    /// What Settings shows: whether one is saved, and enough to recognise it.
-    public static func describe(_ name: SecretName, file: URL = Paths.secretFile) -> (saved: Bool, hint: String) {
-        guard let value = savedValue(name, file), !value.isEmpty else {
-            let inherited = ProcessInfo.processInfo.environment[name.environmentVariable]
-            return (false, inherited != nil ? "Using the address from your shell" : "")
-        }
-        let host = URL(string: value.replacingOccurrences(of: "webcal:", with: "https:", options: [.anchored, .caseInsensitive]))?.host
-        return (true, host.map { "Saved · \($0)" } ?? "Saved")
-    }
 
     /// Saves a secret, or removes it when the value is blank. The file is written afresh, readable
     /// only by you, and then put in place of the old one: a save that fails keeps the old value.

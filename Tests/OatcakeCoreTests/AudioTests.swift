@@ -65,6 +65,26 @@ import Testing
         #expect(player.failure == nil && !player.isPlaying && player.duration == 0 && player.elapsed == 0)
     }
 
+    /// Keeping a call's audio fails out loud, and leaves nothing half-written behind.
+    @Test func keptAudioFailures() throws {
+        let fm = FileManager.default
+        let tmp = fm.temporaryDirectory.appendingPathComponent("oatcake-export-\(UUID().uuidString)")
+        try fm.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: tmp) }
+        let meeting = tmp.appendingPathComponent("Meeting")
+        try fm.createDirectory(at: meeting, withIntermediateDirectories: true)
+        let audio = meeting.appendingPathComponent("audio.m4a")
+        #expect(throws: OatcakeError("This recording has no audio to keep.")) { try exportAudio(recording: tmp, to: audio) }
+
+        try Data(count: 2 * sampleRate).write(to: tmp.appendingPathComponent("mic.pcm"))
+        // Nowhere to write it: the meeting's folder has gone.
+        #expect(throws: (any Error).self) { try exportAudio(recording: tmp, to: tmp.appendingPathComponent("Gone/audio.m4a")) }
+        // Written whole, then not put in place: what's there already stays, and the copy being written goes.
+        try Data("already here".utf8).write(to: audio)
+        #expect(throws: (any Error).self) { try exportAudio(recording: tmp, to: audio) }
+        #expect(try fm.contentsOfDirectory(atPath: meeting.path) == ["audio.m4a"] && readText(audio) == "already here")
+    }
+
     /// The recorder's raw tracks are read as they were written, whole or from where the last read stopped, and a clip is a proper WAV file.
     @Test func tracksAndClips() throws {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-audio-\(UUID().uuidString)")
@@ -75,10 +95,22 @@ import Testing
         let track = tmp.appendingPathComponent("mic.pcm")
         try samples.withUnsafeBytes { Data($0) }.write(to: track)
 
-        let read = readPcm(track)
+        let read = try readPcm(track)
         #expect(read.count == samples.count && read[0] == Float(samples[0]) / 32768 && read[20_000] == Float(samples[20_000]) / 32768)
         #expect(readPcm(track, fromSample: 30_000) == Array(read[30_000...]))
-        #expect(readPcm(track, fromSample: samples.count).isEmpty && readPcm(tmp.appendingPathComponent("none.pcm")).isEmpty)
+        #expect(readPcm(track, fromSample: 30_000, count: 1_000) == Array(read[30_000..<31_000]))
+        #expect(readPcm(track, fromSample: samples.count).isEmpty)
+        // A track that isn't there is an error to an analysis, not silence; to the live transcript it's
+        // only not there yet. One that's there with nothing in it is empty.
+        let none = tmp.appendingPathComponent("none.pcm")
+        #expect(throws: CocoaError.self) { try readPcm(none) }
+        #expect(readPcm(none, fromSample: 0).isEmpty)
+        try Data().write(to: none)
+        #expect(try readPcm(none).isEmpty)
+        // A stretch of a mapped track is the same as the same stretch of the whole of it.
+        let mapped = try PcmFile(track)
+        #expect(mapped.count == samples.count && mapped.samples(0.5, 1.5) == Array(slice(read, 0.5, 1.5)))
+        #expect(mapped.samples(-1, 0.25).count == 4_000 && mapped.samples(1.9, 9) == Array(slice(read, 1.9, 9)) && mapped.samples(5, 6).isEmpty)
 
         // Half a second to a second and a half; times past either end are brought back to it.
         #expect(Array(slice(read, 0.5, 1.5)) == Array(read[8_000..<24_000]))
