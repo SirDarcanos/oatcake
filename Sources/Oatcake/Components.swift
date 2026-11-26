@@ -230,9 +230,8 @@ struct SectionLabel: View {
 
 struct PageTitle: View {
     let text: String
-    var size: CGFloat = 24
     var body: some View {
-        Text(text).font(.system(size: size, weight: .bold)).tracking(-0.4).textSelection(.enabled)
+        Text(text).font(.system(size: 24, weight: .bold)).tracking(-0.4).textSelection(.enabled)
     }
 }
 

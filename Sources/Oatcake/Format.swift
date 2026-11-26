@@ -218,7 +218,6 @@ private func nameColor(_ hue: Double) -> Color {
 struct Person {
     var initial: String
     var color: Color
-    var isPerson: Bool
 }
 
 /// A person's avatar colour and initial: the same colour on every screen.
@@ -234,9 +233,9 @@ func person(_ name: String, remember: Bool = true) -> Person {
         .compactMap { $0.first { $0.isLetter || $0.isNumber } }
     let initial = (words.count > 1 ? String([words[0], words[words.count - 1]]) : words.first.map(String.init) ?? "?").uppercased()
     if name.trimmed.isEmpty || name.range(of: notAPerson, options: .regularExpression) != nil {
-        return Person(initial: name.hasPrefix("Voice") ? String(clean.prefix(1)) : initial, color: Color(nsColor: .systemGray), isPerson: false)
+        return Person(initial: name.hasPrefix("Voice") ? String(clean.prefix(1)) : initial, color: Color(nsColor: .systemGray))
     }
-    return Person(initial: initial, color: oklch(0.55, 0.15, hueFor(name, remember: remember)), isPerson: true)
+    return Person(initial: initial, color: oklch(0.55, 0.15, hueFor(name, remember: remember)))
 }
 
 /// The design's oklch(L C h) colours, in sRGB.
