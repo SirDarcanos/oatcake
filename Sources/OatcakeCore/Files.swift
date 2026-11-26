@@ -121,6 +121,22 @@ func keepUnreadable(_ file: URL) -> URL {
 extension String {
     /// Whitespace and newlines trimmed from both ends.
     public var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// As much of the start as fits in `bytes` of UTF-8, back to a whole character: a budget kept in
+    /// bytes (as the model's tokens are counted) and cut in characters is three times over in
+    /// Chinese or Japanese, where a character is three bytes.
+    func prefix(utf8 bytes: Int) -> String {
+        guard utf8.count > bytes else { return self }
+        var end = startIndex
+        var used = 0
+        for index in indices {
+            let size = utf8.distance(from: index, to: self.index(after: index))
+            guard used + size <= bytes else { break }
+            used += size
+            end = self.index(after: index)
+        }
+        return String(self[..<end])
+    }
 }
 
 // MARK: - Dates
