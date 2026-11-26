@@ -501,8 +501,10 @@ func ownerIsRunning() -> Bool {
 }
 
 /// Bytes free on the recording's disk.
+/// Counts the purgeable space (snapshots, caches, iCloud files kept online) that macOS frees for a
+/// write you asked for, so a disk that only looks full doesn't stop the call.
 func freeSpace() -> Int64? {
-    (try? URL(fileURLWithPath: outDir).resourceValues(forKeys: [.volumeAvailableCapacityKey]))?.volumeAvailableCapacity.map(Int64.init)
+    (try? URL(fileURLWithPath: outDir).resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?.volumeAvailableCapacityForImportantUsage
 }
 
 let system = SystemAudioCapture(track: systemTrack)
