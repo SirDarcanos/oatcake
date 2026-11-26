@@ -117,9 +117,9 @@ struct SettingsView: View {
 
     private func afterCallHint(_ choice: AfterCall) -> String {
         switch choice {
-        case .review: "Each call waits under Needs review until you’ve named its voices and saved it."
-        case .saveWithSummary: "Each call is saved once it’s processed, and summarised. Voices Oatcake is sure it recognises keep their names; the rest are “Voice 1”, “Voice 2”… until you name them from the meeting."
-        case .saveTranscript: "Each call is saved once it’s processed, with no summary or to-dos. Voices Oatcake is sure it recognises keep their names; the rest are “Voice 1”, “Voice 2”… until you name them from the meeting."
+        case .review: "Each call waits under Who’s who until you’ve named its voices and saved it."
+        case .saveWithSummary: "Each call is saved once it’s transcribed, and summarised. Voices Oatcake is sure it recognises keep their names; the rest are “Voice 1”, “Voice 2”… until you name them from the meeting."
+        case .saveTranscript: "Each call is saved once it’s transcribed, with no summary or to-dos. Voices Oatcake is sure it recognises keep their names; the rest are “Voice 1”, “Voice 2”… until you name them from the meeting."
         }
     }
 
@@ -352,7 +352,7 @@ struct SettingsView: View {
                           prompt: Text(String(LocalModels.nativeContext))) {
                     Text("Context").font(.body)
                     if let context = llm.own.context, context < LlmConfig.Own.minimumContext {
-                        Text("Oatcake needs at least \(LlmConfig.Own.minimumContext.formatted()) tokens, and plans for that")
+                        Text("Too small: Oatcake needs at least \(LlmConfig.Own.minimumContext.formatted()) and will assume that")
                             .font(.callout).foregroundStyle(Color.amber)
                     } else {
                         Text("Tokens your server is set to hold (Ollama’s num_ctx, llama.cpp’s -c). This tells Oatcake how much to send at once; it doesn’t change the server. Empty: \(LocalModels.nativeContext.formatted()).")
@@ -368,7 +368,7 @@ struct SettingsView: View {
                     Text("Reasoning switch")
                     Text(llm.own.reasoningControl == nil
                          ? "The server decides whether its model reasons first. Choose the switch it takes to use the Reasoning switches in Settings › Summaries."
-                         : "Each task’s Reasoning switch in Settings › Summaries is sent this way. A model that can’t turn reasoning off keeps its least.")
+                         : "Each task’s Reasoning switch in Settings › Summaries is sent this way. A model that can’t turn reasoning off uses its lowest setting.")
                         .settingsHint()
                 }
             }
@@ -934,7 +934,7 @@ private struct UpdatesSection: View {
             }
             if let available = u.available {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("What's new in \(available.version)")
+                    Text("What’s new in \(available.version)")
                     if !available.notes.isEmpty {
                         Text(available.notes).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                     }

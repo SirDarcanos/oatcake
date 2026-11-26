@@ -177,7 +177,7 @@ final class Jobs {
             // Watching it being processed: on to the meeting.
             if app.selection() == .job(id) { app.select(.meeting(path, jump: Jump(tab: withSummary ? .summary : .transcript))) }
         } catch {
-            toast("Couldn’t save “\(rec.title)” by itself: \(error.localizedDescription) It’s waiting under Needs review.", isError: true)
+            toast("Couldn’t save “\(rec.title)” by itself: \(error.localizedDescription) It’s waiting under Who’s who.", isError: true)
         }
     }
 

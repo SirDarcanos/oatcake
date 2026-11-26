@@ -25,7 +25,7 @@ Settings, with **Open Notification Settings**.
   transcript doesn't load the voice models: about 180 MB less memory during a call, and a little
   less CPU.
 - **After a call:** wait for you to check who's who (the default), or save each call once it's
-  processed, with a summary or with the transcript only (see
+  transcribed, with a summary or with the transcript only (see
   [Saving without Who's who](how-it-works.md#saving-without-whos-who)).
 - **Offer to record when a call starts** and **Stop recording when the call ends** (both on to
   start with): see [Calls are noticed](how-it-works.md#calls-are-noticed).
@@ -103,7 +103,7 @@ suggests from now on. **Merge Into** (once there are two or more) makes two peop
 name you pick from its menu: both sets of fingerprints are kept, up to the 10 newest, and it asks
 first; renaming to a name that's already there does the same. **Forget…** stops it recognising
 them. Meetings already saved keep the names they were saved with (to change
-one meeting's, use [Rename Speakers](how-it-works.md#rename-speakers)).
+one meeting's, use [Rename People](how-it-works.md#rename-people)).
 
 Click someone's avatar to choose their colour from the palette's twelve: it's theirs everywhere,
 in avatars and in names in transcripts. Oatcake otherwise gives each first name a colour the first

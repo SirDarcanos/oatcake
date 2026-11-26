@@ -17,7 +17,7 @@ leaves it, unless you point Oatcake at a model server of your own on your networ
   before. [Process](docs/how-it-works.md#2-process)
 - **Who's who**: a [check of who said what](docs/how-it-works.md#3-review-whos-who) before a call
   is saved, or [saving straight away](docs/how-it-works.md#saving-without-whos-who) and naming
-  the voices later. [Rename Speakers](docs/how-it-works.md#rename-speakers) puts a name right in a
+  the voices later. [Rename People](docs/how-it-works.md#rename-people) puts a name right in a
   saved meeting.
 - **Summaries and to-dos** written by a language model on this Mac, steered by your notes, with
   your own instructions and [templates](docs/how-it-works.md#regenerate-and-summary-templates).

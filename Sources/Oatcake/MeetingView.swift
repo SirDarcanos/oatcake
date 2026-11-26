@@ -21,7 +21,7 @@ private enum SaveStatus {
         case .saving: "Saving…"
         case .saved: "Saved"
         case .failed: "Couldn’t save"
-        case .todo: "Saved to todo.md"
+        case .todo: "Saved"
         }
     }
 }
@@ -83,7 +83,16 @@ struct MeetingView: View {
     var body: some View {
         Group {
             if !loadError.isEmpty {
-                Text(loadError).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 10) {
+                    Text("Couldn’t open this meeting").font(.headline)
+                    Text(loadError).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    HStack {
+                        Button("Try again") { load() }
+                        Button("Show in Finder") { model.library.reveal(path) }
+                    }
+                }
+                .padding(40)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let files {
                 content(files)
             } else {
@@ -295,7 +304,7 @@ struct MeetingView: View {
             }
             .menuIndicator(.hidden)
             .accessibilityLabel("More")
-            .help("Regenerate, draft for sharing, rename speakers, copy, share or show in Finder")
+            .help("Regenerate, draft for sharing, rename people, copy, share or show in Finder")
         }
     }
 
@@ -344,7 +353,7 @@ struct MeetingView: View {
                 flush()
                 guard pending.isEmpty else { return }
                 renamingSpeakers = true
-            } label: { Label("Rename Speakers…", systemImage: "person.2") }
+            } label: { Label("Rename People…", systemImage: "person.2") }
                 .disabled(model.jobs.summarising.contains(path))
                 .help(model.config.todosEnabled ? "Change who’s who in this meeting: the names in its transcript, summary and to-dos"
                       : "Change who’s who in this meeting: the names in its transcript and summary")
@@ -359,7 +368,7 @@ struct MeetingView: View {
         let tabName = switch tab {
         case .summary: "Summary"
         case .transcript: "Transcript"
-        case .notes: "Notes"
+        case .notes: "My Notes"
         case .draft: "Draft"
         }
         Button { copy(what) } label: { Label("Copy \(tabName)", systemImage: "doc.on.doc") }
@@ -385,17 +394,17 @@ struct MeetingView: View {
         .fixedSize()
     }
 
-    /// Rendered or Markdown: how the note below is shown. It sits at the top right of the note, beside its title.
+    /// Read or Edit: how the tab below is shown, laid out or as its Markdown. It sits at the top right, beside the title.
     private var viewSwitch: some View {
         Picker("View", selection: Binding(get: { markdown }, set: { flush(); markdown = $0; Remembered.markdown = $0; status = .quiet })) {
-            Text("Rendered").tag(false)
-            Text("Markdown").tag(true)
+            Text("Read").tag(false)
+            Text("Edit").tag(true)
         }
         .pickerStyle(.segmented)
         .labelsHidden()
         .controlSize(.small)
         .fixedSize()
-        .help("Read the note as it’s laid out, or edit its Markdown")
+        .help("Read this tab as it’s laid out, or edit its Markdown")
     }
 
     /// What Copy and Share take: the tab you're on, as Markdown under the meeting's title and date.
@@ -423,7 +432,7 @@ struct MeetingView: View {
         model.toast("Copied the \(what)")
     }
 
-    /// A meeting saved without checking who's who has Name voices… instead, until Keep these names.
+    /// A meeting saved without checking who's who has Check who's who… instead, until Keep these names.
     private var canRenameSpeakers: Bool {
         guard !speakers.isEmpty else { return false }
         guard let id = meta.recording else { return true }
@@ -564,7 +573,7 @@ struct MeetingView: View {
                  ? "Voices Oatcake didn’t recognise are “Voice 1”, “Voice 2”… Name them and this meeting’s transcript, summary and to-dos are updated."
                  : "Oatcake recognised every voice from before and used those names. Change one and this meeting’s transcript, summary and to-dos are updated.")
             HStack(spacing: 10) {
-                Button("Name voices…") {
+                Button("Check who’s who…") {
                     flush()
                     model.selection = .job(id)
                 }
@@ -873,7 +882,7 @@ struct MeetingView: View {
                 .background(RoundedRectangle(cornerRadius: 8).fill(i == flash || i == current ? Color.orange.opacity(0.16) : .clear))
                 .id(i)
             }
-            if rows.isEmpty { Text("transcript.md is empty.").foregroundStyle(.secondary) }
+            if rows.isEmpty { Text("This meeting has no transcript.").foregroundStyle(.secondary) }
         }
     }
 

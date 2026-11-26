@@ -144,7 +144,7 @@ struct NewRecordingView: View {
             }
             GridRow {
                 Text("Title").foregroundStyle(.secondary)
-                TextField("Leave blank to use “\(folderName.isEmpty ? (folder == newFolder ? "the new folder’s name" : "Untitled meeting") : folderName)”", text: $title)
+                TextField(folderName.isEmpty && folder == newFolder ? "Leave blank to use the new folder’s name" : "Leave blank to use “\(folderName.isEmpty ? "Untitled meeting" : folderName)”", text: $title)
                     .textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 360)
                     .onSubmit(start)

@@ -109,7 +109,7 @@ struct LiveView: View {
     @ViewBuilder private var notices: some View {
         if status.state == .starting && model.recording.recorderFailure == nil && Date().timeIntervalSince(rec.startedAt) > 6 {
             Notice(tone: .amber) {
-                Text("The recorder hasn’t started yet").fontWeight(.semibold)
+                Text("Recording hasn’t started yet").fontWeight(.semibold)
                 Text("If macOS is asking whether Oatcake can use the microphone or record system audio, click Allow.")
             }
             .padding(.top, 16)
@@ -121,7 +121,7 @@ struct LiveView: View {
             }
             .padding(.top, 16)
         } else if status.state == .error {
-            Notice(tone: .red) { Text(status.error ?? "The recorder stopped.") }.padding(.top, 16)
+            Notice(tone: .red) { Text(status.error ?? "Recording stopped by itself. What was recorded is kept.") }.padding(.top, 16)
         }
         if let error = model.recording.liveNotesError {
             Notice(tone: .red) { Text(error) }.padding(.top, 16)
@@ -156,6 +156,10 @@ struct LiveView: View {
             Notice(tone: .amber) {
                 Text("No call audio for \(longDuration(now.timeIntervalSince(since)))").fontWeight(.semibold)
                 Text("If people are talking, allow Oatcake in System Settings › Privacy & Security › Screen & System Audio Recording.")
+                Button("Open privacy settings") {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") { NSWorkspace.shared.open(url) }
+                }
+                .padding(.top, 4)
             }
             .padding(.top, 16)
         }
@@ -225,7 +229,7 @@ struct LiveView: View {
         let invited = (rec.attendees ?? []).filter { $0 != myName && !knownVoices.contains($0) }
         return Menu {
             if !knownVoices.isEmpty {
-                Section("Known voices") { ForEach(knownVoices, id: \.self) { choice($0, for: line, given: given) } }
+                Section("People Oatcake knows") { ForEach(knownVoices, id: \.self) { choice($0, for: line, given: given) } }
             }
             if !invited.isEmpty {
                 Section("On the invite") { ForEach(invited, id: \.self) { choice($0, for: line, given: given) } }
@@ -235,7 +239,7 @@ struct LiveView: View {
             }
             if given != nil {
                 Divider()
-                Button("Take back “\(given ?? "")”") { model.recording.nameLiveLine(line, as: nil) }
+                Button("Not \(given ?? "")") { model.recording.nameLiveLine(line, as: nil) }
             }
         } label: {
             Text(line.speaker ?? callPlaceholder(for: rec.id, lineAt: line.start)).font(.caption.weight(.semibold))

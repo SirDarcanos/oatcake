@@ -309,9 +309,9 @@ final class RecordingController {
                 startLiveTranscript(rec)
                 updateMenuBar()
                 // In place of the notification that said it couldn't.
-                Reminders.say("Oatcake is recording after all", "The recorder was slow to start. “\(rec.title)” is being recorded.", id: "recorder-failed")
+                Reminders.say("Oatcake is recording after all", "Recording took a while to start. “\(rec.title)” is being recorded.", id: "recorder-failed")
             } else if status.state == .error {
-                recorderFailure = status.error ?? "The recorder stopped."
+                recorderFailure = status.error ?? couldntStart
                 failureIsFinal = true
             }
             return
@@ -327,11 +327,11 @@ final class RecordingController {
             active.removeValue(forKey: rec.id)
             liveEnded(rec, watching: watching)
             if finished {
-                Reminders.say("Recording stopped", status.error ?? "The recorder stopped by itself. Oatcake is transcribing “\(rec.title)”.", id: "recorder-stopped")
+                Reminders.say("Recording stopped", status.error ?? "Recording stopped by itself. Oatcake is transcribing what was recorded of “\(rec.title)”.", id: "recorder-stopped")
                 toast("The recording stopped")
             } else {
                 Reminders.say("Recording stopped unexpectedly",
-                              "The recorder quit part-way through “\(rec.title)”. What it captured is being transcribed. Start a new recording to carry on with the call.",
+                              "Recording stopped part-way through “\(rec.title)”. What was recorded is being transcribed. Start recording again to carry on with the call.",
                               id: "recorder-stopped")
                 toast("The recording stopped unexpectedly")
             }
@@ -340,7 +340,7 @@ final class RecordingController {
         // Nothing was recorded. A recorder still on its way up isn't running yet either, so only a
         // status that has moved on, or a quarter of a minute of nothing, counts as not having started.
         guard status.state != .starting || Date().timeIntervalSince(rec.startedAt) > 15 else { return }
-        let why = status.state == .error ? status.error ?? "The recorder stopped." : "The recorder didn’t start."
+        let why = status.state == .error ? status.error ?? couldntStart : couldntStart
         recorderFailure = why
         failureIsFinal = status.state != .starting
         stopLiveTranscript()
@@ -377,6 +377,11 @@ final class RecordingController {
     /// and the notice that the call is silent would end the silence it reports.
     private var callAudioQuiet: Bool {
         (status.systemLevel ?? 0) < 0.001 || Date().timeIntervalSince(Reminders.lastSound) < 6
+    }
+
+    /// Said when nothing could be recorded, unless the recorder said why.
+    private var couldntStart: String {
+        "Oatcake couldn’t start recording. Check that it’s allowed in System Settings › Privacy & Security › Microphone and Screen & System Audio Recording, then start again."
     }
 
     func confirmStop() {
@@ -562,7 +567,7 @@ final class RecordingController {
                 let folder = try folderForEvent(event.title, event.seriesId != nil)
                 try startRecording(title: event.title, folder: folder, options: startOptions(event))
             } else {
-                try startRecording(title: "Call", folder: "", options: .init())
+                try startRecording(title: "Untitled meeting", folder: "", options: .init())
             }
         } catch {
             toast(error.localizedDescription, isError: true)

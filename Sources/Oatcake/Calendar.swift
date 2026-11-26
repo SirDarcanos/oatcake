@@ -47,7 +47,7 @@ final class CalendarController {
 
     func status(for id: UUID) -> String {
         guard let source = sources.first(where: { $0.id == id }) else { return "Not fetched yet" }
-        guard !source.address.isEmpty else { return "No address from your shell" }
+        guard !source.address.isEmpty else { return "No address saved. Choose Edit… and paste it again." }
         let fetchID = source.fetchID
         if fetches[fetchID] != nil { return "Updating…" }
         if let failure = caches[fetchID]?.failure { return failure }

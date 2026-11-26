@@ -208,7 +208,7 @@ final class Library {
             let r = try await Task.detached { try work(url, root) }.value
             let text = [r.imported > 0 ? "Imported \(plural(r.imported, "meeting")) into the \(r.folder) folder." : "Nothing new to import.",
                         r.skipped > 0 ? "\(plural(r.skipped, "meeting")) already here." : nil,
-                        r.unreadable > 0 ? "\(plural(r.unreadable, "meeting")) couldn't be read." : nil].compactMap { $0 }.joined(separator: " ")
+                        r.unreadable > 0 ? "\(plural(r.unreadable, "meeting")) couldn’t be read." : nil].compactMap { $0 }.joined(separator: " ")
             importOutcomes[source] = (text, false)
             refresh()
         } catch {

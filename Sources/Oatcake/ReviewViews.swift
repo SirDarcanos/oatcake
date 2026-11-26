@@ -11,11 +11,11 @@ func recordingMeta(_ rec: Recording) -> String {
 /// The failure in plain words; the raw message stays behind "Details".
 private func explain(_ failure: AnalysisFailure?) -> String {
     switch failure {
-    case .unreadableRecording: "Its recording details couldn’t be read. The files may be damaged or incomplete."
-    case .missingAudio: "Some of its audio files are missing."
+    case .unreadableRecording: "Its recording details couldn’t be read. The files may be damaged or incomplete. Trying again won’t fix this. Discard the recording to clear it."
+    case .missingAudio: "Some of its audio files are missing. Trying again won’t fix this. Discard the recording to clear it."
     case .speechModels: "The speech models couldn’t be loaded. Check your internet connection, then try again."
-    case .helperStopped: "The processing helper stopped unexpectedly. Trying again usually works."
-    case .other, nil: "Something went wrong while processing this recording. Trying again usually works."
+    case .helperStopped: "Transcribing stopped unexpectedly. Try again."
+    case .other, nil: "Oatcake couldn’t finish transcribing this call. Its audio is safe. Try again; if it fails twice, Details says what went wrong."
     }
 }
 
@@ -66,9 +66,9 @@ struct ProcessingView: View {
                         ProgressView(value: (Double(n - 1) + within) / 5)
                     }
                 }
-                let then = model.config.afterCall == .review ? "it’ll wait under Needs review." : "it’ll be saved to \(folderPath(rec.folder ?? "")) when it’s done."
+                let then = model.config.afterCall == .review ? "it’ll wait under Who’s who." : "it’ll be saved to \(folderPath(rec.folder ?? "")) when it’s done."
                 Text(downloading
-                     ? "The speech models (about 500 MB) are downloading. That’s the first time only; after it, an hour-long call takes a minute or two. You can keep working — \(then)"
+                     ? "After this first time, an hour-long call takes a minute or two. You can keep working — \(then)"
                      : "An hour-long call takes a minute or two. You can keep working — \(then)")
                     .font(.callout).foregroundStyle(.secondary)
             }
@@ -77,7 +77,7 @@ struct ProcessingView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .toolbar {
             ToolbarItem(placement: .automatic) {
-                (Text(progress?.error != nil ? "Couldn’t finish" : "Processing").fontWeight(.semibold) + Text(" · \(rec.title)").foregroundStyle(.secondary)).lineLimit(1)
+                (Text(progress?.error != nil ? "Couldn’t finish" : "Transcribing").fontWeight(.semibold) + Text(" · \(rec.title)").foregroundStyle(.secondary)).lineLimit(1)
                     .toolbarStatusPadding()
             }
             .withoutCapsule()
@@ -347,10 +347,10 @@ struct ReviewView: View {
                 // Merge into another voice (or you), mark as mixed, or leave out of the meeting.
                 Menu {
                     if v.leftOut {
-                        Button("Put back") { voices[s.id]?.leftOut = false }
+                        Button("Put Back") { voices[s.id]?.leftOut = false }
                     } else {
                         if !v.mixed {
-                            Menu("Merge with") {
+                            Menu("Merge With") {
                                 Button("\(myName) (your microphone)") { voices[s.id]?.into = me }
                                 ForEach(targets, id: \.id) { o in
                                     Button(voices[o.id].map { $0.name.trimmed.isEmpty ? label(analysis, o.id) : $0.name.trimmed } ?? label(analysis, o.id)) {
@@ -359,8 +359,8 @@ struct ReviewView: View {
                                 }
                             }
                         }
-                        Button(v.mixed ? "Not mixed" : "Mark as mixed (several people)") { voices[s.id]?.mixed.toggle() }
-                        Button("Leave out (not part of the call)") {
+                        Button(v.mixed ? "One Person After All" : "Several People Share This Voice") { voices[s.id]?.mixed.toggle() }
+                        Button("Leave Out of This Meeting") {
                             voices[s.id]?.mixed = false
                             voices[s.id]?.leftOut = true
                         }
@@ -368,7 +368,7 @@ struct ReviewView: View {
                 } label: {
                     // The words are the button's own title, with only the icon drawn. A label added to the
                     // menu from outside was lost whenever the card was drawn again, leaving the icon's "More".
-                    Label(v.leftOut ? "Put \(shown) back in the meeting" : "Merge \(shown) with another voice, mark it as mixed, or leave it out",
+                    Label(v.leftOut ? "Put \(shown) back in the meeting" : "Merge \(shown) with another voice, say several people share it, or leave it out",
                           systemImage: "ellipsis")
                         .labelStyle(.iconOnly)
                 }

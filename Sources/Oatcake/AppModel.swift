@@ -292,16 +292,17 @@ final class AppModel {
         refresh()
     }
 
-    /// A passing note at the bottom of the window. One that says something went wrong stays for
-    /// eight seconds or until it's clicked, and is read out by VoiceOver, which never sees the note itself.
+    /// A passing note at the bottom of the window. One that says something went wrong stays until
+    /// it's clicked (or another note takes its place), so it isn't gone before it's been read, and is
+    /// read out by VoiceOver, which never sees the note itself.
     func toast(_ text: String, isError: Bool = false) {
         withAnimation {
             toastText = text
             toastIsError = isError
         }
         toastTask?.cancel()
-        toastTask = Task {
-            try? await Task.sleep(for: .seconds(isError ? 8 : 2.4))
+        toastTask = isError ? nil : Task {
+            try? await Task.sleep(for: .seconds(2.4))
             if !Task.isCancelled { withAnimation { toastText = nil } }
         }
         if isError, let window = NSApp.mainWindow ?? NSApp.keyWindow {
@@ -359,8 +360,7 @@ final class AppModel {
     func ignore(_ event: CalendarEvent, series: Bool) {
         guard let item = series ? IgnoredEvent.series(of: event) : .occurrence(event) else { return }
         saveConfig(with(config) { $0.ignoredCalendarEvents = withoutEnded($0.ignoredCalendarEvents, now: Date()).filter { !$0.covers(item) } + [item] })
-        toast(series ? "“\(event.title)” is ignored from now on. Settings › Calendars can bring it back."
-                     : "“\(event.title)”, \(dayAndTime(event.startDate)), is ignored. Settings › Calendars can bring it back.")
+        toast(series ? "Ignoring “\(event.title)” from now on" : "Ignoring “\(event.title)” on \(dayAndTime(event.startDate))")
     }
 
     func stopIgnoring(_ item: IgnoredEvent) {
@@ -485,8 +485,8 @@ final class AppModel {
         var doing: [String] = []
         var after: [String] = []
         if jobs.isAnalysingAny {
-            doing.append("analysing a call")
-            after.append("The analysis starts again the next time you open Oatcake.")
+            doing.append("transcribing a call")
+            after.append("Transcribing starts again the next time you open Oatcake.")
         }
         if !jobs.summarising.isEmpty {
             doing.append("writing a summary")
@@ -504,9 +504,9 @@ final class AppModel {
     /// Why an update has to wait, if it does.
     var busyReason: String? {
         if recording.isRecording { return "Oatcake is recording a call. Install the update after you stop." }
-        if jobs.isAnalysingAny { return "Oatcake is analysing a call. Install the update when it's done." }
+        if jobs.isAnalysingAny { return "Oatcake is transcribing a call. Install the update when it’s done." }
         if !jobs.summarising.isEmpty { return "Oatcake is writing a summary. Try again in a moment." }
-        if library.importing != nil { return "Oatcake is importing meetings. Install the update when it's done." }
+        if library.importing != nil { return "Oatcake is importing meetings. Install the update when it’s done." }
         return nil
     }
 }

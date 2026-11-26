@@ -64,13 +64,13 @@ struct RecordingPlayerView: View {
     private func message(for failure: RecordingPlayback.Failure) -> some View {
         let message: LocalizedStringKey = switch failure {
         case .missingFile:
-            "Unable to play this recording: the audio file is no longer in the meeting folder. [Show in Finder](oatcake-action://show-in-finder) to check the folder."
+            "Couldn’t play this recording: its audio file isn’t in the meeting’s folder any more. [Show in Finder](oatcake-action://show-in-finder) to check the folder."
         case .accessDenied:
-            "Unable to play this recording: Oatcake doesn’t have permission to read the audio file. [Show in Finder](oatcake-action://show-in-finder) to check its permissions."
+            "Couldn’t play this recording: Oatcake isn’t allowed to read its audio file. [Show in Finder](oatcake-action://show-in-finder) to check its permissions."
         case .unreadableFile:
-            "Unable to play this recording: the audio file couldn’t be read. [Show in Finder](oatcake-action://show-in-finder) and try playing the file manually."
+            "Couldn’t play this recording: its audio file couldn’t be read. [Show in Finder](oatcake-action://show-in-finder) and try playing the file in another app."
         case .playbackFailed:
-            "Unable to play this recording: playback failed. [Show in Finder](oatcake-action://show-in-finder) and try playing the file manually."
+            "Couldn’t play this recording. [Show in Finder](oatcake-action://show-in-finder) and try playing the file in another app."
         }
         return Text(message)
             .font(.callout)

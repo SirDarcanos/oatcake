@@ -109,7 +109,7 @@ struct TodosView: View {
                 addField.padding(.top, 22)
                 // How adding works, only while adding.
                 if addFocused {
-                    Text("Saved in your Meetings folder’s own todo.md, as yours unless you name someone: Send the deck - Jane - due Fri, Nov 6. To add one to a meeting, use the to-dos at the top of its summary.")
+                    Text("Goes on your own list, as yours unless you name someone: Send the deck - Jane - due Fri, Nov 6. To add one to a meeting, use the to-dos at the top of its summary.")
                         .font(.caption).foregroundStyle(.secondary).padding(.top, 6)
                 }
                 ForEach(groups, id: \.key) { group in
@@ -124,7 +124,7 @@ struct TodosView: View {
                     ForEach(group.items) { item in row(item, today: today, myName: myName, showOwner: grouping != .owner) }
                 }
                 if groups.isEmpty {
-                    Text(status == .done ? "Nothing ticked off yet." : owner == .everyone ? "No open to-dos." : "No open to-dos for this person.")
+                    Text(status == .done ? "Nothing ticked off yet." : "No \(status == .all ? "" : "open ")to-dos\(owner == .everyone ? "" : " for this person").")
                         .foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 40)
                 }
             }
@@ -283,7 +283,7 @@ struct TodosView: View {
             try model.library.addTodo("", typedTodo(text, owner: model.config.myName))
             local[""] = onDisk("")
             draft = ""
-            model.toast("Added to Meetings › todo.md")
+            model.toast("Added to your list")
         } catch {
             model.toast(error.localizedDescription, isError: true)
         }
@@ -301,7 +301,7 @@ struct TodosView: View {
                 return model.toast(todoChangedMessage)
             }
             withAnimation { local[item.meeting.path] = onDisk(item.meeting.path) }
-            model.toast("Saved to \(item.meeting.path.isEmpty ? "Meetings" : folderPath(item.meeting.path)) › todo.md")
+            model.toast("\(item.todo.done ? "Unticked" : "Ticked") in \(item.meeting.path.isEmpty ? "your list" : "“\(item.meeting.title)”")")
         } catch {
             model.toast(error.localizedDescription, isError: true)
         }

@@ -67,8 +67,8 @@ Everything Oatcake does today, with a link to where each is described. Planned w
   [Review](how-it-works.md#3-review-whos-who)
 - Saving straight after processing instead, with a summary or the transcript only, and naming the
   voices later. [Saving without Who's who](how-it-works.md#saving-without-whos-who)
-- **Rename Speakers** for a saved meeting: put a wrong name right, name a "Voice 2", swap two
-  names or make two speakers one. [Rename Speakers](how-it-works.md#rename-speakers)
+- **Rename People** for a saved meeting: put a wrong name right, name a "Voice 2", swap two
+  names or make two speakers one. [Rename People](how-it-works.md#rename-people)
 - People Oatcake recognises listed in Settings, to rename, merge or forget, or to choose their
   colour. [People](settings.md#people)
 
@@ -103,8 +103,8 @@ Everything Oatcake does today, with a link to where each is described. Planned w
 - Each meeting a folder of Markdown (`summary.md`, `todo.md`, `transcript.md`, `notes.md`) and
   `meeting.json` in a Meetings folder you choose, kept in step with Finder.
   [Save](how-it-works.md#4-save)
-- Summary, Transcript and My notes tabs (and Draft where there's a draft for sharing), each rendered or
-  as editable Markdown.
+- Summary, Transcript and My notes tabs (and Draft where there's a draft for sharing), each to read
+  laid out or to edit as Markdown.
   [Reading and editing](how-it-works.md#reading-and-editing)
 - Play and pause a saved call recording, and jump to a time from the slider or the transcript.
   [Listening to the recording](how-it-works.md#listening-to-the-recording)

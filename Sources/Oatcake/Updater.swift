@@ -70,11 +70,11 @@ final class Updater {
             return ("Move Oatcake to your Applications folder and open it from there; then it can update itself.", nil)
         }
         if !FileManager.default.isWritableFile(atPath: bundle.deletingLastPathComponent().path) {
-            return ("Oatcake can't replace itself in \(bundle.deletingLastPathComponent().path). Install the update from Terminal instead:", Update.installCommand)
+            return ("Oatcake can’t replace itself in \(bundle.deletingLastPathComponent().path). Install the update from Terminal instead:", Update.installCommand)
         }
         do {
             if Update.isAdHoc(try Update.designatedRequirement(bundle)) {
-                return ("This copy of Oatcake wasn't signed for updates. Install the update from Terminal instead:", Update.installCommand)
+                return ("This copy of Oatcake wasn’t signed for updates. Install the update from Terminal instead:", Update.installCommand)
             }
         } catch {
             return (error.localizedDescription, nil)
@@ -98,7 +98,7 @@ final class Updater {
                     manifest = nil
                     available = nil
                     (blocked, command) = (nil, nil)
-                    error = "The newest release is Oatcake \(m.version), older than \(newest), which this copy was offered before. That happens when a release is withdrawn. Oatcake will look again tomorrow."
+                    error = "No newer version right now. Oatcake will check again tomorrow."
                     checking = false
                     return
                 }
@@ -142,7 +142,7 @@ final class Updater {
             let staged = try await Task.detached { () throws -> URL in
                 let app = try Update.unpack(zip, into: tmp, manifest: m)
                 guard Update.satisfies(app, requirement) else {
-                    throw OatcakeError("The update isn't signed with the same certificate as this copy of Oatcake, so it wasn't installed.")
+                    throw OatcakeError("The update isn’t signed with the same certificate as this copy of Oatcake, so it wasn’t installed.")
                 }
                 return try Update.stage(app, beside: bundle, requirement: requirement)
             }.value

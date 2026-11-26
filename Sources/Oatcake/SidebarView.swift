@@ -32,7 +32,7 @@ struct SidebarView: View {
             if model.config.todosEnabled { todosRow.tag(SidebarItem.todos) }
             if model.calendar.hasCalendars { upcoming }
             if !model.jobs.list.isEmpty {
-                Section("Needs review") {
+                Section("Who’s who") {
                     ForEach(model.jobs.list) { job in jobRow(job).tag(SidebarItem.job(job.id)) }
                 }
             }
@@ -310,8 +310,8 @@ struct SidebarView: View {
 
     private func jobStatus(_ job: Jobs.Job) -> String {
         switch job.status {
-        case .processing: "Processing · step \(job.step) of 5"
-        case .review: "Ready to review"
+        case .processing: "Transcribing · step \(job.step) of 5"
+        case .review: "Ready to check"
         case .failed: "Couldn’t finish"
         }
     }
