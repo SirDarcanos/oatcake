@@ -1,3 +1,4 @@
+import EventKit
 import OatcakeCore
 import SwiftUI
 
@@ -179,6 +180,8 @@ struct MacCalendarPicker: View {
         .padding(20)
         .frame(width: 450)
         .onAppear { choices = calendar.macCalendarChoices() }
+        // Calendars the Mac finishes loading after access is given, or that change while this is open.
+        .onReceive(NotificationCenter.default.publisher(for: .EKEventStoreChanged)) { _ in choices = calendar.macCalendarChoices() }
     }
 
     private func add() {

@@ -49,9 +49,18 @@ final class MacCalendars {
         guard Self.access == .notAsked else { return Self.access == .allowed }
         let store = opened()
         // The answer comes on a queue of EventKit's own, so the closure mustn't belong to the main actor.
-        return await withCheckedContinuation { answered in
+        let granted = await withCheckedContinuation { answered in
             store.requestFullAccessToEvents { @Sendable granted, _ in answered.resume(returning: granted) }
         }
+        // A store made before access was given may still hold nothing: the next look makes a new one.
+        if granted { forget() }
+        return granted
+    }
+
+    private func forget() {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        observer = nil
+        store = nil
     }
 
     /// This Mac's calendars, by account.

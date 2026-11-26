@@ -185,6 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     lazy var model = AppModel()
     /// Looks every couple of seconds for the end of the work that kept Oatcake open with no window.
     private var waitingToQuit: Timer?
+    private var waitingForSave: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
@@ -247,7 +248,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             alert.addButton(withTitle: question.ok)
             alert.addButton(withTitle: "Cancel")
             NSApp.activate()
-            return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+            guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+            // A meeting being written from a call is finished first: quitting part-way would leave it
+            // half written. The wait runs in the run loop's common modes, which AppKit keeps turning
+            // while it waits for this reply.
+            guard model.jobs.saving > 0 else { return .terminateNow }
+            let saved = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, self.model.jobs.saving == 0 else { return }
+                    self.waitingForSave?.invalidate()
+                    NSApp.reply(toApplicationShouldTerminate: true)
+                }
+            }
+            waitingForSave = saved
+            RunLoop.main.add(saved, forMode: .common)
+            return .terminateLater
         }
     }
 
