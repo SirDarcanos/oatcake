@@ -116,16 +116,22 @@ for that prompt. Until the recorder has sent any audio, **Cancel** throws the re
 Pick the microphone on the record screen, from the mic button during the call, or in Settings ›
 General: "Same as Mac" follows System Settings › Sound; a chosen mic is used until it's unplugged,
 then the Mac's input until it's back. Changing mic mid-call carries on recording, with the switch
-filled with silence so your track stays lined up with the call.
+filled with silence so your track stays lined up with the call. The call audio is watched the same
+way: if it stops arriving (the Mac slept with its lid closed) or its format changes (headphones
+connected), it's started again, with the gap filled with silence.
 
 You're warned after 30 seconds of a silent mic or no call audio, on the call's screen and with a
 notification, since you're probably looking at the call (the no-call-audio notification only
 while a calling app has the microphone: dictating on your own, there's no call audio to miss). The
 silent-mic notification comes once a recording, and once more if you change microphone (a headset
 that cuts out room noise is silent whenever you aren't talking); the call's screen goes on saying
-so for as long as the mic is silent. If the recorder stops or never starts (no permission, a full
-disk), Oatcake notices (within a couple of seconds once it stops, or after 15 seconds of not
-starting), says so the same two ways, and keeps and processes whatever was recorded. Stop asks
+so for as long as the mic is silent. The recorder stops by itself before the disk is full (with
+100 MB left), so there's room to finish and process the call. If the recorder stops or never starts
+(no permission, a full disk), Oatcake notices (within a couple of seconds once it stops, or 15
+seconds after it was launched if it hasn't started; time spent on macOS's permission questions
+isn't counted), says so the same two ways, and keeps and processes whatever was recorded. A
+recorder that's stopped part-way still leaves where each track starts, so the two stay lined up;
+when it couldn't, Who's who says your lines may be out of step with the call's. Stop asks
 first, and so does quitting Oatcake while a call is being recorded, analysed or summarised, or
 meetings are being imported.
 
@@ -145,7 +151,10 @@ name you gave. The names you give are kept in the recording (`live-names.json`),
 starts from them after the call (see [Review](#3-review-whos-who)).
 
 One line gives a rougher fingerprint than a whole call, and can hold two people, so the live names
-are for following the call; the voices are told apart properly once it's over. Matching uses the same rule
+are for following the call; the voices are told apart properly once it's over. When the live
+transcript starts again partway through a call (Name voices turned on, or Oatcake reopened), it
+catches up from the start two minutes at a time, showing lines as it goes. If its helper stops,
+the pane says so; turning the live transcript off and on again starts another. Matching uses the same rule
 as review (see [Accuracy](models.md#accuracy)). Settings › General turns the live transcript off,
 or only the naming of voices, which saves about 180 MB of memory during a call.
 
@@ -183,7 +192,10 @@ On this Mac, in the background. The speech model (Parakeet unless you've chosen 
 transcribes both tracks. The call audio is split into
 voices by FluidAudio's batch diariser (pyannote segmentation, WeSpeaker fingerprints, VBx
 clustering). It runs as a helper process (`Oatcake --analyse`), so a problem there can't take the
-window or a recording in progress with it. Mic lines that repeat the call audio (speaker echo) are
+window or a recording in progress with it. Recordings are analysed one at a time (each loads the
+speech models and its whole call), the others waiting their turn; the helper stops when Oatcake
+quits, and the analysis starts again from the beginning next time. A track that can't be read
+stops the analysis, rather than counting as silence. Mic lines that repeat the call audio (speaker echo) are
 dropped. Voices you named in the live transcript get those names (a voice takes the name given to
 the lines it said most of); known voices are recognised from saved voiceprints; other names are
 suggested from the conversation by the summary model, quoting the words that gave it away (not when
@@ -191,7 +203,10 @@ After a call is set to save the transcript only: see
 [Saving without Who's who](#saving-without-whos-who)). The recording waits under
 Needs review with its step (1–5), and the Dock icon's badge counts the recordings waiting there. A
 failure shows the reason, with **Try again** and **Discard…**; **Discard…** is in the toolbar while
-it's processing and on Who's who as well.
+it's processing and on Who's who as well, and in the menu you get by Control-clicking the
+recording in the sidebar. A recording whose Who's who can't be opened says why, with **Try again**
+(it's analysed again) and **Discard…**. A recording whose recorder went without being able to
+finish it (the disk was full) still waits here, rather than being hidden until Oatcake reopens.
 
 ## 3. Review (Who's who)
 
@@ -222,7 +237,9 @@ names where the old ones were in its summary and to-dos (as whole words: each "V
 one voice, so it's an exact swap wherever the model wrote it that way), and leaves your notes and
 its title as they are. Name them while the summary is still being written and it's written again
 from the named transcript. **Keep as is** keeps the names it has. If a call can't be saved by
-itself, it waits here as usual.
+itself, it waits here as usual, and so does one with audio in which no speech was found (so it
+can be checked, and its audio isn't deleted). Quit while names are being suggested, and they're
+suggested again (and the call saved) when Oatcake next opens.
 
 ## 4. Save
 
