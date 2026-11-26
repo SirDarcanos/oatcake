@@ -187,9 +187,45 @@ public struct TodoItem: Identifiable, Equatable, Sendable {
     }
 }
 
-public func allTodoItems(_ meetings: [MeetingTodos]) -> [TodoItem] {
-    meetings.flatMap { m in parseTodos(m.todo).map { TodoItem(todo: $0, meeting: m, dueDate: dueDate($0.due, meetingDate: m.startedAt)) } }
+/**
+ * Every to-do as an item, with its due date worked out. Those of a meeting whose todo.md (and title
+ * and date) are as they were in `previous` are taken from there: a tick changes one file, and the
+ * rest of the library needn't be worked out again.
+ */
+public func allTodoItems(_ meetings: [MeetingTodos], reusing previous: [TodoItem] = []) -> [TodoItem] {
+    let before = Dictionary(grouping: previous, by: \.meeting.path)
+    return meetings.flatMap { m in
+        if let items = before[m.path], items.first?.meeting == m { return items }
+        return parseTodos(m.todo).map { TodoItem(todo: $0, meeting: m, dueDate: dueDate($0.due, meetingDate: m.startedAt)) }
+    }
 }
+
+/// The formats a due date is read in, each made once: making a formatter is most of the cost of reading one.
+private final class DueFormatters: @unchecked Sendable {
+    private let lock = NSLock()
+    private let formatters: [DateFormatter] = ["MMM d yyyy", "MMMM d yyyy", "MMM d, yyyy", "MMMM d, yyyy", "d MMM yyyy", "d MMMM yyyy", "yyyy-MM-dd", "M/d/yyyy"].map {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.isLenient = true
+        // The day alone is wanted, so it's read as a day in UTC and made a day here below, whatever zone this Mac is in now.
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = $0
+        return f
+    }
+
+    /// The year, month and day of the first format that reads one of `texts`.
+    func day(_ texts: [String]) -> DateComponents? {
+        lock.withLock {
+            for formatter in formatters {
+                if let d = texts.lazy.compactMap({ formatter.date(from: $0) }).first {
+                    return formatter.calendar.dateComponents(in: formatter.timeZone, from: d)
+                }
+            }
+            return nil
+        }
+    }
+}
+private let dueFormatters = DueFormatters()
 
 /**
  * "Fri, Oct 30" → a date. To-dos give no year, so it's the meeting's year, or the next one when that
@@ -201,17 +237,10 @@ public func dueDate(_ due: String, meetingDate: Date? = nil) -> Date? {
     let calendar = gregorian
     if let day = relativeDue(due, from: met) { return day }
     let text = due.replacingOccurrences(of: #"^[A-Za-z]+,\s*"#, with: "", options: .regularExpression).trimmed
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.isLenient = true
     let hasYear = text.range(of: #"\d{4}"#, options: .regularExpression) != nil
-    var found: Date?
     let candidates = hasYear ? [text] : ["\(text) \(calendar.component(.year, from: met))"]
-    for format in ["MMM d yyyy", "MMMM d yyyy", "MMM d, yyyy", "MMMM d, yyyy", "d MMM yyyy", "d MMMM yyyy", "yyyy-MM-dd", "M/d/yyyy"] {
-        formatter.dateFormat = format
-        if let d = candidates.lazy.compactMap({ formatter.date(from: $0) }).first { found = d; break }
-    }
-    guard var date = found else { return nil }
+    guard let day = dueFormatters.day(candidates),
+          var date = calendar.date(from: DateComponents(year: day.year, month: day.month, day: day.day)) else { return nil }
     if !hasYear, date < met.addingTimeInterval(-60 * 86_400) { date = calendar.date(byAdding: .year, value: 1, to: date)! }
     return calendar.startOfDay(for: date)
 }

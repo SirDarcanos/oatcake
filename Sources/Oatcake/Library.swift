@@ -209,12 +209,13 @@ final class Library {
         }
     }
 
-    /// The to-dos as just read from the Meetings folder.
-    func setTodos(_ todos: [MeetingTodos]) {
+    /// The to-dos as just read from the Meetings folder, and their items when they were worked out
+    /// with them (off the main thread); otherwise only the meetings whose to-dos changed are worked out.
+    func setTodos(_ todos: [MeetingTodos], items: [TodoItem]? = nil) {
         // Unchanged, on the same day: what was worked out still stands.
         if todos == todoMeetings, Calendar.current.isDateInToday(countedOn) { return }
         todoMeetings = todos
-        todoItems = allTodoItems(todos)
+        todoItems = items ?? allTodoItems(todos, reusing: todoItems)
         countTodos()
     }
 

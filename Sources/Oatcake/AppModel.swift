@@ -214,12 +214,15 @@ final class AppModel {
         }
         refreshing = true
         let meetings = library.meetings
+        let previousItems = library.todoItems
         Task {
-            let (tree, pending, unchecked, todos) = await Task.detached {
-                // The folder is walked once: the to-dos are read from the tree just built.
+            let (tree, pending, unchecked, todos, items) = await Task.detached {
+                // The folder is walked once: the to-dos are read from the tree just built, and only
+                // the meetings whose to-dos changed have their due dates worked out again.
                 let tree = meetings.tree()
+                let todos = meetings.allTodos(in: tree)
                 return (tree, Recordings.list().filter { $0.state == .recorded || $0.state == .processed }, Recordings.unchecked(),
-                        meetings.allTodos(in: tree))
+                        todos, allTodoItems(todos, reusing: previousItems))
             }.value
             refreshing = false
             defer {
@@ -238,7 +241,7 @@ final class AppModel {
                 self.library.tree = tree
                 self.jobs.pending = pending
                 self.jobs.unchecked = unchecked
-                self.library.setTodos(todos)
+                self.library.setTodos(todos, items: items)
                 self.library.diskVersion += 1
             }
             jobs.startWaiting()

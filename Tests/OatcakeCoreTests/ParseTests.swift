@@ -97,5 +97,14 @@ import Testing
         #expect(items.map { $0.isOverdue(today: day(4)) } == [false, false, false, false, false])
         #expect(items.map { $0.isOverdue(today: day(5)) } == [false, true, false, false, false])
         #expect(items.map { $0.isOverdue(today: day(7)) } == [false, true, false, false, true])
+
+        // Read again after a tick in one meeting: the other's items are kept as they were worked out
+        // (marked here, to tell), and only the changed one's are worked out afresh.
+        var marked = items
+        for i in marked.indices { marked[i].dueDate = day(30) }
+        let ticked = with(meeting) { $0.todo = toggleTodo($0.todo, line: 0) }
+        let again = allTodoItems([own, ticked], reusing: marked)
+        #expect(again.map(\.dueDate) == [day(30), day(4), day(3), nil, day(6)])
+        #expect(again[1].todo.done && !items[1].todo.done)
     }
 }
