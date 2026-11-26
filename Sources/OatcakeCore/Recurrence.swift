@@ -1,6 +1,7 @@
 // A feed's events as the occurrences in a window of time: recurring events expanded (RRULE, EXDATE,
 // RDATE, and moved or cancelled occurrences), in each event's own time zone.
 
+import CryptoKit
 import Foundation
 
 struct ICalEvent {
@@ -8,12 +9,15 @@ struct ICalEvent {
     let uid: String
     let start: ICalTime
     let duration: TimeInterval
+    /// An all-day event's length in days: each occurrence ends at midnight, also across a clock
+    /// change, where a length in seconds would make the day after it 23 or 25 hours long.
+    let days: Int?
 
     init?(_ component: ICalComponent, aliases: [String: TimeZone]) {
         guard let dtstart = component.first("DTSTART"),
               let start = parseICalTime(dtstart.value, tzid: dtstart.params["TZID"], valueType: dtstart.params["VALUE"], aliases: aliases) else { return nil }
         self.component = component
-        uid = component.first("UID")?.value ?? UUID().uuidString
+        uid = eventUID(component)
         self.start = start
         if let dtend = component.first("DTEND"),
            let end = parseICalTime(dtend.value, tzid: dtend.params["TZID"], valueType: dtend.params["VALUE"], aliases: aliases) {
@@ -23,9 +27,27 @@ struct ICalEvent {
         } else {
             duration = start.isDate ? 86_400 : 0
         }
+        days = start.isDate ? Int((duration / 86_400).rounded()) : nil
     }
 
     var summary: String { component.first("SUMMARY").map { unescapeText($0.value) } ?? "" }
+
+    /// When an occurrence that starts at `start` ends.
+    func end(from start: Date) -> Date {
+        guard let days, let end = gregorian.date(byAdding: .day, value: days, to: start) else { return start.addingTimeInterval(duration) }
+        return end
+    }
+}
+
+/**
+ * An event's UID, or for one without (which RFC 5545 doesn't allow, but a feed can do anything) one
+ * made from its start and title: the same at every fetch, so it keeps its ID (and what's kept by it,
+ * such as prep notes and ignoring it), and two such events don't take each other's place.
+ */
+func eventUID(_ component: ICalComponent) -> String {
+    if let uid = component.first("UID")?.value, !uid.isEmpty { return uid }
+    let made = [component.first("DTSTART")?.value, component.first("SUMMARY")?.value].map { $0 ?? "" }.joined(separator: "\n")
+    return "no-uid-" + SHA256.hash(data: Data(made.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
 }
 
 /// Expands an iCalendar feed into the occurrences that overlap [from, to).
@@ -53,11 +75,15 @@ func parseCalendar(_ calendar: ICalComponent, from: Date, to: Date) -> [Calendar
     // same UID, keyed here by the instant they replace (matching by instant works whatever time zone
     // either entry is written in).
     var replaced: [String: [Date: ICalComponent]] = [:]
+    // A change made to one occurrence and every one after it (RANGE=THISANDFUTURE), by the instant it starts from.
+    var onwards: [String: [(from: Date, component: ICalComponent)]] = [:]
     for component in calendar.components("VEVENT") {
-        let uid = component.first("UID")?.value ?? ""
-        if let rid = component.first("RECURRENCE-ID"),
-           let instant = parseICalTime(rid.value, tzid: rid.params["TZID"], valueType: rid.params["VALUE"], aliases: aliases) {
+        let uid = eventUID(component)
+        if let rid = component.first("RECURRENCE-ID") {
+            // One whose occurrence can't be read is left out: taken for the series, it would replace it.
+            guard let instant = parseICalTime(rid.value, tzid: rid.params["TZID"], valueType: rid.params["VALUE"], aliases: aliases) else { continue }
             replaced[uid, default: [:]][instant.date] = component
+            if (rid.params["RANGE"] ?? "").uppercased() == "THISANDFUTURE" { onwards[uid, default: []].append((instant.date, component)) }
         } else if let event = ICalEvent(component, aliases: aliases) {
             masters[uid] = event
         }
@@ -89,32 +115,41 @@ func parseCalendar(_ calendar: ICalComponent, from: Date, to: Date) -> [Calendar
     }
 
     for (uid, event) in masters {
-        func emit(_ instant: Date) {
+        // The latest change made from an occurrence onwards comes first.
+        let fromThisOn = (onwards[uid] ?? []).sorted { $0.from > $1.from }
+        func emit(_ instant: Date, seriesId: String? = uid) {
             if let change = replaced[uid]?[instant], let changed = ICalEvent(change, aliases: aliases) {
-                add(changed, start: changed.start.date, end: changed.start.date.addingTimeInterval(changed.duration), isDate: changed.start.isDate, seriesId: uid)
+                add(changed, start: changed.start.date, end: changed.end(from: changed.start.date), isDate: changed.start.isDate, seriesId: seriesId)
+            } else if let onward = fromThisOn.first(where: { $0.from < instant }), let changed = ICalEvent(onward.component, aliases: aliases) {
+                // Moved by as much as the occurrence it was made on, and as it is now in every other way.
+                let start = instant.addingTimeInterval(changed.start.date.timeIntervalSince(onward.from))
+                add(changed, start: start, end: changed.end(from: start), isDate: changed.start.isDate, seriesId: seriesId)
             } else {
-                add(event, start: instant, end: instant.addingTimeInterval(event.duration), isDate: event.start.isDate, seriesId: uid)
+                add(event, start: instant, end: event.end(from: instant), isDate: event.start.isDate, seriesId: seriesId)
             }
         }
         let rdates = extraDates(event.component, "RDATE", aliases: aliases)
         guard let rule = event.component.first("RRULE").flatMap({ RecurrenceRule($0.value, aliases: aliases) }) else {
             if rdates.isEmpty {
-                add(event, start: event.start.date, end: event.start.date.addingTimeInterval(event.duration), isDate: event.start.isDate, seriesId: nil)
+                // An event that doesn't recur can still come with a changed copy of itself.
+                emit(event.start.date, seriesId: nil)
             } else {
                 // RDATE without RRULE: DTSTART plus the listed dates.
-                ([event.start.date] + rdates).forEach(emit)
+                ([event.start.date] + rdates).forEach { emit($0) }
             }
             continue
         }
         var excluded = Set(extraDates(event.component, "EXDATE", aliases: aliases))
         // An EXDATE given as a day, on an event that has a time, takes out that day's occurrence: the
-        // day in the event's own zone, not whichever moment midnight is on this Mac.
+        // day in the event's own zone, not whichever moment midnight is on this Mac. So does one given
+        // as midnight on the day, which is how some calendars write a day taken out.
         var excludedDays = Set<String>()
         if !event.start.isDate {
-            let days = event.component.all("EXDATE").flatMap { $0.value.split(separator: ",") }.map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { $0.count == 8 && $0.allSatisfy(\.isNumber) }
+            let values = event.component.all("EXDATE").flatMap { $0.value.split(separator: ",") }.map { $0.trimmingCharacters(in: .whitespaces) }
+            let days = values.filter { $0.count == 8 && $0.allSatisfy(\.isNumber) }
             excluded.subtract(days.compactMap { parseICalTime($0, tzid: nil, valueType: "DATE", aliases: aliases)?.date })
-            excludedDays = Set(days)
+            let midnights = values.filter { $0.count == 15 && $0.hasSuffix("T000000") && $0.prefix(8).allSatisfy(\.isNumber) }.map { String($0.prefix(8)) }
+            excludedDays = Set(days + midnights)
         }
         var eventCalendar = Calendar(identifier: .gregorian)
         eventCalendar.timeZone = event.start.zone
@@ -129,7 +164,7 @@ func parseCalendar(_ calendar: ICalComponent, from: Date, to: Date) -> [Calendar
         // An occurrence from beyond the window that was moved into it: its own time wasn't reached above.
         for (instant, change) in replaced[uid] ?? [:] where instant >= to {
             if let changed = ICalEvent(change, aliases: aliases) {
-                add(changed, start: changed.start.date, end: changed.start.date.addingTimeInterval(changed.duration), isDate: changed.start.isDate, seriesId: uid)
+                add(changed, start: changed.start.date, end: changed.end(from: changed.start.date), isDate: changed.start.isDate, seriesId: uid)
             }
         }
     }
@@ -137,7 +172,7 @@ func parseCalendar(_ calendar: ICalComponent, from: Date, to: Date) -> [Calendar
     for (uid, byInstant) in replaced where masters[uid] == nil {
         for component in byInstant.values {
             if let event = ICalEvent(component, aliases: aliases) {
-                add(event, start: event.start.date, end: event.start.date.addingTimeInterval(event.duration), isDate: event.start.isDate, seriesId: nil)
+                add(event, start: event.start.date, end: event.end(from: event.start.date), isDate: event.start.isDate, seriesId: nil)
             }
         }
     }
@@ -152,7 +187,7 @@ private func extraDates(_ component: ICalComponent, _ name: String, aliases: [St
 
 /// An RRULE, expanded period by period in the event's time zone, so a 10:00 meeting stays at 10:00 across a clock change.
 struct RecurrenceRule {
-    enum Frequency: String { case DAILY, WEEKLY, MONTHLY, YEARLY }
+    enum Frequency: String { case SECONDLY, MINUTELY, HOURLY, DAILY, WEEKLY, MONTHLY, YEARLY }
     var frequency: Frequency
     var interval = 1
     var count: Int?
@@ -216,6 +251,16 @@ struct RecurrenceRule {
         func daysIn(_ y: Int, _ m: Int) -> Int {
             calendar.date(from: DateComponents(year: y, month: m, day: 1)).flatMap { calendar.range(of: .day, in: .month, for: $0) }?.count ?? 0
         }
+        func weekday(_ y: Int, _ m: Int, _ d: Int) -> Int? {
+            calendar.date(from: DateComponents(year: y, month: m, day: d, hour: 12)).map { calendar.component(.weekday, from: $0) }
+        }
+        /// Of the days that are `ordinal`'s weekday, the one it counts to (2: the second; -1: the last), or all of them for 0.
+        func picked<Day>(_ matching: [Day], _ ordinal: Int) -> [Day] {
+            if ordinal == 0 { return matching }
+            if ordinal > 0, ordinal <= matching.count { return [matching[ordinal - 1]] }
+            if ordinal < 0, -ordinal <= matching.count { return [matching[matching.count + ordinal]] }
+            return []
+        }
         /// Days of a month matching BYDAY (with ordinals counted within the month) or BYMONTHDAY.
         func daysOfMonth(_ y: Int, _ m: Int) -> [Int] {
             let count = daysIn(y, m)
@@ -224,24 +269,30 @@ struct RecurrenceRule {
                 return byMonthDay.map { $0 > 0 ? $0 : count + 1 + $0 }.filter { (1...count).contains($0) }
             }
             if !byDay.isEmpty {
-                var days: [Int] = []
-                for (ordinal, weekday) in byDay {
-                    let matching = (1...count).filter { d in
-                        calendar.date(from: DateComponents(year: y, month: m, day: d, hour: 12)).map { calendar.component(.weekday, from: $0) } == weekday
-                    }
-                    if ordinal == 0 { days += matching }
-                    else if ordinal > 0, ordinal <= matching.count { days.append(matching[ordinal - 1]) }
-                    else if ordinal < 0, -ordinal <= matching.count { days.append(matching[matching.count + ordinal]) }
-                }
-                return days
+                return byDay.flatMap { ordinal, day in picked((1...count).filter { weekday(y, m, $0) == day }, ordinal) }
             }
             return [startDay.day!]
+        }
+        /// For a yearly rule with BYDAY and no months: the days of the year it names, its ordinals
+        /// counted within the year (BYDAY=20MO is the twentieth Monday).
+        func daysOfYear(_ y: Int) -> [Date] {
+            let all = (1...12).flatMap { m in (1...max(1, daysIn(y, m))).map { (m, $0) } }
+            return byDay.flatMap { ordinal, day in picked(all.filter { weekday(y, $0.0, $0.1) == day }, ordinal) }.compactMap { at(y, $0.0, $0.1) }
         }
 
         var period = 0
         while period < 20_000 {
             var candidates: [Date] = []
             switch frequency {
+            case .HOURLY, .MINUTELY, .SECONDLY:
+                let unit: Calendar.Component = frequency == .HOURLY ? .hour : frequency == .MINUTELY ? .minute : .second
+                guard let time = calendar.date(byAdding: unit, value: period * interval, to: start.date) else { break }
+                if time >= limit { return out }
+                let c = calendar.dateComponents([.month, .day, .weekday], from: time)
+                let dayOK = byDay.isEmpty || byDay.contains { $0.1 == c.weekday }
+                let monthOK = byMonth.isEmpty || byMonth.contains(c.month!)
+                let monthDayOK = byMonthDay.isEmpty || byMonthDay.contains(c.day!)
+                if dayOK && monthOK && monthDayOK { candidates = [time] }
             case .DAILY:
                 guard let day = calendar.date(byAdding: .day, value: period * interval, to: start.date) else { break }
                 let c = calendar.dateComponents([.year, .month, .day, .weekday], from: day)
@@ -263,10 +314,17 @@ struct RecurrenceRule {
             case .MONTHLY:
                 let total = (startDay.year! * 12 + startDay.month! - 1) + period * interval
                 let (y, m) = (total / 12, total % 12 + 1)
+                // A rule that matches no day (BYDAY=6MO) has nothing left once its months are past the window.
+                if let first = calendar.date(from: DateComponents(year: y, month: m, day: 1)), first >= limit { return out }
                 if byMonth.isEmpty || byMonth.contains(m) { candidates = daysOfMonth(y, m).compactMap { at(y, m, $0) } }
             case .YEARLY:
                 let y = startDay.year! + period * interval
-                for m in byMonth.isEmpty ? [startDay.month!] : byMonth { candidates += daysOfMonth(y, m).compactMap { at(y, m, $0) } }
+                if let first = calendar.date(from: DateComponents(year: y, month: 1, day: 1)), first >= limit { return out }
+                if byMonth.isEmpty && byMonthDay.isEmpty && !byDay.isEmpty {
+                    candidates = daysOfYear(y)
+                } else {
+                    for m in byMonth.isEmpty ? [startDay.month!] : byMonth { candidates += daysOfMonth(y, m).compactMap { at(y, m, $0) } }
+                }
             }
             candidates = Array(Set(candidates)).sorted()
             if !bySetPos.isEmpty {

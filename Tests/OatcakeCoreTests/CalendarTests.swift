@@ -421,4 +421,59 @@ import Testing
         await #expect(throws: OatcakeError("the calendar is too large to read")) { try await readCalendar(bytes(101), limit: 100) }
         await #expect(throws: OatcakeError.self) { try await readCalendar(bytes(0), limit: 100, expected: 101) }
     }
+
+    /// Feeds that RFC 5545 allows, or that break its rules, and that the reader got wrong. Whether
+    /// Google's or Outlook's feeds send them isn't known; each is written here to RFC 5545's shape.
+    @Test func casesFeedsMaySend() {
+        let november = (from: "2026-11-01T00:00:00Z", to: "2026-12-01T00:00:00Z")
+        func ics(_ events: [String]...) -> String {
+            (["BEGIN:VCALENDAR"] + events.flatMap { ["BEGIN:VEVENT"] + $0 + ["END:VEVENT"] } + ["END:VCALENDAR"]).joined(separator: "\n")
+        }
+        func events(_ text: String, from: String = november.from, to: String = november.to) -> [CalendarEvent] {
+            parseCalendar(text, from: parseISO(from)!, to: parseISO(to)!)
+        }
+        let weekly = ["UID:w", "SUMMARY:Weekly", "DTSTART:20261102T100000Z", "DTEND:20261102T103000Z", "RRULE:FREQ=WEEKLY;COUNT=3"]
+
+        // Events with no UID are each kept, under the same ID at every fetch.
+        let noUID = ics(["SUMMARY:First", "DTSTART:20261110T100000Z", "DTEND:20261110T103000Z"],
+                        ["SUMMARY:Second", "DTSTART:20261110T110000Z", "DTEND:20261110T113000Z"])
+        #expect(events(noUID).map(\.title) == ["First", "Second"])
+        #expect(events(noUID).map(\.id) == events(noUID).map(\.id) && Set(events(noUID).map(\.id)).count == 2)
+
+        // A changed occurrence whose RECURRENCE-ID can't be read is left out, not taken for the series.
+        let unreadable = ics(weekly, ["UID:w", "RECURRENCE-ID:soon", "SUMMARY:Changed", "DTSTART:20261109T150000Z", "DTEND:20261109T153000Z"])
+        #expect(events(unreadable).map(\.start) == ["2026-11-02T10:00:00.000Z", "2026-11-09T10:00:00.000Z", "2026-11-16T10:00:00.000Z"])
+
+        // A change to one occurrence and every one after it moves those after it too.
+        let onwards = ics(weekly, ["UID:w", "RECURRENCE-ID;RANGE=THISANDFUTURE:20261109T100000Z", "SUMMARY:Weekly, later",
+                                   "DTSTART:20261109T110000Z", "DTEND:20261109T113000Z"])
+        #expect(events(onwards).map(\.start) == ["2026-11-02T10:00:00.000Z", "2026-11-09T11:00:00.000Z", "2026-11-16T11:00:00.000Z"])
+        #expect(events(onwards).map(\.title) == ["Weekly", "Weekly, later", "Weekly, later"])
+
+        // A changed copy of an event that doesn't recur takes its place.
+        let moved = ics(["UID:once", "SUMMARY:Once", "DTSTART:20261110T100000Z", "DTEND:20261110T103000Z"],
+                        ["UID:once", "RECURRENCE-ID:20261110T100000Z", "SUMMARY:Once, later", "DTSTART:20261110T150000Z", "DTEND:20261110T153000Z"])
+        #expect(events(moved).map(\.start) == ["2026-11-10T15:00:00.000Z"] && events(moved).first?.seriesId == nil)
+
+        // Hourly and finer.
+        #expect(starts(feed("DTSTART:20261110T090000Z", "DTEND:20261110T091500Z", "RRULE:FREQ=HOURLY;INTERVAL=2;COUNT=3"), from: november.from, to: november.to)
+            == ["2026-11-10T09:00:00.000Z", "2026-11-10T11:00:00.000Z", "2026-11-10T13:00:00.000Z"])
+        #expect(starts(feed("DTSTART:20261110T090000Z", "RRULE:FREQ=MINUTELY;INTERVAL=30;COUNT=3"), from: november.from, to: november.to)
+            == ["2026-11-10T09:00:00.000Z", "2026-11-10T09:30:00.000Z", "2026-11-10T10:00:00.000Z"])
+
+        // RFC 5545's own example (section 3.8.5.3): every 20th Monday of the year.
+        #expect(starts(feed("DTSTART;TZID=America/New_York:19970519T090000", "RRULE:FREQ=YEARLY;BYDAY=20MO"), from: "1997-01-01T00:00:00Z", to: "2000-01-01T00:00:00Z")
+            == ["1997-05-19T13:00:00.000Z", "1998-05-18T13:00:00.000Z", "1999-05-17T13:00:00.000Z"])
+
+        // A day taken out as midnight in the series' zone takes out that day's 10:00.
+        #expect(starts(feed("DTSTART;TZID=America/New_York:20261102T100000", "RRULE:FREQ=DAILY;COUNT=4", "EXDATE;TZID=America/New_York:20261103T000000"),
+                       from: november.from, to: november.to)
+            == ["2026-11-02T15:00:00.000Z", "2026-11-04T15:00:00.000Z", "2026-11-05T15:00:00.000Z"])
+
+        // Every day of an all-day series ends at midnight, the days the clocks change on included
+        // (25 October in Europe, 1 November in America; a Mac in a zone without them sees 24 hours each day).
+        let days = events(feed("DTSTART;VALUE=DATE:20261020", "DTEND;VALUE=DATE:20261021", "RRULE:FREQ=DAILY;COUNT=20"), from: "2026-10-19T00:00:00Z")
+        #expect(days.count == 20)
+        #expect(days.allSatisfy { gregorian.date(byAdding: .day, value: 1, to: $0.startDate) == $0.endDate })
+    }
 }
