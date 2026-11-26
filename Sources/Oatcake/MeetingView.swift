@@ -68,6 +68,9 @@ struct MeetingView: View {
     /// Counts reads of the files, and writes to them from here: a read that lands after a later one,
     /// or after a write, is older than what's shown, and is dropped.
     @ViewState private var loads = 0
+    /// The summary has just been written and is being read here: its editors stay closed till it is,
+    /// so nothing is typed over the text from before.
+    @ViewState private var readingSummary = false
     @ViewState private var arrived = false
     /// Whether the tab has been checked against this meeting yet (the view is made afresh for each meeting).
     @ViewState private var tabChecked = false
@@ -119,6 +122,11 @@ struct MeetingView: View {
             load()
         }
         .onChange(of: model.library.diskVersion) { load() }
+        .onChange(of: model.jobs.summarising.contains(path)) { was, now in
+            guard was, !now else { return }
+            readingSummary = true
+            load()
+        }
         // ⌘F: Find, on the transcript.
         .onChange(of: model.findRequest) {
             flush()
@@ -158,6 +166,8 @@ struct MeetingView: View {
                 }
             }.value
             guard asked == loads else { return }
+            // The newest read: if the summary has just been written, it began after that.
+            readingSummary = false
             switch read {
             case .success(let (m, audio, transcript)):
                 recordingAudio = audio
@@ -217,7 +227,11 @@ struct MeetingView: View {
         let waiting = model.edits.texts(in: path).count
         let outcomes = model.saveEdits(in: path)
         // Written (here or beside): a read still on its way has the files as they were before.
-        if model.edits.texts(in: path).count < waiting { loads += 1 }
+        if model.edits.texts(in: path).count < waiting {
+            loads += 1
+            // The read the summary's editors wait for is one of those dropped: another takes its place.
+            if readingSummary { load() }
+        }
         if model.edits.isWaiting(in: path) {
             status = .failed
         } else if !outcomes.isEmpty {
@@ -632,7 +646,7 @@ struct MeetingView: View {
                             .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
                             .padding(8)
                             .background(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.line))
-                    } else if model.jobs.summarising.contains(path), key == .summary || key == .todos {
+                    } else if model.jobs.summarising.contains(path) || readingSummary, key == .summary || key == .todos {
                         Text("The summary is being written. This can be edited once it’s here.")
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, minHeight: key == .todos ? 70 : 120, alignment: .topLeading)

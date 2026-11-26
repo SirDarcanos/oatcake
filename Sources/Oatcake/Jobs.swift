@@ -353,8 +353,9 @@ final class Jobs {
             } catch {
                 summaryErrors[summaryJobs[job] ?? path] = error.localizedDescription
             }
-            // Its summary and to-dos open for typing again only once the meeting has been read again
-            // with what was written: until then they'd show what was there before, to be typed over.
+            // Cleared once the folder has been read again with what was written. The meeting's view then
+            // reads the meeting itself, and keeps its summary and to-dos closed until that's in: until
+            // then they'd show what was there before, to be typed over.
             await app.refreshed()
             let meeting = summaryJobs[job] ?? path
             summarising.remove(meeting)
