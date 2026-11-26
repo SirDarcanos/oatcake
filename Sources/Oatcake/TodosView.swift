@@ -94,7 +94,9 @@ struct TodosView: View {
         }
         list.sort(by: dueFirst)
         let groups = grouped(list, today: today, myName: myName)
-        let owners = Array(Set(items.map(\.todo.owner).filter { !$0.isEmpty && !isMe($0, myName) })).sorted()
+        var owners = Set(items.map(\.todo.owner).filter { !$0.isEmpty && !isMe($0, myName) })
+        // The person chosen when you were last here stays a choice, even with none of their to-dos left.
+        if case .named(let name) = owner { owners.insert(name) }
         // Your own list (the Meetings folder's todo.md) isn't a meeting.
         let fromMeetings = Set(open.filter { !$0.meeting.path.isEmpty }.map(\.meeting.path)).count
         let fromYourList = open.contains { $0.meeting.path.isEmpty }
@@ -147,16 +149,17 @@ struct TodosView: View {
             if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
             ToolbarItemGroup(placement: .automatic) {
                 Picker("Group by", selection: $grouping) {
-                    Text("Due date").tag(Grouping.due)
-                    Text("Folder").tag(Grouping.folder)
-                    Text("Owner").tag(Grouping.owner)
+                    Text("By due date").tag(Grouping.due)
+                    Text("By folder").tag(Grouping.folder)
+                    Text("By owner").tag(Grouping.owner)
                 }
                 .fixedSize()
                 Picker("Owner", selection: $owner) {
-                    Text("Everyone").tag(Owner.everyone)
+                    Text("Everyone’s").tag(Owner.everyone)
                     Text("Mine").tag(Owner.mine)
-                    ForEach(owners, id: \.self) { Text($0).tag(Owner.named($0)) }
+                    ForEach(owners.sorted(), id: \.self) { Text("\($0)’s").tag(Owner.named($0)) }
                 }
+                // Each value says what it chooses: how the list is grouped, and whose to-dos are in it.
                 .fixedSize()
             }
         }
