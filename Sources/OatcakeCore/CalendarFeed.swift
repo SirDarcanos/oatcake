@@ -1,5 +1,5 @@
-// The calendar's private iCal address: fetched at most once an hour, its events from a day ago to
-// two weeks ahead kept in calendar.json. Recurring events are expanded here (RFC 5545 RRULE,
+// Each calendar's private iCal address: fetched at most once an hour, its events from a day ago to
+// two weeks ahead kept in its own cache file (CalendarSource.cacheFile). Recurring events are expanded here (RFC 5545 RRULE,
 // EXDATE, RDATE and moved or cancelled occurrences), in the event's own time zone.
 
 import Foundation
@@ -108,7 +108,7 @@ public func eventHappening(_ events: [CalendarEvent], at now: Date, unless recor
 
 /**
  * Whether an event is left out of Upcoming, the menu bar and reminders: its title starts with one of
- * `ignored` (Settings › Calendar) as whole words, or has "Oatcake ignore" anywhere in it. Case and
+ * `ignored` (Settings › Calendars) as whole words, or has "Oatcake ignore" anywhere in it. Case and
  * surrounding spaces don't count. iCal doesn't say which events are Google's focus time or
  * out-of-office blocks, so their titles are all there is to go on.
  */
@@ -275,6 +275,8 @@ final class ICalComponent {
 }
 
 func parseICal(_ text: String) -> ICalComponent {
+    // A byte-order mark in front would hide the first BEGIN.
+    let text = text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text
     // Unfold: a line starting with a space or tab continues the one before.
     var lines: [String] = []
     for raw in text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n").components(separatedBy: "\n") {
@@ -293,8 +295,12 @@ func parseICal(_ text: String) -> ICalComponent {
             stack.last!.children.append(child)
             stack.append(child)
         } else if property.name == "END" {
-            if stack.count > 1, stack.last?.name == property.value.uppercased() {
-                stack.removeLast().closed = true
+            // Closes the component it names. One left open inside it (an alarm with no END, say) is
+            // closed with it, rather than keeping everything after it from being read.
+            let name = property.value.uppercased()
+            if let index = stack.lastIndex(where: { $0.name == name }), index > 0 {
+                stack[index].closed = true
+                stack.removeSubrange(index...)
             }
         } else {
             stack.last!.properties.append(property)

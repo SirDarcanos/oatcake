@@ -9,6 +9,8 @@ struct CalendarSourceTests {
         let decoder = JSONDecoder()
         #expect(try decoder.decode(SwatchColour.self, from: Data("\"pink\"".utf8)) == .raspberry)
         #expect(try decoder.decode(SwatchColour.self, from: Data("\"brown\"".utf8)) == .mustard)
+        // A colour this version doesn't know still loads, as the first one.
+        #expect(try decoder.decode(SwatchColour.self, from: Data("\"chartreuse\"".utf8)) == .indigo)
         for colour in SwatchColour.allCases {
             #expect(try decoder.decode(SwatchColour.self, from: JSONEncoder().encode(colour)) == colour)
         }

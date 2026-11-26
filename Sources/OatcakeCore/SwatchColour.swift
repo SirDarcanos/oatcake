@@ -31,10 +31,9 @@ public enum SwatchColour: String, Codable, CaseIterable, Sendable {
         case "pink": self = .raspberry
         case "brown": self = .mustard
         default:
-            guard let colour = Self(rawValue: name) else {
-                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown swatch colour")
-            }
-            self = colour
+            // One this version doesn't know (from a newer version, or edited by hand) mustn't stop every
+            // calendar from loading: it shows as the first colour until another is picked.
+            self = Self(rawValue: name) ?? .indigo
         }
     }
 }
