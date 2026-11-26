@@ -61,23 +61,19 @@ public struct RecorderStatus: Codable, Equatable, Sendable {
     public var systemLevel: Double?
     /// The input being recorded right now; nil when there's none.
     public var micDevice: MicChoice?
-    /// While starting: macOS is asking whether Oatcake may use the microphone or record system audio,
-    /// and the recorder waits for the answer.
-    public var waitingForPermission: Bool?
     /// Seconds from the start to each track's first sample, once it has one: what meta.json will say,
     /// kept here as well for a recorder that goes without finishing.
     public var micOffset: Double?
     public var systemOffset: Double?
 
     public init(state: State, error: String? = nil, elapsed: Double? = nil, micLevel: Double? = nil, systemLevel: Double? = nil, micDevice: MicChoice? = nil,
-                waitingForPermission: Bool? = nil, micOffset: Double? = nil, systemOffset: Double? = nil) {
+                micOffset: Double? = nil, systemOffset: Double? = nil) {
         self.state = state
         self.error = error
         self.elapsed = elapsed
         self.micLevel = micLevel
         self.systemLevel = systemLevel
         self.micDevice = micDevice
-        self.waitingForPermission = waitingForPermission
         self.micOffset = micOffset
         self.systemOffset = systemOffset
     }
