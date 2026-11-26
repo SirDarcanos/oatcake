@@ -70,7 +70,7 @@ Settings, with **Open Notification Settings**.
 ### Reminders
 
 - **Remind me before calls** (on to start with): 5 minutes before each timed event, a
-  notification with **Open call and start note taking**. The button opens the call link when the
+  notification with **Join and start recording**. The button opens the call link when the
   event has one, starts recording it (in the folder named like the event; a new folder for a
   recurring event without one, ":" and "/" becoming "-"), and brings Oatcake forward on the live
   notes. Clicking the notification itself opens New recording for the event. macOS asks once

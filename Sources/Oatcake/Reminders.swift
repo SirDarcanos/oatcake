@@ -19,7 +19,7 @@ enum Reminders {
 
     static func register() {
         let center = UNUserNotificationCenter.current()
-        let start = UNNotificationAction(identifier: startAction, title: "Open call and start note taking", options: [.foreground])
+        let start = UNNotificationAction(identifier: startAction, title: "Join and start recording", options: [.foreground])
         let record = UNNotificationAction(identifier: recordAction, title: "Start recording", options: [.foreground])
         // Not in the foreground: keeping a recording going shouldn't take you away from the call.
         let keep = UNNotificationAction(identifier: keepAction, title: "Keep recording", options: [])
