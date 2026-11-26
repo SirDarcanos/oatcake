@@ -189,6 +189,8 @@ import Testing
         try await ModelDownload.fetch(good, to: file) { _ in }
         #expect(try Data(contentsOf: file) == content && !FileManager.default.fileExists(atPath: part.path))
         #expect(server.requests.count == 1 && server.requests[0].headers["range"] == "bytes=100000-")
+        // It was checked as it arrived, so it isn't read again when it's first started.
+        #expect(FileManager.default.fileExists(atPath: file.appendingPathExtension("checked").path))
         // It's here now: nothing is fetched.
         try await ModelDownload.fetch(good, to: file) { _ in }
         #expect(server.requests.count == 1)
@@ -198,6 +200,129 @@ import Testing
         await #expect(throws: OatcakeError.self) { try await ModelDownload.fetch(model(sha256: String(repeating: "0", count: 64)), to: file) { _ in } }
         #expect(!FileManager.default.fileExists(atPath: file.path) && !FileManager.default.fileExists(atPath: part.path))
         #expect(server.requests.last?.headers["range"] == nil)
+
+        // Stopped before it began: it ends, and nothing is asked for.
+        let asked = server.requests.count
+        let stopped = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            try await ModelDownload.fetch(good, to: file) { _ in }
+        }
+        await #expect(throws: CancellationError.self) { try await stopped.value }
+        #expect(server.requests.count == asked)
+    }
+
+    /// The model's file is read again before it's started only when its size or modification date
+    /// has changed since it last passed: reading 5 GB every time would hold up every summary.
+    @Test func modelFileCheckedWhenItChanges() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-check-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let content = Data((0..<100_000).map { UInt8(truncatingIfNeeded: $0 &* 13) })
+        let model = LocalModel(id: "test", title: "Test model", detail: "", file: "test.gguf", url: "https://example.com/test.gguf",
+                               sha256: SHA256.hash(data: content).map { String(format: "%02x", $0) }.joined(),
+                               bytes: Int64(content.count), baseMemory: 1, memoryPerThousandTokens: 0.1)
+        let file = dir.appendingPathComponent("test.gguf"), note = file.appendingPathExtension("checked")
+        // A date to a whole second, so it can be put back exactly.
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        try content.write(to: file)
+        try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: file.path)
+        try LocalModels.verify(model, in: dir)
+        #expect(FileManager.default.fileExists(atPath: note.path))
+
+        // Other bytes of the same size with the date put back aren't noticed: that's the limit of it.
+        var changed = content
+        changed[0] ^= 0xff
+        try changed.write(to: file)
+        try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: file.path)
+        try LocalModels.verify(model, in: dir)
+
+        // A new date: it's read again, and a file that doesn't match is thrown away, to be downloaded again.
+        try FileManager.default.setAttributes([.modificationDate: date.addingTimeInterval(60)], ofItemAtPath: file.path)
+        #expect(throws: OatcakeError.self) { try LocalModels.verify(model, in: dir) }
+        #expect(!FileManager.default.fileExists(atPath: file.path) && !FileManager.default.fileExists(atPath: note.path))
+    }
+
+    /// llama.cpp's server isn't started when anything in the app has been changed, added or taken
+    /// away since it was signed. Tried on a small app signed here, ad hoc.
+    @Test func appMustBeAsSigned() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-sealed-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        func signedApp() throws -> (app: URL, llama: URL) {
+            let app = dir.appendingPathComponent("\(UUID().uuidString).app")
+            let llama = app.appendingPathComponent("Contents/Resources/llama")
+            try FileManager.default.createDirectory(at: llama, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: app.appendingPathComponent("Contents/MacOS"), withIntermediateDirectories: true)
+            let plist: [String: Any] = ["CFBundleIdentifier": "local.oatcake.test", "CFBundleExecutable": "Test", "CFBundlePackageType": "APPL"]
+            try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0).write(to: app.appendingPathComponent("Contents/Info.plist"))
+            // Any program will do for one that's never run: the system's own `true`.
+            try FileManager.default.copyItem(at: URL(fileURLWithPath: "/usr/bin/true"), to: app.appendingPathComponent("Contents/MacOS/Test"))
+            try FileManager.default.copyItem(at: URL(fileURLWithPath: "/usr/bin/true"), to: llama.appendingPathComponent("llama-server"))
+            try Data("Made-up licence".utf8).write(to: llama.appendingPathComponent("LICENSE"))
+            try runCapturing("/usr/bin/codesign", ["--force", "--sign", "-", llama.appendingPathComponent("llama-server").path])
+            try runCapturing("/usr/bin/codesign", ["--force", "--sign", "-", app.path])
+            return (app, llama)
+        }
+        let intact = try signedApp()
+        try ModelServer.checkSealed(intact.app)
+
+        let changed = try signedApp()
+        try Data("Another licence".utf8).write(to: changed.llama.appendingPathComponent("LICENSE"))
+        #expect(throws: OatcakeError.self) { try ModelServer.checkSealed(changed.app) }
+
+        let added = try signedApp()
+        try Data("Not a library".utf8).write(to: added.llama.appendingPathComponent("libextra.dylib"))
+        #expect(throws: OatcakeError.self) { try ModelServer.checkSealed(added.app) }
+
+        let removed = try signedApp()
+        try FileManager.default.removeItem(at: removed.llama.appendingPathComponent("LICENSE"))
+        #expect(throws: OatcakeError.self) { try ModelServer.checkSealed(removed.app) }
+
+        // A program put in its place, signed in its own right, isn't the one the app was signed with.
+        let replaced = try signedApp()
+        let server = replaced.llama.appendingPathComponent("llama-server")
+        try FileManager.default.removeItem(at: server)
+        try FileManager.default.copyItem(at: URL(fileURLWithPath: "/usr/bin/false"), to: server)
+        try runCapturing("/usr/bin/codesign", ["--force", "--sign", "-", server.path])
+        #expect(throws: OatcakeError.self) { try ModelServer.checkSealed(replaced.app) }
+
+        // The other half of the check, that the app on the disk is the copy that's running (an app
+        // changed and then signed again as a whole is otherwise whole), can't be tried from here:
+        // the copy running is the test runner, not an app this test can sign again. It was tried by
+        // hand when written, on a small program that signed itself again on the disk.
+    }
+
+    /// The model's server counts as started only once llama.cpp has said it's listening on the
+    /// port it was given: before then, whatever answers there may be another program's. The lines
+    /// are as the pinned build writes them.
+    @Test func startedOnlyWhenLlamaListens() {
+        let loaded = "srv  server_run_i: model loaded\n"
+        #expect(!ModelServer.saysListening(loaded, port: 54321))
+        let listening = loaded + "srv  server_on_li: listening on http://127.0.0.1:54321\n"
+        #expect(ModelServer.saysListening(listening, port: 54321))
+        // Another port, even one that starts the same, isn't this one.
+        #expect(!ModelServer.saysListening(listening, port: 5432) && !ModelServer.saysListening(listening, port: 4321))
+        // With llama.cpp's own prefix and timestamp on the line, if they're turned on.
+        #expect(ModelServer.saysListening("0.02.153.441 I srv  server_on_li: listening on http://127.0.0.1:54321\n", port: 54321))
+        // One that couldn't take the port says so instead.
+        #expect(!ModelServer.saysListening("srv         start: couldn't bind HTTP server socket, hostname: 127.0.0.1, port: 54321\n", port: 54321))
+    }
+
+    /// A model server of your own that answers with a redirect isn't followed: the transcript would
+    /// go to an address that was never checked to be local.
+    @Test func redirectsAreNotFollowed() async throws {
+        let elsewhere = try await StandIn.model { _ in "OK" }
+        let redirecting = try await StandIn { request in
+            StandIn.Response(status: 307, headers: ["Location": elsewhere.address + request.path])
+        }
+        do {
+            _ = try await LocalChat(baseUrl: redirecting.address + "/v1", model: "stand-in").complete([ChatMessage("user", "The transcript")])
+            Issue.record("followed the redirect")
+        } catch {
+            #expect(error.localizedDescription.hasPrefix("The model at \(redirecting.address)/v1 returned 307"))
+        }
+        // Nor is one from Oatcake's own server's /health.
+        #expect(await !LocalChat(baseUrl: redirecting.address + "/v1", model: "qwen3-8b", key: "made-up", qwen: true).isReady())
+        #expect(elsewhere.requests.isEmpty && redirecting.requests.count == 2)
     }
 
     /// Check it works in Settings › Models. A server of your own whose model reasons first can spend

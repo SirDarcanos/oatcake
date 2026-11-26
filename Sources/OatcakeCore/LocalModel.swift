@@ -2,10 +2,12 @@
 // It's Qwen3, in one of two sizes, run by llama.cpp's server: a small program inside Oatcake that is
 // started on this Mac's own address (127.0.0.1) when there's something to write and stopped when
 // there's been nothing for a while. The model's file is downloaded once, from a fixed revision on
-// Hugging Face, and checked against its SHA-256 before it's used. Nothing is sent anywhere.
+// Hugging Face, and checked against its SHA-256 when it arrives and again whenever its size or
+// modification date has changed since. Nothing is sent anywhere.
 
 import CryptoKit
 import Foundation
+import Security
 
 public struct LocalModel: Sendable, Identifiable, Equatable {
     public let id: String
@@ -108,6 +110,36 @@ public enum LocalModels {
     public static func remove(_ model: LocalModel, in directory: URL = directory) {
         try? FileManager.default.removeItem(at: file(model, in: directory))
         try? FileManager.default.removeItem(at: file(model, in: directory).appendingPathExtension("part"))
+        try? FileManager.default.removeItem(at: checkedNote(model, in: directory))
+    }
+
+    /**
+     * Checks the model's file against its SHA-256 before it's started, when its size or modification
+     * date has changed since the last check that it passed (reading 5 GB every time would hold up
+     * every summary). A file that doesn't match is thrown away, to be downloaded again.
+     */
+    static func verify(_ model: LocalModel, in directory: URL = directory) throws {
+        let file = file(model, in: directory)
+        guard let stamp = stamp(of: file) else { throw OatcakeError(modelNotDownloadedMessage) }
+        if (try? String(contentsOf: checkedNote(model, in: directory), encoding: .utf8)) == stamp { return }
+        guard try ModelDownload.sha256(of: file) == model.sha256 else {
+            remove(model, in: directory)
+            throw OatcakeError("The language model’s file had changed since it was downloaded, so it was thrown away. It’s downloaded again the next time it’s needed.")
+        }
+        noteChecked(model, in: directory)
+    }
+
+    /// Notes the size and modification date of a model's file that has just passed its check.
+    static func noteChecked(_ model: LocalModel, in directory: URL = directory) {
+        if let stamp = stamp(of: file(model, in: directory)) { try? stamp.write(to: checkedNote(model, in: directory), atomically: true, encoding: .utf8) }
+    }
+
+    private static func checkedNote(_ model: LocalModel, in directory: URL) -> URL { file(model, in: directory).appendingPathExtension("checked") }
+
+    private static func stamp(of file: URL) -> String? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: file.path),
+              let size = attributes[.size] as? Int64, let modified = attributes[.modificationDate] as? Date else { return nil }
+        return "\(size) \(modified.timeIntervalSince1970)"
     }
 }
 
@@ -116,7 +148,8 @@ public let modelNotDownloadedMessage = "The language model isn’t downloaded ye
 /// Downloads a model's file, carrying on from where an earlier attempt stopped, and checks it's the
 /// file that was expected before putting it in place.
 // Sendable by arrangement: its state is set up before the download is resumed and after that is only
-// touched from the session's own delegate queue, which runs one callback at a time.
+// touched from the session's own delegate queue, which runs one callback at a time. The continuation
+// is the exception, set from the task that waits: it's behind a lock, and whoever takes it resumes it.
 public final class ModelDownload: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     private let model: LocalModel
     private let part: URL
@@ -125,7 +158,14 @@ public final class ModelDownload: NSObject, URLSessionDataDelegate, @unchecked S
     private var received: Int64 = 0
     private var reported = -1.0
     private var failure: Error?
+    private let lock = NSLock()
     private var continuation: CheckedContinuation<Void, Error>?
+    private func takeContinuation() -> CheckedContinuation<Void, Error>? {
+        lock.withLock {
+            defer { continuation = nil }
+            return continuation
+        }
+    }
 
     private init(_ model: LocalModel, part: URL, progress: @escaping @Sendable (Double) -> Void) {
         self.model = model
@@ -157,6 +197,7 @@ public final class ModelDownload: NSObject, URLSessionDataDelegate, @unchecked S
         }
         try? FileManager.default.removeItem(at: file)
         try FileManager.default.moveItem(at: download.part, to: file)
+        LocalModels.noteChecked(model, in: file.deletingLastPathComponent())
         progress(1)
     }
 
@@ -172,8 +213,14 @@ public final class ModelDownload: NSObject, URLSessionDataDelegate, @unchecked S
         let task = session.dataTask(with: request)
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
-                continuation = c
-                task.resume()
+                lock.withLock { continuation = c }
+                // Stopped before it began: the cancel may have come before there was anything for
+                // it to finish, so it's finished here and never started.
+                if Task.isCancelled {
+                    takeContinuation()?.resume(throwing: CancellationError())
+                } else {
+                    task.resume()
+                }
             }
         } onCancel: {
             task.cancel()
@@ -222,6 +269,7 @@ public final class ModelDownload: NSObject, URLSessionDataDelegate, @unchecked S
     public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         try? handle?.close()
         handle = nil
+        let continuation = takeContinuation()
         if let failure {
             continuation?.resume(throwing: failure)
         } else if let error {
@@ -232,7 +280,6 @@ public final class ModelDownload: NSObject, URLSessionDataDelegate, @unchecked S
         } else {
             continuation?.resume()
         }
-        continuation = nil
     }
 
     static func sha256(of file: URL) throws -> String {
@@ -318,7 +365,12 @@ public actor ModelServer {
         guard let binary = Self.binary else {
             throw OatcakeError("This copy of Oatcake was built without llama.cpp, which runs the language model. Build it with Scripts/bundle.sh.")
         }
+        // Only the server inside Oatcake.app is covered by its signature: one named by
+        // OATCAKE_LLAMA_DIR is a development copy's own.
+        let app = Bundle.main.bundleURL
+        if app.pathExtension == "app", binary.path.hasPrefix(app.path + "/") { try Self.checkSealed(app) }
         guard LocalModels.isDownloaded(model, in: models) else { throw OatcakeError(modelNotDownloadedMessage) }
+        try LocalModels.verify(model, in: models)
 
         let port = try Self.freePort()
         let key = UUID().uuidString
@@ -352,7 +404,12 @@ public actor ModelServer {
                 process = nil
                 throw OatcakeError("The language model couldn’t start. \(tail.isEmpty ? "" : "llama.cpp said: …\(tail)")")
             }
-            if await chat.isReady() {
+            // Another program that took the port in the moment after freePort() gave it up answers
+            // too, even before llama.cpp has tried for it. So the answer counts only once llama.cpp
+            // has said in its log that it's listening there, which it does once it holds the port.
+            // One that couldn't take it stops instead, and the guard above says so.
+            if await chat.isReady(), server.isRunning,
+               Self.saysListening((try? String(contentsOf: log, encoding: .utf8)) ?? "", port: port) {
                 running = (model.id, context, chat)
                 return chat
             }
@@ -388,6 +445,34 @@ public actor ModelServer {
         let file = pidFile(in: data)
         if let pid = runningPid(in: file, program: "llama-server") { kill(pid, SIGTERM) }
         try? FileManager.default.removeItem(at: file)
+    }
+
+    /**
+     * Checks that Oatcake.app's own signature still covers everything in it. llama.cpp's server may
+     * load any library beside it (Resources/Llama.entitlements), so it isn't started when a file in
+     * the app has been changed, added or taken away. The app on the disk also has to be the copy
+     * that's running: one changed and then signed again (by anyone, ad hoc) is whole, but isn't
+     * Oatcake. It's checked before every start; a file changed in the moment between the check and
+     * the start isn't caught.
+     */
+    static func checkSealed(_ app: URL) throws {
+        var me: SecCode?, code: SecStaticCode?
+        guard SecCodeCopySelf([], &me) == errSecSuccess, let me, SecCodeCheckValidity(me, [], nil) == errSecSuccess,
+              SecStaticCodeCreateWithPath(app as CFURL, [], &code) == errSecSuccess, let code,
+              SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckNestedCode | kSecCSStrictValidate), nil) == errSecSuccess else {
+            throw OatcakeError("Oatcake.app isn’t as it was built (something in it has been changed, added or taken away), so the language model wasn’t started. Quit Oatcake and open it again; if this comes back, install Oatcake again.")
+        }
+    }
+
+    /**
+     * Whether llama.cpp's log says it's listening on this Mac's own address at `port`. At the pinned
+     * build (Scripts/bundle.sh) that's "srv  server_on_li: listening on http://127.0.0.1:54321",
+     * written by server_on_listening in tools/server/server.cpp once the port is bound and the model
+     * loaded. A new build of llama.cpp needs this checking again: if the words change, the model
+     * never counts as started.
+     */
+    static func saysListening(_ log: String, port: Int) -> Bool {
+        log.range(of: #"listening on http://127\.0\.0\.1:\#(port)(?!\d)"#, options: .regularExpression) != nil
     }
 
     /// A port nobody is listening on, from the system.
