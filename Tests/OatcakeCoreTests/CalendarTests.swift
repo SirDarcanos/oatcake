@@ -367,4 +367,17 @@ import Testing
         // As it's written now, it reads back as it was.
         #expect(try JSONDecoder().decode(CalendarCache.self, from: Data(try encodeJSON(failed).utf8)) == failed)
     }
+
+    /// An event's times are read from the cache file's text once, when it's read or made, and follow
+    /// the text when it changes; the cache file keeps only the text.
+    @Test func datesReadOnce() throws {
+        let json = #"{"id":"e@2026-11-10T10:00:00.000Z","title":"Sync","start":"2026-11-10T10:00:00.000Z","end":"2026-11-10T10:30:00.000Z","allDay":false,"attendees":[]}"#
+        var event = try JSONDecoder().decode(CalendarEvent.self, from: Data(json.utf8))
+        #expect(event.startDate == parseISO("2026-11-10T10:00:00Z") && event.endDate == parseISO("2026-11-10T10:30:00Z"))
+        event.start = "2026-11-10T09:00:00.000Z"
+        #expect(event.startDate == parseISO("2026-11-10T09:00:00Z"))
+        let saved = try encodeJSON(event)
+        #expect(!saved.contains("startDate") && !saved.contains("endDate") && saved.contains("2026-11-10T09:00:00.000Z"))
+        #expect(try JSONDecoder().decode(CalendarEvent.self, from: Data(saved.utf8)) == event)
+    }
 }

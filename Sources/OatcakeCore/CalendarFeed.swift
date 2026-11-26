@@ -25,11 +25,38 @@ public struct CalendarEvent: Codable, Identifiable, Equatable, Hashable, Sendabl
     /// Shared by every occurrence of a recurring event.
     public var seriesId: String?
     public var title: String
-    public var start: String
-    public var end: String
+    /// As the cache file keeps them. Read once, into startDate and endDate: sorting and the views
+    /// read the dates far more often than an event is made.
+    public var start: String { didSet { startDate = parseISO(start) ?? .distantPast } }
+    public var end: String { didSet { endDate = parseISO(end) ?? .distantPast } }
     public var allDay: Bool
     public var attendees: [Attendee]
     public var meetUrl: String?
+    public private(set) var startDate: Date
+    public private(set) var endDate: Date
+
+    init(id: String, seriesId: String? = nil, title: String, start: String, end: String, allDay: Bool, attendees: [Attendee], meetUrl: String? = nil) {
+        self.id = id
+        self.seriesId = seriesId
+        self.title = title
+        self.start = start
+        self.end = end
+        self.allDay = allDay
+        self.attendees = attendees
+        self.meetUrl = meetUrl
+        startDate = parseISO(start) ?? .distantPast
+        endDate = parseISO(end) ?? .distantPast
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, seriesId, title, start, end, allDay, attendees, meetUrl }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(id: try c.decode(String.self, forKey: .id), seriesId: try c.decodeIfPresent(String.self, forKey: .seriesId),
+                  title: try c.decode(String.self, forKey: .title), start: try c.decode(String.self, forKey: .start),
+                  end: try c.decode(String.self, forKey: .end), allDay: try c.decode(Bool.self, forKey: .allDay),
+                  attendees: try c.decode([Attendee].self, forKey: .attendees), meetUrl: try c.decodeIfPresent(String.self, forKey: .meetUrl))
+    }
 
     /// The same event, down to how each person answered (two attendees are the same person whatever they answered).
     public static func == (a: CalendarEvent, b: CalendarEvent) -> Bool {
@@ -37,9 +64,6 @@ public struct CalendarEvent: Codable, Identifiable, Equatable, Hashable, Sendabl
         return a.id == b.id && a.seriesId == b.seriesId && a.title == b.title && a.start == b.start && a.end == b.end
             && a.allDay == b.allDay && a.attendees == b.attendees && replies(a) == replies(b) && a.meetUrl == b.meetUrl
     }
-
-    public var startDate: Date { parseISO(start) ?? .distantPast }
-    public var endDate: Date { parseISO(end) ?? .distantPast }
     /// The call link, if it's a real Meet, Zoom or Teams address (checked again: the cache may predate the check).
     public var callLink: String? { meetUrl.flatMap { callApp($0) != nil ? $0 : nil } }
 }
