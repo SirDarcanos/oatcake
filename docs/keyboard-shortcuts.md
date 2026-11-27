@@ -43,6 +43,14 @@ Everything else that can be done to the meeting is in the Meeting menu, which ha
 commands as the meeting's **⋯** menu and its right-click menu, including **Rename…**, **Move To**
 and **Move to Trash**.
 
+## In To-dos
+
+| Keys | What it does | Menu |
+|---|---|---|
+| ⌘1, ⌘2, ⌘3 | Show Open, Done or All to-dos | View |
+
+These only change the status filter on the full To-dos page, not on Home.
+
 ## The meeting list and the sidebar
 
 | Keys | What it does | Menu |
