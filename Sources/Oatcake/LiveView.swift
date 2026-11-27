@@ -89,10 +89,10 @@ struct LiveView: View {
             // recorder that never started has nothing to stop either: Close throws the recording away.
             if model.recording.recorderFailure != nil {
                 Button("Close") { model.recording.cancelRecording(hasNotes: lines.contains { !$0.text.trimmed.isEmpty }) }
-                    .help("Close this recording: nothing was recorded")
+                    .help("Close this screen: nothing was recorded")
             } else if status.state == .starting {
                 Button("Cancel") { model.recording.cancelRecording(hasNotes: lines.contains { !$0.text.trimmed.isEmpty }) }
-                    .help("Cancel this recording")
+                    .help("Cancel recording")
             } else {
                 Button { model.recording.confirmStop() } label: {
                     HStack(spacing: 8) {

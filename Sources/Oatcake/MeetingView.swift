@@ -12,7 +12,7 @@ import SwiftUI
 }
 
 /// How saving what's typed is going, for the toolbar.
-private enum SaveStatus {
+enum SaveStatus {
     /// Nothing typed since the view was opened or switched.
     case quiet
     case saving, saved, failed
@@ -30,7 +30,7 @@ private enum SaveStatus {
     }
 }
 
-private enum FileKey: Hashable, CaseIterable {
+enum FileKey: Hashable, CaseIterable {
     case summary, transcript, notes, todos, draft
     var file: MeetingFile {
         switch self {
@@ -44,31 +44,31 @@ private enum FileKey: Hashable, CaseIterable {
 }
 
 struct MeetingView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(AppModel.self) var model
     @Environment(\.undoManager) private var undoManager
     let node: TreeNode
     let jump: Jump?
 
-    @ViewState private var files: [FileKey: String]?
-    @ViewState private var recordingAudio: URL?
-    @ViewState private var playback = RecordingPlayback()
-    @ViewState private var meta = MeetingMeta()
+    @ViewState var files: [FileKey: String]?
+    @ViewState var recordingAudio: URL?
+    @ViewState var playback = RecordingPlayback()
+    @ViewState var meta = MeetingMeta()
     @ViewState private var loadError = ""
-    @ViewState private var tab = Remembered.tab
-    @ViewState private var markdown = Remembered.markdown
-    @ViewState private var status = SaveStatus.quiet
+    @ViewState var tab = Remembered.tab
+    @ViewState var markdown = Remembered.markdown
+    @ViewState var status = SaveStatus.quiet
     /// The transcript as parsed lines, and as the rows drawn: worked out when the file is read or
     /// edited, not each time the view is redrawn.
     @ViewState private var transcriptLines: [TranscriptLine] = []
     @ViewState private var rows: [Row] = []
     /// The speakers Rename speakers… offers: only in a transcript Oatcake wrote.
-    @ViewState private var speakers: [MeetingSpeaker] = []
+    @ViewState var speakers: [MeetingSpeaker] = []
     @ViewState private var renamingSpeakers = false
     @ViewState private var askingForDraft = false
     /// The transcript's Markdown has been typed in since it was last parsed.
     @ViewState private var transcriptEdited = false
-    @ViewState private var flash = -1
-    @ViewState private var newTodo = ""
+    @ViewState var flash = -1
+    @ViewState var newTodo = ""
     @ViewState private var saveTask: Task<Void, Never>?
     /// Counts reads of the files, and writes to them from here: a read that lands after a later one,
     /// or after a write, is older than what's shown, and is dropped.
@@ -79,19 +79,19 @@ struct MeetingView: View {
     @ViewState private var arrived = false
     /// Whether the tab has been checked against this meeting yet (the view is made afresh for each meeting).
     @ViewState private var tabChecked = false
-    @ViewState private var finding = false
-    @ViewState private var query = ""
-    @ViewState private var match = 0
-    @FocusState private var findFocused: Bool
+    @ViewState var finding = false
+    @ViewState var query = ""
+    @ViewState var match = 0
+    @FocusState var findFocused: Bool
     /// This view, as the menus outside it know it.
-    @ViewState private var viewID = UUID()
+    @ViewState var viewID = UUID()
     @AppStorage(TextScale.key) private var textScale = 1.0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// View › Bigger Text and Smaller Text: how big the note's own text is drawn.
-    private var scale: CGFloat { TextScale.clamped(textScale) }
+    var scale: CGFloat { TextScale.clamped(textScale) }
 
-    private var path: String { node.path }
+    var path: String { node.path }
 
     var body: some View {
         Group {
@@ -223,7 +223,7 @@ struct MeetingView: View {
         }
     }
 
-    private func flush() {
+    func flush() {
         saveTask?.cancel()
         // Every way out of the Markdown editor comes through here, so the rows are right when they're next shown.
         if transcriptEdited {
@@ -253,7 +253,7 @@ struct MeetingView: View {
     /// A to-do added on the Summary tab. What's shown changes at once; the file is changed as it is
     /// now rather than written over with what's shown, so to-dos that have arrived since this was
     /// read (the summary's own, say) are kept.
-    private func changeTodos(shown: String, _ change: () throws -> Bool) {
+    func changeTodos(shown: String, _ change: () throws -> Bool) {
         files?[.todos] = shown
         do {
             guard try change() else {
@@ -270,7 +270,7 @@ struct MeetingView: View {
 
     /// A tick here, as everywhere (Library.tick): what's shown is the file as it is afterwards, or,
     /// when nothing was ticked, the meeting read again.
-    private func tick(_ todo: Todo) {
+    func tick(_ todo: Todo) {
         model.library.tick(path, todo, undo: undoManager) { [files = $files] text in
             guard let text else { return load() }
             files.wrappedValue?[.todos] = text
@@ -294,17 +294,17 @@ struct MeetingView: View {
     }
 
     /// The Draft for Sharing tab shows while there's a draft, and while you're on it.
-    private var showsDraftTab: Bool { hasDraft || tab == .draft }
+    var showsDraftTab: Bool { hasDraft || tab == .draft }
 
-    private var tabs: [MeetingTab] { showsDraftTab ? MeetingTab.allCases : MeetingTab.allCases.filter { $0 != .draft } }
+    var tabs: [MeetingTab] { showsDraftTab ? MeetingTab.allCases : MeetingTab.allCases.filter { $0 != .draft } }
 
-    private func switchTab(_ t: MeetingTab) {
+    func switchTab(_ t: MeetingTab) {
         flush()
         tab = t
         Remembered.tab = t
     }
 
-    private func jumpTo(_ stamp: String) {
+    func jumpTo(_ stamp: String) {
         let t = seconds(stamp)
         var index = 0
         for (i, l) in transcriptLines.enumerated() where l.at <= t { index = i }
@@ -315,63 +315,8 @@ struct MeetingView: View {
         flash = index
     }
 
-    // MARK: Toolbar
-
-    /// Over the meeting: the tabs at the left; at the right, how saving is going, while there's
-    /// something to say, and one menu with everything that can be done to it. (.navigation would
-    /// put the tabs over the meeting list.)
-    @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-        // The tabs are a new toolbar item when the draft's tab comes or goes. Changed in place, the
-        // item kept the width of three when Draft for Sharing… added the fourth as its sheet closed,
-        // and the four were squeezed into it until the draft was written.
-        if showsDraftTab {
-            ToolbarItem(placement: .automatic) { tabPicker }
-        } else {
-            ToolbarItem(placement: .automatic) { tabPicker }
-        }
-        if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
-        // How saving is going stays up here, in sight wherever the note is scrolled to. Words, not a
-        // button: no capsule behind them.
-        if markdown || status == .todo || status == .failed {
-            ToolbarItem(placement: .automatic) {
-                HStack(spacing: 6) {
-                    Text(status.text)
-                        .foregroundStyle(status == .failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
-                    if status == .failed { Button("Try again") { flush() }.buttonStyle(.link) }
-                }
-                .font(.callout)
-                .toolbarStatusPadding()
-            }
-            .withoutCapsule()
-        }
-        ToolbarItem(placement: .automatic) {
-            Menu {
-                // Every item with its icon: a share item always shows one, so the rest do too.
-                actions.labelStyle(.titleAndIcon)
-            } label: {
-                // Named on the image too: a toolbar menu is read out by its image's name.
-                Label { Text("More") } icon: { Image(systemName: "ellipsis").accessibilityLabel("More") }
-            }
-            .menuIndicator(.hidden)
-            .accessibilityLabel("More")
-            .help("Draft for sharing, regenerate, rename people, copy, share, rename, move, show in Finder or move to the Trash")
-        }
-    }
-
-    /// The meeting's menu: the same commands as the Meeting menu and its right-click menus.
-    private var actions: some View {
-        MeetingMenuItems(model: model, node: node, local: (menuState, perform), showsDraftShortcut: true)
-    }
-
-    /// What this meeting can do just now, for the menus outside it.
-    private var menuState: OpenMeeting {
-        OpenMeeting(view: viewID, path: path, tab: tab, tabs: tabs, hasSummary: !(files?[.summary] ?? "").trimmed.isEmpty,
-                    hasTranscript: !(files?[.transcript] ?? "").trimmed.isEmpty, canRenameSpeakers: canRenameSpeakers,
-                    template: meta.template, canFindNext: finding && tab == .transcript && !markdown, shareText: shareText)
-    }
-
     /// A command from this meeting's menu, or one outside it.
-    private func perform(_ command: MeetingCommand) {
+    func perform(_ command: MeetingCommand) {
         switch command {
         case .tab(let t):
             if tabs.contains(t) { switchTab(t) }
@@ -403,20 +348,6 @@ struct MeetingView: View {
         }
     }
 
-    /// Summary, Transcript, My notes and Draft (for sharing), in the toolbar over the meeting.
-    private var tabPicker: some View {
-        Picker("Tab", selection: Binding(get: { tab }, set: { switchTab($0) })) {
-            Text("Summary").tag(MeetingTab.summary).help("⌘1")
-            Text("Transcript").tag(MeetingTab.transcript).help("⌘2")
-            Text("My notes").tag(MeetingTab.notes).help("⌘3")
-            // Short: the toolbar gives each tab the width of the widest.
-            if showsDraftTab { Text("Draft").tag(MeetingTab.draft).help("Draft for sharing (⌘4)") }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .fixedSize()
-    }
-
     /// Read or Edit: how the tab below is shown, laid out or as its Markdown. It sits at the top right, beside the title.
     private var viewSwitch: some View {
         Picker("View", selection: Binding(get: { markdown }, set: { flush(); markdown = $0; Remembered.markdown = $0; status = .quiet })) {
@@ -430,41 +361,9 @@ struct MeetingView: View {
         .help("Read this tab as it’s laid out, or edit its Markdown")
     }
 
-    /// What Copy and Share take: the tab you're on, as Markdown under the meeting's title and date.
-    private var shareText: String {
-        let part = { (key: FileKey) in forReading(files?[key] ?? "").trimmed }
-        var parts = ["# \(meetingTitle(node))", metaLine]
-        switch tab {
-        case .summary:
-            if model.config.todosEnabled, !part(.todos).isEmpty { parts.append("## To-dos\n\n\(part(.todos))") }
-            parts.append(part(.summary))
-        case .transcript: parts.append(part(.transcript))
-        case .notes: parts.append(part(.notes))
-        case .draft: parts.append(part(.draft))
-        }
-        return parts.filter { !$0.isEmpty }.joined(separator: "\n\n") + "\n"
-    }
-
-    private func copy(_ what: String) {
-        // Formatted for documents and mail, and the Markdown for anything that only takes plain text.
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(clipboardHTML(shareText), forType: .html)
-        pasteboard.setString(shareText, forType: .string)
-        // Said in a note: the menu it was chosen from has closed.
-        model.toast("Copied the \(what)")
-    }
-
-    /// A meeting saved without checking who's who has Check who's who… instead, until Keep these names.
-    private var canRenameSpeakers: Bool {
-        guard !speakers.isEmpty else { return false }
-        guard let id = meta.recording else { return true }
-        return !model.jobs.unchecked.contains { $0.id == id }
-    }
-
     // MARK: Content
 
-    private var granola: Bool { meta.source == "granola" || node.granola }
+    var granola: Bool { meta.source == "granola" || node.granola }
 
     private func readTranscript(_ text: String) {
         (transcriptLines, speakers, rows) = Self.parsed(text, myName: model.config.myName)
@@ -581,14 +480,7 @@ struct MeetingView: View {
         })
     }
 
-    /// A to-do's due date as the To-dos page writes it, in the Mac's region; todo.md's own words when
-    /// they aren't a date ("end of the week").
-    private func dueText(_ due: String) -> String {
-        let when = parseISO(meta.startedAt) ?? meetingDate(node)
-        return dueDate(due, meetingDate: when).map { shortDay($0) } ?? due
-    }
-
-    private var metaLine: String {
+    var metaLine: String {
         let date = parseISO(meta.startedAt) ?? meetingDate(node)
         let length = parseISO(meta.endedAt).flatMap { end in parseISO(meta.startedAt).map { end.timeIntervalSince($0) } }
         let withWhom = (meta.participants ?? []).filter { $0 != model.config.myName }
@@ -614,7 +506,7 @@ struct MeetingView: View {
                 }
                 Button("Keep these names…") {
                     model.confirm(Confirmation(title: "Keep these names?",
-                                               text: "The recording’s voice clips are deleted for good, so its voices can’t be named later. The meeting stays as it is.",
+                                               text: "This meeting’s voice clips are deleted for good, so its voices can’t be named later. The meeting stays as it is.",
                                                ok: "Keep these names", cancel: "Cancel") { model.jobs.keepAsIs(id) })
                 }
             }
@@ -684,310 +576,5 @@ struct MeetingView: View {
         case .notes: [.notes]
         case .draft: [.draft]
         }
-    }
-
-    /// The draft for sharing being written, or why it couldn't be. A draft already there stays meanwhile.
-    @ViewBuilder private var draftNotice: some View {
-        if model.jobs.drafting.contains(path) {
-            Notice(tone: .blue) {
-                Text("Writing the draft for sharing…").fontWeight(.semibold)
-                Text((files?[.draft] ?? "").trimmed.isEmpty ? "It’s written from the summary\(model.config.todosEnabled ? " and to-dos" : "")."
-                     : "The draft that’s here stays until the new one is ready.")
-            }.padding(.bottom, 16)
-        } else if let error = model.jobs.draftErrors[path] {
-            Notice(tone: .red) {
-                ModelError(raw: error, prefix: "Couldn’t write the draft for sharing. ")
-                if !(files?[.draft] ?? "").trimmed.isEmpty { Text("The draft that was here was kept.") }
-                HStack(spacing: 10) {
-                    Button("Try again") {
-                        flush()
-                        guard !model.edits.isWaiting(in: path) else { return }
-                        model.jobs.draftForSharing(path, request: model.jobs.draftRequests[path] ?? "")
-                    }
-                    .disabled((files?[.summary] ?? "").trimmed.isEmpty || model.jobs.summarising.contains(path))
-                    SettingsPaneLink(pane: .models, title: "Open Settings").buttonStyle(.link)
-                    // Put aside: without a draft there's nothing else on this tab, so it goes too.
-                    Button("Dismiss") {
-                        model.jobs.draftErrors.removeValue(forKey: path)
-                        model.jobs.draftRequests.removeValue(forKey: path)
-                        if (files?[.draft] ?? "").trimmed.isEmpty { switchTab(.summary) }
-                    }
-                    .buttonStyle(.link)
-                }
-                .padding(.top, 6)
-            }.padding(.bottom, 16)
-        }
-    }
-
-    private func draft(_ files: [FileKey: String]) -> some View {
-        let text = files[.draft] ?? ""
-        return Group {
-            if !text.trimmed.isEmpty {
-                MarkdownView(markdown: text, fontSize: 14 * scale, marks: findWords)
-            } else if !model.jobs.drafting.contains(path) && model.jobs.draftErrors[path] == nil {
-                Text("No draft for sharing in this meeting.").foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func summary(_ files: [FileKey: String]) -> some View {
-        let todoText = files[.todos] ?? ""
-        let todos = parseTodos(todoText)
-        let open = todos.filter { !$0.done }.count
-        let summary = forReading(files[.summary] ?? "")
-        return VStack(alignment: .leading, spacing: 0) {
-            // Turned off in Settings › General: no checklist, and nothing to say about one.
-            if model.config.todosEnabled { todoList(todos, todoText: todoText, open: open) }
-            if summary.trimmed.isEmpty && !(files[.transcript] ?? "").trimmed.isEmpty {
-                summaryLater
-            } else if summary.trimmed.isEmpty {
-                Text("No summary for this meeting.").foregroundStyle(.secondary)
-            } else {
-                MarkdownView(markdown: summary, fontSize: 14 * scale, marks: findWords)
-            }
-        }
-    }
-
-    /// The meeting's to-dos (todo.md), to tick and add to, above its summary.
-    private func todoList(_ todos: [Todo], todoText: String, open: Int) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // The summary was written but the to-dos couldn't be read from the model's reply.
-            if let problem = model.jobs.todoProblems[path] {
-                Notice(tone: .amber) { Text(problem) }.padding(.bottom, 16)
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                // No to-dos yet: just the field to add one.
-                if !todos.isEmpty { SectionLabel(text: "To-dos\(open > 0 ? " · \(open) open" : "")") }
-                ForEach(todos, id: \.line) { t in
-                    let detail = [t.owner.isEmpty ? nil : ownerLabel(t.owner, model.config.myName), t.due.isEmpty ? nil : "due \(dueText(t.due))"].compactMap { $0 }
-                    // The time in the call goes on the line under the to-do, after its owner and due date, as on the To-dos page.
-                    TodoRow(todo: t, task: marked(t.text), tick: { tick(t) }) {
-                        if !detail.isEmpty || !t.stamp.isEmpty {
-                            HStack(spacing: 8) {
-                                if !detail.isEmpty { Text(detail.joined(separator: " · ")).foregroundStyle(.secondary) }
-                                if !t.stamp.isEmpty { Chip(text: t.stamp) { jumpTo(t.stamp) } }
-                            }
-                        }
-                    }
-                }
-                HStack(spacing: 10) {
-                    // A plus, not a lighter circle, to tell it from a to-do's own circle: light enough for that
-                    // couldn't be seen. As wide as a to-do's checkbox, so the circles line up.
-                    Image(systemName: "plus.circle").font(.system(size: 15)).foregroundStyle(.secondary).frame(width: 24)
-                        .accessibilityHidden(true)
-                    TextField("Add a to-do, then Return", text: $newTodo)
-                        .textFieldStyle(.plain)
-                        .help("Add an owner or due date with dashes: Send the deck - Jane - due Fri, Nov 6")
-                        .onSubmit {
-                            guard !newTodo.trimmed.isEmpty else { return }
-                            let typed = typedTodo(newTodo)
-                            changeTodos(shown: addTodo(todoText, typed)) { try model.library.addTodo(path, typed); return true }
-                            newTodo = ""
-                        }
-                }
-            }
-            .padding(.bottom, 24)
-        }
-    }
-
-    private func regenerate(_ part: SummaryPart, template: SummaryTemplateChoice = .meetings) {
-        // Save edits before asking for a replacement; a failed save must not discard pending text.
-        flush()
-        guard !model.edits.isWaiting(in: path) else { return }
-        model.jobs.regenerate(part, path, template: template)
-    }
-
-    /// A meeting without its summary: it's being written now (after a save), or the model couldn't
-    /// be reached and it can be written when it can.
-    @ViewBuilder private var summaryLater: some View {
-        if model.jobs.summarising.contains(path) {
-            Notice(tone: .blue) {
-                Text("Writing the summary…").fontWeight(.semibold)
-                Text(model.downloads.modelDownloadStatus.map { "\($0). The summary is written as soon as it’s here; the transcript and your notes are already saved." }
-                     ?? "The transcript and your notes are already saved.")
-            }
-        } else {
-            let error = model.jobs.summaryErrors[path]
-            Notice(tone: error == nil ? .grey : .red) {
-                Text("No summary yet").fontWeight(.semibold)
-                if let error {
-                    ModelError(raw: error, prefix: "Couldn’t write it. ")
-                } else {
-                    Text("The transcript and your notes are saved. Oatcake can write the summary and to-dos from them now.")
-                }
-                HStack(spacing: 10) {
-                    Button("Write summary") { model.jobs.writeSummary(path) }
-                    // What stopped it is usually put right in Settings: the model, or its download.
-                    if error != nil { SettingsPaneLink(pane: .models, title: "Open Settings").buttonStyle(.link) }
-                }
-                .padding(.top, 6)
-            }
-        }
-    }
-
-    // MARK: Transcript
-
-    /// A line of the transcript as shown; one without a speaker is a plain paragraph.
-    private struct Row {
-        var speaker: String?
-        var stamp = ""
-        var at: Double?
-        var text: String
-    }
-
-    /// The words being looked for, while Find is open.
-    private var findWords: [String] { finding ? searchWords(query) : [] }
-
-    /// The rows that have every word being looked for, as search finds a meeting.
-    private func matches(in rows: [Row]) -> [Int] {
-        let words = searchWords(query)
-        guard !words.isEmpty else { return [] }
-        return rows.indices.filter { i in words.allSatisfy { rows[i].text.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil } }
-    }
-
-    private func findBar(_ found: [Int], stepping: Bool) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField(stepping ? "Find in transcript" : "Find", text: $query)
-                .textFieldStyle(.plain)
-                .focused($findFocused)
-                .onSubmit { step(1, found) }
-                .onChange(of: query) { match = 0 }
-                .accessibilityHint("Press Command-F to focus this field.")
-            ShortcutHint("⌘F")
-            // Stepping through matches is the transcript's; elsewhere the words are only marked.
-            if stepping {
-                Text(query.trimmed.isEmpty ? "" : found.isEmpty ? "Not found" : "\(min(match, found.count - 1) + 1) of \(found.count)")
-                    .font(.callout).foregroundStyle(.secondary).monospacedDigit()
-                Button { step(-1, found) } label: { Image(systemName: "chevron.up") }.disabled(found.isEmpty).help("Previous (⇧⌘G)").accessibilityLabel("Previous match")
-                Button { step(1, found) } label: { Image(systemName: "chevron.down") }.disabled(found.isEmpty).help("Next (Return or ⌘G)").accessibilityLabel("Next match")
-            }
-            // Escape closes it wherever the keyboard is, not only from its field. Not while Ask is open
-            // over it (Escape closes that first) or search is: Escape is theirs then.
-            Button("Done") { endFind() }.help("Close (Esc)")
-                .keyboardShortcut(model.ask.open || model.searching ? nil : .cancelAction)
-        }
-        .buttonStyle(.borderless)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(.bar)
-    }
-
-    private func step(_ by: Int, _ found: [Int]) {
-        guard !found.isEmpty else { return }
-        match = (min(match, found.count - 1) + by + found.count) % found.count
-    }
-
-    private func endFind() {
-        finding = false
-        findFocused = false
-        query = ""
-        match = 0
-    }
-
-    /// The text with what's being looked for marked.
-    private func marked(_ text: String) -> AttributedString { markingFound(text, findWords) }
-
-    private func transcript(_ rows: [Row], current: Int?) -> some View {
-        LazyVStack(alignment: .leading, spacing: 2) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { i, row in
-                // A long turn is several paragraphs: the ones after the first show only their time.
-                let continued = i > 0 && row.speaker != nil && rows[i - 1].speaker == row.speaker
-                HStack(alignment: .top, spacing: 10) {
-                    if let speaker = row.speaker {
-                        Avatar(name: speaker, size: 24).opacity(continued ? 0 : 1)
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 8) {
-                                if !continued { Text(speaker).fontWeight(.semibold) }
-                                transcriptTime(row)
-                            }
-                            .font(.callout)
-                            Text(marked(row.text)).font(.system(size: 14 * scale)).lineSpacing(3).textSelection(.enabled)
-                        }
-                    } else {
-                        Text(marked(row.text)).font(.system(size: 14 * scale)).lineSpacing(3).textSelection(.enabled)
-                    }
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, continued ? 3 : 7)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 8).fill(i == flash || i == current ? Color.orange.opacity(0.16) : .clear))
-                .id(i)
-            }
-            if rows.isEmpty { Text("This meeting has no transcript.").foregroundStyle(.secondary) }
-        }
-    }
-
-    @ViewBuilder private func transcriptTime(_ row: Row) -> some View {
-        if let at = row.at, recordingAudio != nil, at < playback.duration {
-            // The same chip as a to-do's or a note's time.
-            Chip(text: row.stamp, help: "Go to this moment in the recording") { playback.seek(to: at) }
-        } else {
-            Text(row.stamp).foregroundStyle(.secondary).monospacedDigit()
-        }
-    }
-
-    private func notes(_ files: [FileKey: String]) -> some View {
-        let notes = parseNotes(files[.notes] ?? "")
-        return VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(notes.enumerated()), id: \.offset) { _, n in
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Chip(text: n.stamp ?? "Prep", style: n.stamp == nil ? .prep : .normal)
-                    Text(marked(n.text)).font(.system(size: 13 * scale)).textSelection(.enabled)
-                }
-            }
-            if notes.isEmpty {
-                Text(granola ? "No notes. Granola didn’t keep your notes when this meeting was imported." : "You didn’t take notes in this meeting.")
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-}
-
-/// Draft for Sharing…: what the draft is written from, and anything wanted for this one alone. Its
-/// button says whether it replaces a draft that's there, so it asks once.
-private struct DraftForSharingSheet: View {
-    /// The meeting has a draft for sharing already, which the new one takes the place of.
-    let replacing: Bool
-    /// Whether to-dos are collected (Settings › General): while they're off, the sheet doesn't mention them.
-    let todos: Bool
-    let write: (String) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @ViewState private var request = ""
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Draft for sharing").font(.headline)
-            Text("Oatcake’s model writes this meeting’s \(todos ? "summary and to-dos" : "summary") again for other people to read, following your draft for sharing instructions in Settings › Summaries. It doesn’t read the transcript or your notes.")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: 6) {
-                Text("For this draft only (optional)")
-                // Plain, with a border of its own: the rounded style draws one line whatever space is reserved.
-                TextField("", text: $request, prompt: Text("Shorter, and leave out the budget"), axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .lineLimit(2, reservesSpace: true)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 5)
-                    .background(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.line))
-                    .accessibilityLabel("For this draft only")
-            }
-            if replacing {
-                Text("This replaces the draft for sharing that’s there, including your edits to it.")
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(replacing ? "Replace draft" : "Write draft") {
-                    write(request.trimmed)
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-            }
-        }
-        .padding(20)
-        .frame(width: 460)
     }
 }

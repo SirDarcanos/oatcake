@@ -6,16 +6,21 @@ import UserNotifications
 struct OatcakeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
+    init() {
+        // Before the window, and its split view, is made.
+        forgetSavedColumns()
+    }
+
     var body: some Scene {
         Window("Oatcake", id: "main") {
             ContentView()
                 .environment(delegate.model)
-                // Room for the sidebar and the meeting list at their usual widths, and beside them the
-                // widest toolbar a screen has (Who's who's) without it running over the meeting list.
-                .frame(minWidth: 1180, minHeight: 560)
+                // Narrow enough to sit beside the call on half a laptop's screen. A toolbar with more
+                // than fits puts the rest in its » menu, rather than setting the window's width.
+                .frame(minWidth: 720, minHeight: 560)
         }
         .defaultSize(width: 1440, height: 880)
-        // As in Mail: one toolbar across the three columns, the meeting list's folder named over the list.
+        // As in Mail: one toolbar across the columns, the meeting list's folder named over the list.
         .windowToolbarStyle(.unified)
         .commands {
             // View › Hide Sidebar (⌃⌘S), as in Mail.
@@ -190,7 +195,7 @@ private struct RecordingItems: View {
             if case .new(let event?) = model.selection { return event.callLink.flatMap(URL.init(string:)) }
             return nil
         }()
-        Button("New Recording") { model.newRecording() }.keyboardShortcut("n")
+        Button("Record a Call…") { model.newRecording() }.keyboardShortcut("n")
         Button("Stop Recording…") { model.stopFromMenuBar() }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(!canStop)
         Divider()
         Button("Join Call") { if let call { NSWorkspace.shared.open(call) } }.disabled(call == nil)
@@ -203,6 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     lazy var model = AppModel()
     /// Looks every couple of seconds for the end of the work that kept Oatcake open with no window.
     private var waitingToQuit: Timer?
+    private var waitingForSave: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
@@ -265,7 +271,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             alert.addButton(withTitle: question.ok)
             alert.addButton(withTitle: "Cancel")
             NSApp.activate()
-            return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+            guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+            // A meeting being written from a call is finished first: quitting part-way would leave it
+            // half written. The wait runs in the run loop's common modes, which AppKit keeps turning
+            // while it waits for this reply.
+            guard model.jobs.saving > 0 else { return .terminateNow }
+            let saved = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, self.model.jobs.saving == 0 else { return }
+                    self.waitingForSave?.invalidate()
+                    NSApp.reply(toApplicationShouldTerminate: true)
+                }
+            }
+            waitingForSave = saved
+            RunLoop.main.add(saved, forMode: .common)
+            return .terminateLater
         }
     }
 
@@ -348,20 +368,52 @@ struct ContentView: View {
     @Environment(AppModel.self) private var model
     /// The new title being typed for a meeting being renamed.
     @ViewState private var title = ""
+    /// Renaming is being asked again after it failed: the title stays as typed.
+    @ViewState private var keepTitle = false
+    /// The sidebar is showing, in either layout: hidden in one, it stays hidden in the other.
+    @AppStorage("sidebarShown") private var sidebarShown = true
+    /// The window is too narrow for the sidebar, the meeting list and a meeting that can be read.
+    @ViewState private var tooNarrow = false
+    /// The three-column layout's sidebar is out of the way for lack of room, as in Mail: it comes back
+    /// when there's room again (unless it was hidden on purpose), or when it's shown on purpose.
+    @ViewState private var squeezed = false
 
     var body: some View {
         @Bindable var model = model
-        // Laid out as Mail is: folders, the meetings in the one chosen, and the meeting (or whichever
-        // other screen is open). The meeting list stays in its column whatever the right-hand pane shows.
-        NavigationSplitView {
-            SidebarView()
-                .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 520)
-        } content: {
-            MeetingListView()
-                .navigationSplitViewColumnWidth(min: 220, ideal: 300, max: 560)
-        } detail: {
-            DetailView()
+        // Laid out as Mail is: folders, the meetings in the one chosen, and the meeting. Home, To-dos,
+        // a recording and Who's who have nothing to do with the meeting list, so they sit beside the
+        // sidebar alone. A three-column split view can't hide only its middle column, so the window
+        // has a three-column one while the list shows and a two-column one otherwise. (The list and the
+        // meeting split inside a two-column one's right-hand pane would share out every change in the
+        // window's width, and couldn't be told the list's width.)
+        //
+        // Both split views save their columns' frames under the one name, so each would find the
+        // other's there. A split view with another number of columns was seen to discard them, but
+        // nothing promises it, so they're removed before either split view is made
+        // (forgetSavedColumns) and each column starts at the width KeepsWidth kept.
+        let sidebarWidth = KeepsWidth(key: "sidebarWidth", range: 200...520, ideal: 260)
+        let listWidth = KeepsWidth(key: "meetingListWidth", range: 220...560, ideal: 300)
+        // Below about 420 points a meeting's title wraps a letter to a line.
+        let needed = sidebarWidth.start + listWidth.start + 420
+        Group {
+            if model.listShown {
+                NavigationSplitView(columnVisibility: sidebar(hiddenAs: .doubleColumn, squeezable: true)) {
+                    SidebarView().modifier(sidebarWidth)
+                } content: {
+                    MeetingListView().modifier(listWidth)
+                } detail: {
+                    DetailView()
+                }
+            } else {
+                NavigationSplitView(columnVisibility: sidebar(hiddenAs: .detailOnly)) {
+                    SidebarView().modifier(sidebarWidth)
+                } detail: {
+                    DetailView()
+                }
+            }
         }
+        .onGeometryChange(for: Bool.self) { $0.size.width < needed } action: { tooNarrow = $0; squeezed = $0 }
+        .onChange(of: model.listShown) { squeezed = tooNarrow }
         // Search is modal: while it's open, the window behind it can't be worked through accessibility either.
         .accessibilityHidden(model.searching)
         .overlay { if model.searching { SearchOverlay() } }
@@ -381,18 +433,88 @@ struct ContentView: View {
             Text(confirmation.text)
         }
         // Rename… from any of a meeting's menus.
-        .onChange(of: model.renaming) { title = model.renaming.map(meetingTitle) ?? "" }
+        .onChange(of: model.renaming) {
+            if let node = model.renaming, !keepTitle { title = meetingTitle(node) }
+            keepTitle = false
+        }
         .alert("Rename meeting", isPresented: Binding(get: { model.renaming != nil }, set: { if !$0 { model.renaming = nil } })) {
             TextField("Title", text: $title)
-            Button("Rename") { if let node = model.renaming { model.library.retitle(node.path, to: title) } }.disabled(title.trimmed.isEmpty)
+            Button("Rename") {
+                guard let node = model.renaming, !model.library.retitle(node.path, to: title) else { return }
+                askAgain { keepTitle = true; model.renaming = node }
+            }
+            .disabled(title.trimmed.isEmpty)
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Changes the meeting’s title and its folder’s name.")
         }
     }
+
+    /// The sidebar shown or hidden. The two layouts name a hidden sidebar differently: with the list,
+    /// the two columns left are the list and the meeting; without it, only the screen is left.
+    /// `squeezable`: the three-column layout, whose sidebar makes way when the window is too narrow.
+    private func sidebar(hiddenAs hidden: NavigationSplitViewVisibility, squeezable: Bool = false) -> Binding<NavigationSplitViewVisibility> {
+        // Read when asked, not when the binding was made: an older binding is still answered after
+        // the sidebar has made way, and would take that for the person hiding it.
+        let shown = { sidebarShown && !(squeezable && squeezed) }
+        return Binding(get: { shown() ? .all : hidden }, set: { visibility in
+            let showing = visibility != hidden && visibility != .detailOnly
+            // The split view hands back what it was given; only a change is the person's own.
+            guard showing != shown() else { return }
+            sidebarShown = showing
+            squeezed = false
+        })
+    }
 }
 
-/// The right-hand pane.
+/// Where SwiftUI saves the main window's split view columns: the window's id, then the kind of split
+/// view. The two-column and the three-column split views share it.
+private let savedColumnFrames = "NSSplitView Subview Frames main, SidebarNavigationSplitView"
+
+/// Removes the split view's saved columns before a split view is made: at launch, before the window
+/// is, and as the selection changes to or from a screen with the meeting list, before the window is
+/// drawn again with the other split view. Not while the window is being drawn, when a change to
+/// the app's defaults would land in the middle of it.
+@MainActor func forgetSavedColumns() {
+    UserDefaults.standard.removeObject(forKey: savedColumnFrames)
+}
+
+/// A column that starts at the width it last had, in place of the split view's own saved frames
+/// (see ContentView). Only a width the person drags it to is kept, not one the window forces on it.
+/// The column's width has to be the last modifier: under the others, the split view ignored it and
+/// opened the sidebar at 144 points, narrower than its minimum.
+private struct KeepsWidth: ViewModifier {
+    let key: String
+    let range: ClosedRange<CGFloat>
+    let ideal: CGFloat
+    /// The window's split view last resized its columns by moving a divider.
+    @ViewState private var dividerMoved = false
+
+    /// The width the column starts at: the one kept, or else its usual width.
+    var start: CGFloat {
+        let saved = CGFloat(UserDefaults.standard.double(forKey: key))
+        return range.contains(saved) ? saved : ideal
+    }
+
+    func body(content: Content) -> some View {
+        content
+            // A divider dragged moves it; a window resized doesn't. The split view moves its dividers
+            // itself too, as it lays out its columns (seen in a test), so a width is kept only while
+            // the mouse is being dragged as well.
+            .onReceive(NotificationCenter.default.publisher(for: NSSplitView.didResizeSubviewsNotification)) { note in
+                guard (note.object as? NSView)?.window?.identifier?.rawValue == "main" else { return }
+                dividerMoved = note.userInfo?["NSSplitViewDividerIndex"] != nil
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+                guard dividerMoved, NSApp.currentEvent?.type == .leftMouseDragged, range.contains(width) else { return }
+                UserDefaults.standard.set(Double(width), forKey: key)
+            }
+            .navigationSplitViewColumnWidth(min: range.lowerBound, ideal: start, max: range.upperBound)
+    }
+}
+
+/// The right-hand pane. A screen without the meeting list beside it names itself in the window's
+/// title; with the list, the title is the list's folder.
 struct DetailView: View {
     @Environment(AppModel.self) private var model
 
@@ -401,9 +523,10 @@ struct DetailView: View {
     var body: some View {
         Group {
             switch model.selection {
-            case .home:
+            // Until Oatcake has put back where it was (the Meetings folder is still being read).
+            case .home, nil:
                 HomeView()
-                    .toolbar { EmptyPaneToolbar() }
+                    .navigationTitle("Home")
                     // Nothing to ask about until something is saved.
                     .safeAreaPadding(.bottom, hasMeetings ? 58 : 0)
                     .overlay(alignment: .bottom) { if hasMeetings { AskBar(path: nil) } }
@@ -416,27 +539,32 @@ struct DetailView: View {
                     blank
                 }
             case .todos:
-                if model.config.todosEnabled { TodosView() } else { blank }
+                if model.config.todosEnabled { TodosView().navigationTitle("To-dos") } else { blank }
             case .new(let event):
                 // Made again only for another event: choosing the same one again keeps what's been typed.
                 NewRecordingView(event: event).id(event?.id)
-                    .toolbar { EmptyPaneToolbar() }
+                    .navigationTitle("Record a call")
             case .live:
-                if let rec = model.recording.live { LiveView(rec: rec) } else { blank }
+                if let rec = model.recording.live { LiveView(rec: rec).navigationTitle(rec.title) } else { blank }
             case .job(let id):
-                if let rec = model.jobs.pending.first(where: { $0.id == id }) {
-                    if rec.state == .processed, !model.jobs.isAnalysing(rec.id) {
+                Group {
+                    if let rec = model.jobs.pending.first(where: { $0.id == id }) {
+                        if rec.state == .processed, !model.jobs.isAnalysing(rec.id) {
+                            ReviewView(rec: rec).id(rec.id)
+                        } else {
+                            ProcessingView(rec: rec).id(rec.id)
+                        }
+                    } else if let rec = model.jobs.unchecked.first(where: { $0.id == id }) {
+                        // A meeting saved without checking who's who, having its voices named.
                         ReviewView(rec: rec).id(rec.id)
                     } else {
-                        ProcessingView(rec: rec).id(rec.id)
+                        blank
                     }
-                } else if let rec = model.jobs.unchecked.first(where: { $0.id == id }) {
-                    // A meeting saved without checking who's who, having its voices named.
-                    ReviewView(rec: rec).id(rec.id)
-                } else {
-                    blank
                 }
-            case .folder, nil:
+                .navigationTitle("Who’s who")
+                // Its toolbar starts with what it is and which call, so the title isn't said twice there.
+                .toolbar(removing: .title)
+            case .folder:
                 blank
             }
         }
@@ -452,7 +580,7 @@ struct DetailView: View {
             if let folder, newestIn(folder, 1).isEmpty {
                 VStack(spacing: 14) {
                     PageTitle(text: everything ? "All meetings" : baseName(folder.path))
-                    Button { model.newRecording() } label: { Label(everything ? "New recording" : "Record here", systemImage: "circle.fill") }
+                    Button { model.newRecording() } label: { Label(everything ? "Record a call" : "Record here", systemImage: "circle.fill") }
                 }
             } else if folder != nil {
                 Text("Select a meeting").foregroundStyle(.secondary)

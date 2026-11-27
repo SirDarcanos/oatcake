@@ -415,7 +415,7 @@ public enum Recordings {
     /// moved or renamed to since (its meeting.json names the recording).
     private static func savedMeeting(_ id: String, _ rel: String?, under root: URL) -> URL? {
         func isIt(_ dir: URL) -> Bool {
-            guard let data = try? Data(contentsOf: dir.appendingPathComponent("meeting.json")) else { return false }
+            guard let data = fileInside(root, dir, "meeting.json").flatMap({ try? Data(contentsOf: $0) }) else { return false }
             return ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["recording"] as? String == id
         }
         if let rel, let dir = try? resolveInside(root, rel), isIt(dir) { return dir }

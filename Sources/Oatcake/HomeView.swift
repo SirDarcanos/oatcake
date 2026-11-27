@@ -10,7 +10,7 @@ struct HomeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                // No record button of its own: the sidebar's New recording (or Return to recording) is beside it.
+                // No record button of its own: the sidebar’s Record a call (or Return to the call) is beside it.
                 Text("Home").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
                 upcoming
                 if model.config.todosEnabled { TodosView(homePreview: true) }

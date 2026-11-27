@@ -57,14 +57,54 @@ public func writeAtomic(_ url: URL, _ text: String, permissions: Int? = nil) thr
     try writeAtomic(url, Data(text.utf8), permissions: permissions)
 }
 
-/// Resolves a path relative to `root`, refusing anything that escapes it.
+/// Resolves a path relative to `root`, refusing anything that escapes it, as written or through a
+/// symbolic link: a link inside `root` counts only if it leads somewhere inside `root` too.
 public func resolveInside(_ root: URL, _ rel: String) throws -> URL {
     let base = root.standardizedFileURL
     let full = (rel.isEmpty ? base : base.appendingPathComponent(rel)).standardizedFileURL
-    if full.path != base.path && !full.path.hasPrefix(base.path + "/") {
-        throw OatcakeError("Path is outside the Meetings folder: \(rel)")
+    let outside = OatcakeError("Path is outside the Meetings folder: \(rel)")
+    guard full.path == base.path || full.path.hasPrefix(base.path + "/") else { throw outside }
+    // Only links below `root` need following: without one, a path is where it says (`root` itself
+    // may be a link; it's the folder you chose). This runs for every meeting each time the tree is
+    // read, so it's an lstat for each part, and `root` is resolved only once a link turns up.
+    var realRoot: String?
+    var path = base.path
+    var info = stat()
+    for part in full.path.dropFirst(base.path.count).split(separator: "/") {
+        path += "/" + part
+        // Nothing there (yet): nothing further along to follow.
+        guard lstat(path, &info) == 0 else { break }
+        guard info.st_mode & S_IFMT == S_IFLNK else { continue }
+        guard leadsInside(path, base.path, &realRoot) else { throw outside }
     }
     return full
+}
+
+/// `name` in `folder` (a folder `resolveInside` gave for `root`), or nil when it's a link that leads
+/// out of `root`: a meeting's own files are held to the same rule as its folder. Only the file
+/// itself needs looking at, as its folder has been already.
+public func fileInside(_ root: URL, _ folder: URL, _ name: String) -> URL? {
+    let file = folder.appendingPathComponent(name)
+    var info = stat()
+    var realRoot: String?
+    guard lstat(file.path, &info) == 0, info.st_mode & S_IFMT == S_IFLNK else { return file }
+    return leadsInside(file.path, root.standardizedFileURL.path, &realRoot) ? file : nil
+}
+
+/// Whether the link at `path` leads to `root` or somewhere inside it. `realRoot` is `root` with its
+/// own links followed, worked out the first time it's needed. A link that leads nowhere, or round in
+/// a loop, leads nowhere inside either.
+private func leadsInside(_ path: String, _ root: String, _ realRoot: inout String?) -> Bool {
+    realRoot = realRoot ?? realPath(root)
+    guard let realRoot, let target = realPath(path) else { return false }
+    return target == realRoot || target.hasPrefix(realRoot + "/")
+}
+
+/// The path with every link in it followed, or nil when one can't be.
+private func realPath(_ path: String) -> String? {
+    guard let resolved = realpath(path, nil) else { return nil }
+    defer { free(resolved) }
+    return String(cString: resolved)
 }
 
 /// The path of `url` relative to `root` ("" for root itself).

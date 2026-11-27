@@ -11,9 +11,14 @@ public struct CalendarSource: Codable, Equatable, Identifiable, Sendable {
     private var shellAddress = ""
     public var address: String { usesShellAddress == true ? shellAddress : savedAddress ?? "" }
     var isFromShell: Bool { usesShellAddress == true }
+    /// One of this Mac's own calendars (EventKit's calendarIdentifier), read from the Mac's calendar
+    /// store rather than fetched from an address. nil for a calendar with a private iCal address.
+    public private(set) var macCalendarID: String?
+    /// Something to read events from: an address, or one of this Mac's calendars.
+    public var isConnected: Bool { !address.isEmpty || macCalendarID != nil }
 
     private enum CodingKeys: String, CodingKey {
-        case id, cacheID, name, colour, savedAddress = "address", usesShellAddress
+        case id, cacheID, name, colour, savedAddress = "address", usesShellAddress, macCalendarID
     }
 
     /// Where a calendar address can come from instead of Settings, for trying a build (docs/development.md).
@@ -28,6 +33,13 @@ public struct CalendarSource: Codable, Equatable, Identifiable, Sendable {
         self.name = name
         self.colour = colour
         savedAddress = address
+    }
+
+    public init(id: UUID = UUID(), name: String, colour: SwatchColour, macCalendarID: String) {
+        self.id = id
+        self.name = name
+        self.colour = colour
+        self.macCalendarID = macCalendarID
     }
 
     public func cacheFile(in directory: URL = Paths.data) -> URL {
@@ -133,10 +145,11 @@ public struct CalendarFeedCaches: Sendable {
     public mutating func setSources(_ sources: [CalendarSource], in directory: URL = Paths.data) {
         let oldActive = active
         let oldFiles = files
-        let connected = sources.filter { !$0.address.isEmpty }
+        let connected = sources.filter(\.isConnected)
         active = Set(connected.map(\.fetchID))
         files = [:]
-        for source in connected where !source.isFromShell {
+        // This Mac's calendars are read afresh from its own store, so they have no file of their own.
+        for source in connected where !source.isFromShell && source.macCalendarID == nil {
             let file = source.cacheFile(in: directory)
             files[source.fetchID] = file
             if oldFiles[source.fetchID] != file { caches[source.fetchID] = CalendarCache.load(file) }

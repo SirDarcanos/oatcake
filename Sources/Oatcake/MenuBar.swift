@@ -220,9 +220,9 @@ final class StatusItem: NSObject, NSMenuDelegate {
                 add("\(when)   \(event.title)", #selector(openListed(_:)), tag: index)
             }
             menu.addItem(.separator())
-            add("New Recording…", #selector(newRecording), key: "n")
+            add("Record a Call…", #selector(newRecording), key: "n")
         case .idle:
-            add("New Recording…", #selector(newRecording), key: "n")
+            add("Record a Call…", #selector(newRecording), key: "n")
         case nil:
             break
         }

@@ -7,5 +7,9 @@
 	     permission unless Oatcake says here that it uses the microphone. -->
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
+	<!-- Calendars added from this Mac are read through EventKit, which under the hardened runtime
+	     macOS refuses (without asking) unless Oatcake says here that it uses them. -->
+	<key>com.apple.security.personal-information.calendars</key>
+	<true/>
 </dict>
 </plist>

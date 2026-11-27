@@ -1,8 +1,13 @@
 # Security
 
 - Every path the window acts on is checked to stay inside the Meetings folder or the recordings
-  folder. The Meetings folder itself is only changed through the folder picker. The app itself
-  never records: the recorder app captures audio on its own.
+  folder, with symbolic links followed: a folder in the Meetings folder that's a link to somewhere
+  outside it isn't listed, read or written through, even if it holds a meeting, while a link to
+  a meeting elsewhere inside it works as that meeting. A meeting's own file (its summary, notes,
+  to-dos, transcript, draft or `meeting.json`) that's a link out of the folder counts as not there:
+  it isn't read, shown, searched or listed, and saving replaces the link rather than writing through
+  it. The MCP server follows no links at all. The Meetings folder itself is only changed through
+  the folder picker. The app itself never records: the recorder app captures audio on its own.
 - Summaries and answers are drawn as Markdown with any HTML shown as text. Links in Ask's answers
   to anything but a meeting are shown as text, not made clickable.
 - Speech models are fetched from pinned commits (see [Speech models](models.md#speech-models)).
@@ -28,6 +33,13 @@
   your user account can read (mode 0600), and never in `config.json`. Badge colours are chosen in
   Oatcake, with no extra network requests. Call reminders show the title and time in Notification
   Center but don’t attach the invitation, attendee list or call link.
+- Calendars added from this Mac are read through macOS's own calendar store (EventKit). Oatcake
+  asks for access only when you choose **Add from this Mac…** in Settings › Calendars, reads only
+  the calendars you add (from a day ago to two weeks ahead), never changes them, and doesn't cache
+  their events on disk as it does a feed's: `private.json` holds only each one's name, colour and
+  identifier on this Mac. Nothing is fetched or sent for them over the network. Oatcake is signed
+  as using calendars (`Resources/Oatcake.entitlements`), which the hardened runtime needs before
+  macOS will ask.
 - Files Oatcake rewrites (meeting Markdown, config, voiceprints, calendar, the calendar address)
   are written to a new temporary file and renamed into place, never through an existing file or
   link.

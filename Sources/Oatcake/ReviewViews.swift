@@ -11,8 +11,8 @@ func recordingMeta(_ rec: Recording) -> String {
 /// The failure in plain words; the raw message stays behind "Details".
 private func explain(_ failure: AnalysisFailure?) -> String {
     switch failure {
-    case .unreadableRecording: "Its recording details couldn’t be read. The files may be damaged or incomplete. Trying again won’t fix this. Discard the recording to clear it."
-    case .missingAudio: "Some of its audio files are missing. Trying again won’t fix this. Discard the recording to clear it."
+    case .unreadableRecording: "Its recording details couldn’t be read. The files may be damaged or incomplete. Trying again won’t fix this. Discard this call to clear it."
+    case .missingAudio: "Some of its audio files are missing. Trying again won’t fix this. Discard this call to clear it."
     case .speechModels: "The speech models couldn’t be loaded. Check your internet connection, then try again."
     case .helperStopped: "Transcribing stopped unexpectedly. Try again."
     case .other, nil: "Oatcake couldn’t finish transcribing this call. Its audio is safe. Try again; if it fails twice, Details says what went wrong."
@@ -27,7 +27,7 @@ struct ProcessingView: View {
     var body: some View {
         let progress = model.jobs.progress[rec.id]
         let stage = progress?.stage
-        let step = progress?.waiting == true ? "Waiting for another recording to be transcribed" : stage?.title ?? "Starting"
+        let step = progress?.waiting == true ? "Waiting for another call to be transcribed" : stage?.title ?? "Starting"
         let n = stage?.number ?? 1
         let within = progress?.fraction ?? (stage?.isStep == true ? 0.5 : 0.1)
         // The first recording on a Mac fetches the speech models before anything can be transcribed.
@@ -146,6 +146,8 @@ struct ReviewView: View {
     @ViewState private var showTranscript = false
     @ViewState private var error = ""
     @ViewState private var saved = false
+    /// Save or Update meeting has been pressed and the meeting is being written.
+    @ViewState private var saving = false
     @ViewState private var player = ClipPlayer()
     @ViewState private var paneWidth: CGFloat = 900
 
@@ -281,7 +283,7 @@ struct ReviewView: View {
         if #available(macOS 26, *) { ToolbarSpacer(.flexible) }
         ToolbarItemGroup(placement: .automatic) {
             Toggle(isOn: $showTranscript) { Text("Transcript") }.toggleStyle(.button)
-            if !rechecking { Button("Discard…") { model.jobs.discard(rec) }.disabled(saved) }
+            if !rechecking { Button("Discard…") { model.jobs.discard(rec) }.disabled(saved || saving) }
         }
         if unnamed > 0 {
             ToolbarItem(placement: .automatic) {
@@ -292,17 +294,12 @@ struct ReviewView: View {
             .withoutCapsule()
         }
         ToolbarItem(placement: .automatic) {
-            Button { save(analysis) } label: {
-                HStack(spacing: 8) {
-                    Text(rechecking ? "Update meeting" : "Save")
-                    ShortcutHint("⌘S")
-                }
-            }
-            .keyboardShortcut("s")
-            .buttonStyle(.borderedProminent)
-            .disabled(saved)
-            .help(rechecking ? "Rewrite the meeting’s transcript with these names, and use them in its summary and to-dos (⌘S)."
-                  : "Save the meeting. Its summary is written straight after (⌘S).")
+            Button(rechecking ? "Update meeting" : "Save") { save(analysis) }
+                .keyboardShortcut("s")
+                .buttonStyle(.borderedProminent)
+                .disabled(saved || saving)
+                .help(rechecking ? "Rewrite the meeting’s transcript with these names, and use them in its summary and to-dos (⌘S)."
+                      : "Save the meeting. Its summary is written straight after (⌘S).")
         }
     }
 
@@ -537,22 +534,29 @@ struct ReviewView: View {
         }
         let folder = draft.folder
         let everyone = names(analysis)
-        do {
-            let path = rechecking ? try model.jobs.updateMeeting(rec, decisions: decisions)
-                : try model.jobs.saveRecording(rec, decisions: decisions, folder: folder, title: title)
-            saved = true
-            // Colours are claimed in the order this screen showed them, so nobody changes colour on saving.
-            for name in everyone { _ = person(name) }
-            player.stop()
-            model.refresh()
-            model.toast(rechecking ? "Meeting updated" : "Saved to \(folderPath(folder))")
-            // On to the meeting now, as saving by itself does: it shows as soon as the folder has been read
-            // again, however long that takes. On its summary, whichever tab you last read another meeting
-            // on: that's where the summary arrives.
-            model.folder = parentOf(path)
-            model.selection = .meeting(path, jump: Jump(tab: rechecking ? .transcript : .summary))
-        } catch {
-            self.error = error.localizedDescription
+        let title = title
+        saving = true
+        Task {
+            defer { saving = false }
+            do {
+                let path = rechecking ? try await model.jobs.updateMeeting(rec, decisions: decisions)
+                    : try await model.jobs.saveRecording(rec, decisions: decisions, folder: folder, title: title)
+                saved = true
+                // Colours are claimed in the order this screen showed them, so nobody changes colour on saving.
+                for name in everyone { _ = person(name) }
+                player.stop()
+                model.refresh()
+                model.toast(rechecking ? "Meeting updated" : "Saved to \(folderPath(folder))")
+                // Gone on to something else while it was written: that stays.
+                guard model.selection == .job(rec.id) else { return }
+                // On to the meeting now, as saving by itself does: it shows as soon as the folder has been read
+                // again, however long that takes. On its summary, whichever tab you last read another meeting
+                // on: that's where the summary arrives.
+                model.folder = parentOf(path)
+                model.selection = .meeting(path, jump: Jump(tab: rechecking ? .transcript : .summary))
+            } catch {
+                self.error = error.localizedDescription
+            }
         }
     }
 }

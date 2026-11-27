@@ -73,6 +73,9 @@ final class Jobs {
     var todoProblems: [String: String] = [:]
     /// Meetings whose draft for sharing is being written now, and why the last attempt failed, by path.
     var drafting = Set<String>()
+    /// Meetings being written from a call now that the work is off the main thread: quitting part-way
+    /// would leave one half written.
+    var saving = 0
     var draftErrors: [String: String] = [:]
     /// What was asked for a draft alone, by path: kept after a failure, so Try again asks the same.
     var draftRequests: [String: String] = [:]
@@ -234,6 +237,8 @@ final class Jobs {
         do {
             // Off the main thread: with Keep call audio off it deletes the call's tracks, and it writes
             // the transcript and voiceprints.
+            saving += 1
+            defer { saving -= 1 }
             let path = try await Task.detached {
                 try saveMeeting(config, rec, decisions: suggestedDecisions(analysis), folder: folder, title: rec.title, unchecked: true)
             }.value
@@ -251,13 +256,21 @@ final class Jobs {
 
     /// Names the voices of a meeting saved without checking: its transcript and meeting.json are
     /// written again in place, and the new names are put into its summary and to-dos. Returns its path.
-    func updateMeeting(_ rec: Recording, decisions: [String: Decision]) throws -> String {
-        guard let path = Recordings.meetingPath(rec, meetingsRoot: config.meetingsRoot) else {
-            throw OatcakeError("The meeting saved from this recording couldn’t be found. It may have been deleted.")
+    func updateMeeting(_ rec: Recording, decisions: [String: Decision]) async throws -> String {
+        let config = config
+        saving += 1
+        defer { saving -= 1 }
+        // Off the main thread: a meeting that has been moved is looked for through the whole Meetings folder.
+        guard let path = await Task.detached(operation: { Recordings.meetingPath(rec, meetingsRoot: config.meetingsRoot) }).value else {
+            throw OatcakeError("The meeting saved from this call couldn’t be found. It may have been deleted.")
         }
-        // Asked before saving: after it, what the voices were saved as is no longer on record.
-        let leftOut = leavesOutSavedVoice(rec, decisions)
-        let saved = try saveMeeting(config, rec, decisions: decisions, folder: "", into: path)
+        // Also before the save: a summary finished while the meeting is written would keep the old names.
+        staleSummaries.formUnion(summaryJobs.filter { $0.value == path }.map(\.key))
+        let (saved, leftOut) = try await Task.detached {
+            // Asked before saving: after it, what the voices were saved as is no longer on record.
+            let leftOut = leavesOutSavedVoice(rec, decisions)
+            return (try saveMeeting(config, rec, decisions: decisions, folder: "", into: path), leftOut)
+        }.value
         // A summary of it that's still being written was asked for with the old names.
         let writing = summaryJobs.filter { $0.value == saved }.map(\.key)
         staleSummaries.formUnion(writing)
@@ -312,7 +325,7 @@ final class Jobs {
     }
 
     func discard(_ rec: Recording) {
-        app.confirm(Confirmation(title: "Discard this recording?",
+        app.confirm(Confirmation(title: "Discard this call?",
                                     text: "The audio, transcript and your notes will be deleted. This can’t be undone.",
                                     ok: "Discard", cancel: "Cancel") { [self] in
             // A helper still analysing it would write its transcript and clips back after the folder had gone.
@@ -325,14 +338,20 @@ final class Jobs {
             Reminders.withdrawReadyToCheck(rec.id)
             progress.removeValue(forKey: rec.id)
             app.showFolder()
-            toast("Recording discarded")
+            toast("Call discarded")
             refresh()
         })
     }
 
     /// Saves a reviewed recording as a meeting and starts writing its summary. Returns the meeting's path.
-    func saveRecording(_ rec: Recording, decisions: [String: Decision], folder: String, title: String) throws -> String {
-        let path = try saveMeeting(config, rec, decisions: decisions, folder: folder, title: title)
+    func saveRecording(_ rec: Recording, decisions: [String: Decision], folder: String, title: String) async throws -> String {
+        let config = config
+        saving += 1
+        defer { saving -= 1 }
+        // Off the main thread, as when a call is saved by itself (autoSave).
+        let path = try await Task.detached {
+            try saveMeeting(config, rec, decisions: decisions, folder: folder, title: title)
+        }.value
         reviewDrafts[rec.id]?.edited = false
         Reminders.withdrawReadyToCheck(rec.id)
         writeSummary(path)

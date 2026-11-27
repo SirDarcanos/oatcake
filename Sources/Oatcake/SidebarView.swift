@@ -14,9 +14,12 @@ struct MeetingItem: Codable, Transferable {
     /// Relative to the Meetings folder.
     var path: String
     var folder: URL
+    /// The Meetings folder, so the summary given as text is read only if it's really inside it.
+    var root: URL
 
     init(_ path: String, in root: URL) {
         self.path = path
+        self.root = root
         folder = root.appendingPathComponent(path, isDirectory: true)
     }
 
@@ -24,7 +27,7 @@ struct MeetingItem: Codable, Transferable {
         CodableRepresentation(contentType: .oatcakeItem)
         ProxyRepresentation { $0.folder }
         DataRepresentation(exportedContentType: .utf8PlainText) { item in
-            Data(forReading(readText(item.folder.appendingPathComponent(MeetingFile.summary.rawValue))).trimmed.utf8)
+            Data(forReading(fileInside(item.root, item.folder, MeetingFile.summary.rawValue).map(readText) ?? "").trimmed.utf8)
         }
     }
 }
@@ -44,6 +47,7 @@ struct SidebarView: View {
     @ViewState private var draft = ""
     @ViewState private var newFolderIn: String?
     @ViewState private var dropTarget: String?
+    @FocusState private var hasKeyboard: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -95,6 +99,14 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .focused($hasKeyboard)
+        // Made again after choosing a screen with the other number of columns: the keyboard comes
+        // back, so ↑ and ↓ carry on from the row just chosen. A moment later, once it's in the window.
+        .onAppear {
+            guard model.sidebarKeepsKeyboard else { return }
+            model.sidebarKeepsKeyboard = false
+            DispatchQueue.main.async { hasKeyboard = true }
+        }
         // The folder tree from the keyboard, as in Finder: → opens a folder, ← closes it (or goes up
         // to the folder it's in), Return renames, and ⌘⌫ (File › Move to Trash) moves it to the Trash.
         .onKeyPress(.rightArrow) { showFolders(true) }
@@ -106,9 +118,9 @@ struct SidebarView: View {
                 HStack(spacing: 8) {
                     // During a call it goes back to that call, so it says so.
                     if model.recording.live != nil {
-                        Label("Return to recording", systemImage: "waveform")
+                        Label("Return to the call", systemImage: "waveform")
                     } else {
-                        Label("New recording", systemImage: "circle.fill")
+                        Label("Record a call", systemImage: "circle.fill")
                             .labelStyle(NewRecordingLabelStyle())
                     }
                     ShortcutHint("⌘N")
@@ -119,7 +131,7 @@ struct SidebarView: View {
             .buttonStyle(.bordered)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .help(model.recording.live != nil ? "Return to the recording (⌘N)" : "New recording (⌘N)")
+            .help(model.recording.live != nil ? "Return to the call (⌘N)" : "Record a call (⌘N)")
         }
         // Settings is in the Oatcake menu (⌘,) and the menu bar item, as other Mac apps keep it.
         .safeAreaInset(edge: .bottom, spacing: 0) { UpdateNotice() }
@@ -134,14 +146,22 @@ struct SidebarView: View {
         }
         .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $draft)
-            Button("Rename") { if let node = renaming { model.library.rename(node.path, to: draft) } }.disabled(draft.trimmed.isEmpty)
+            Button("Rename") {
+                guard let node = renaming, !model.library.rename(node.path, to: draft) else { return }
+                askAgain { renaming = node }
+            }
+            .disabled(draft.trimmed.isEmpty)
             Button("Cancel", role: .cancel) {}
         }
         .alert("New folder", isPresented: Binding(get: { newFolderIn != nil }, set: { if !$0 { newFolderIn = nil } })) {
             TextField("Folder name", text: $draft)
             Button("Create") {
                 guard let parent = newFolderIn, !draft.trimmed.isEmpty else { return }
-                if model.library.createFolder(in: parent, named: draft) != nil, !parent.isEmpty { open.insert(parent) }
+                if model.library.createFolder(in: parent, named: draft) == nil {
+                    askAgain { newFolderIn = parent }
+                } else if !parent.isEmpty {
+                    open.insert(parent)
+                }
             }
             .disabled(draft.trimmed.isEmpty)
             Button("Cancel", role: .cancel) {}
@@ -150,18 +170,28 @@ struct SidebarView: View {
         }
     }
 
+    /// The row for what the window shows. Until Oatcake has put back where it was, that's Home.
+    private var highlighted: SidebarItem? {
+        switch model.selection {
+        case .home, nil: .home
+        case .live: .live
+        case .todos: .todos
+        case .job(let id): .job(id)
+        case .meeting(let path, _) where parentOf(path).isEmpty: .meeting(path)
+        case .meeting, .folder: .folder(model.folder)
+        case .new: nil
+        }
+    }
+
     private var selectionBinding: Binding<SidebarItem?> {
         Binding {
-            switch model.selection {
-            case .home: .home
-            case .live: .live
-            case .todos: .todos
-            case .job(let id): .job(id)
-            case .meeting(let path, _) where parentOf(path).isEmpty: .meeting(path)
-            case .meeting, .folder, nil: .folder(model.folder)
-            case .new: nil
-            }
+            highlighted
         } set: { item in
+            // The list can hand back the row it was given as it's laid out. That's no choice: taken for
+            // one, it could open All meetings before the Meetings folder had been read, and Oatcake then
+            // left the window there rather than putting back the screen it was on.
+            guard item != highlighted else { return }
+            let listShown = model.listShown
             switch item {
             case .home: model.selection = .home
             case .live: model.selection = .live
@@ -170,6 +200,17 @@ struct SidebarView: View {
             case .folder(let path): model.openFolder(path)
             case .meeting(let path): model.openMeeting(path)
             case nil: break
+            }
+            // Only the list itself chooses here, by the arrow keys or a click, either of which leaves
+            // it with the keyboard. ⌘N, the menus and the meeting list don't come this way.
+            if model.listShown != listShown {
+                model.sidebarKeepsKeyboard = true
+                // Only for this switch: a sidebar squeezed out of a narrow window doesn't appear to take it,
+                // and one made later (from the menus, ⌘N) mustn't take the keyboard from the screen.
+                Task { @MainActor [model] in
+                    try? await Task.sleep(for: .seconds(1))
+                    model.sidebarKeepsKeyboard = false
+                }
             }
         }
     }
@@ -205,7 +246,7 @@ struct SidebarView: View {
 
     /// The folder or top-level meeting highlighted in the sidebar.
     private var selectedNode: TreeNode? {
-        switch selectionBinding.wrappedValue {
+        switch highlighted {
         case .folder(let path) where !path.isEmpty, .meeting(let path): model.library.tree?.find(path)
         default: nil
         }
@@ -324,6 +365,15 @@ struct SidebarView: View {
     /// "21:10" today, otherwise "4 Nov at 21:10": tells two recordings of the same call apart.
     private func jobWhen(_ d: Date) -> String {
         Calendar.current.isDateInToday(d) ? timeOfDay(d) : dateAndTime(d)
+    }
+}
+
+/// A name or title that couldn't be used (the note at the bottom of the window says why) is asked for
+/// again with what was typed, once the alert that took it has gone.
+@MainActor func askAgain(_ ask: @escaping @MainActor () -> Void) {
+    Task {
+        try? await Task.sleep(for: .milliseconds(300))
+        ask()
     }
 }
 
@@ -551,7 +601,7 @@ extension View {
             Button("Install and relaunch", action: install)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Oatcake downloads it, quits and reopens on the new version. A Who’s who you haven’t saved yet keeps its recording, but not the names you’ve typed.")
+            Text("Oatcake downloads it, quits and reopens on the new version. A Who’s who you haven’t saved yet keeps its audio, but not the names you’ve typed.")
         }
     }
 }

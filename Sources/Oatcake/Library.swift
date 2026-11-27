@@ -70,15 +70,18 @@ final class Library {
         if tree != nil || changedOnDisk { diskVersion += 1 }
     }
 
-    func rename(_ path: String, to name: String) {
-        guard !name.trimmed.isEmpty, name.trimmed != baseName(path) else { return }
-        attempt { moved(from: path, to: try meetings.rename(path, to: name)) }
+    /// False when it couldn't be renamed: the note at the bottom of the window says why.
+    @discardableResult
+    func rename(_ path: String, to name: String) -> Bool {
+        guard !name.trimmed.isEmpty, name.trimmed != baseName(path) else { return true }
+        return attempt { moved(from: path, to: try meetings.rename(path, to: name)) }
     }
 
-    /// A meeting's new title, in meeting.json and in its folder's name.
-    func retitle(_ path: String, to title: String) {
-        guard !title.trimmed.isEmpty else { return }
-        attempt { moved(from: path, to: try meetings.retitle(path, to: title)) }
+    /// A meeting's new title, in meeting.json and in its folder's name. False when it couldn't be changed.
+    @discardableResult
+    func retitle(_ path: String, to title: String) -> Bool {
+        guard !title.trimmed.isEmpty else { return true }
+        return attempt { moved(from: path, to: try meetings.retitle(path, to: title)) }
     }
 
     /// Moves what was dropped on a folder: one meeting or folder, or every meeting picked in the list.
@@ -249,8 +252,15 @@ final class Library {
         refresh()
     }
 
-    private func attempt(_ work: () throws -> Void) {
-        do { try work() } catch { toast(error.localizedDescription, isError: true) }
+    @discardableResult
+    private func attempt(_ work: () throws -> Void) -> Bool {
+        do {
+            try work()
+            return true
+        } catch {
+            toast(error.localizedDescription, isError: true)
+            return false
+        }
     }
 
     /// What's being imported ("Granola", "Quill"), if anything. Kept here rather than in the Settings

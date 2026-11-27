@@ -35,7 +35,7 @@ struct NewRecordingView: View {
             VStack(alignment: .leading, spacing: 26) {
                 VStack(alignment: .leading, spacing: 6) {
                     if let event { Label(eventWhen(event), systemImage: "calendar").foregroundStyle(.secondary) }
-                    PageTitle(text: "New recording")
+                    PageTitle(text: "Record a call")
                 }
                 form
                 if model.config.todosEnabled, !openTodos.isEmpty { previousTodos }
