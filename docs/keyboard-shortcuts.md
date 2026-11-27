@@ -20,6 +20,9 @@ describes the menus.
 | ⌘Z | Put back what was just moved to the Trash | Edit › Undo |
 | ⌘, | Settings | Oatcake › Settings… |
 
+The sidebar’s recording button shows ⌘N. The Oatcake status menu in the macOS menu bar shows
+⌘N for New Recording and ⌘, for Settings. Neither is a system-wide shortcut.
+
 Go › Home, To-dos and All Meetings, Recording › Join Call and Show Live Notes, and Help › Oatcake
 Help (these pages) have no keys of their own.
 

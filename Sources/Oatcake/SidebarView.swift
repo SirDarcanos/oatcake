@@ -103,14 +103,21 @@ struct SidebarView: View {
         .focusedValue(\.trashMeetings, trashSelected)
         .safeAreaInset(edge: .top) {
             Button { model.newRecording() } label: {
-                // During a call it goes back to that call, so it says so.
-                if model.recording.live != nil {
-                    Label("Return to recording", systemImage: "waveform").frame(maxWidth: .infinity)
-                } else {
-                    Label("New recording", systemImage: "circle.fill")
-                        .labelStyle(NewRecordingLabelStyle())
-                        .frame(maxWidth: .infinity)
+                HStack(spacing: 8) {
+                    // During a call it goes back to that call, so it says so.
+                    if model.recording.live != nil {
+                        Label("Return to recording", systemImage: "waveform")
+                    } else {
+                        Label("New recording", systemImage: "circle.fill")
+                            .labelStyle(NewRecordingLabelStyle())
+                    }
+                    Text(verbatim: "⌘N")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                        .accessibilityHidden(true)
                 }
+                .frame(maxWidth: .infinity)
             }
             .controlSize(.large)
             .buttonStyle(.bordered)
