@@ -33,6 +33,7 @@ Help (these pages) have no keys of their own.
 | Keys | What it does | Menu |
 |---|---|---|
 | ⌘1, ⌘2, ⌘3, ⌘4 | Summary, Transcript, My notes, and Draft in a meeting with a draft for sharing | View |
+| ⇧⌘D | Open the Draft for Sharing setup from Summary or Draft | Meeting › Draft for Sharing… |
 | ⌘F | Find on the tab showing: its words are marked | Edit › Find… |
 | ⌘G and ⇧⌘G | The next and previous line with the words, on the Transcript tab | Edit › Find Next, Find Previous |
 | Escape | Close Find, or Ask's conversation, wherever the keyboard is | |

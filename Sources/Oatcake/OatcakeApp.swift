@@ -174,7 +174,7 @@ private struct MeetingMenu: View {
 
     var body: some View {
         let node = model.meetingInView.flatMap { model.library.tree?.find($0.path) }
-        MeetingMenuItems(model: model, node: node)
+        MeetingMenuItems(model: model, node: node, inMenuBar: true)
     }
 }
 
