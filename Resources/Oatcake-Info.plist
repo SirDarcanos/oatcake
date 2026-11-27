@@ -33,6 +33,9 @@
 	<string>Oatcake records your microphone so your side of the call is in the transcript.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Oatcake records call audio so the other people on the call are in the transcript.</string>
+	<!-- Asked only when a calendar is added from this Mac (Settings › Calendars › Add from this Mac…). -->
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Oatcake reads the calendars you choose so your calls show in Upcoming and you’re reminded before they start. It doesn’t change them, and what it reads stays on this Mac.</string>
 	<!-- Call reminders stay on screen with their button until dealt with, like Calendar's alerts. -->
 	<key>NSUserNotificationAlertStyle</key>
 	<string>alert</string>

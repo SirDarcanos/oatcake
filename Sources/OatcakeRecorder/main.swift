@@ -540,11 +540,11 @@ statusTimer.setEventHandler { MainActor.assumeIsolated {
         system.stop()
         exit(0)
     case .finish(.cantWrite(let failure)):
-        finish(because: "The recording stopped because it couldn’t be written to disk any more (\(failure)). What was recorded up to then is kept.")
+        finish(because: "Recording stopped because the audio couldn’t be written to disk any more (\(failure)). What was recorded up to then is kept.")
     case .finish(.diskAlmostFull):
-        finish(because: "The recording stopped because the disk is almost full. What was recorded up to then is kept.")
+        finish(because: "Recording stopped because the disk is almost full. What was recorded up to then is kept.")
     case .finish(.oatcakeGone):
-        finish(because: "Oatcake wasn’t running, so the recording stopped by itself after ten minutes.")
+        finish(because: "Oatcake wasn’t running, so recording stopped by itself after ten minutes.")
     }
     mic.wanted = wantedMic()
     mic.check()

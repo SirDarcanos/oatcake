@@ -8,7 +8,7 @@ describes the menus.
 
 | Keys | What it does | Menu |
 |---|---|---|
-| ⌘N | New recording, or back to the call being recorded | Recording › New Recording |
+| ⌘N | Record a call, or back to the call being recorded | Recording › Record a Call… |
 | ⇧⌘R | Stop recording (asks first) | Recording › Stop Recording… |
 | ⇧⌘N | New folder | File › New Folder |
 | ⌘R | Refresh calendars | File › Refresh Calendars |
@@ -57,7 +57,7 @@ and **Move to Trash**.
 
 Search keeps its words and results when you open one: ⌥⌘F and ↓ go on to the next.
 
-## New recording and Who's who
+## Record a call and Who's who
 
 | Keys | What it does |
 |---|---|

@@ -46,7 +46,7 @@ struct Place: Equatable {
     var folder: String
 }
 
-/// "Discard this recording?" and the like: a question asked before an action. `destructive`: the
+/// "Discard this call?" and the like: a question asked before an action. `destructive`: the
 /// answer deletes or replaces something, so its button is red and Return doesn't press it; otherwise
 /// (Stop recording) it's the default button.
 struct Confirmation: Identifiable {
@@ -105,8 +105,14 @@ final class AppModel {
     /// File › New Folder: the sidebar asks for the new top-level folder's name. It waits here until the
     /// sidebar takes it, which is after the window has opened if it was closed.
     var wantsNewFolder = false
+    /// The sidebar chose a screen with the other number of columns: the window's split view, and the
+    /// sidebar in it, are made again, and the new sidebar takes the keyboard the old one had.
+    @ObservationIgnored var sidebarKeepsKeyboard = false
     var selection: Selection? {
         didSet {
+            // The window's split view is about to be made again with the other number of columns: what
+            // the one before saved mustn't be what the new one opens on (see ContentView).
+            if Self.listShown(oldValue) != listShown { forgetSavedColumns() }
             // Kept for the next launch: Home, To-dos or a meeting. The other screens don't last.
             let screen: String?
             switch selection {
@@ -120,6 +126,16 @@ final class AppModel {
             if let screen { UserDefaults.standard.set(screen, forKey: "lastScreen") }
         }
     }
+    /// A folder or All meetings chosen, or a meeting open: the meeting list is beside it.
+    var listShown: Bool { Self.listShown(selection) }
+
+    private static func listShown(_ selection: Selection?) -> Bool {
+        switch selection {
+        case .folder, .meeting: true
+        default: false
+        }
+    }
+
     /// The folder the middle column lists.
     var folder = "" { didSet { UserDefaults.standard.set(folder, forKey: "lastFolder") } }
     /// The meeting last open, kept while another screen shows: a recording discarded or cancelled comes back to it.
@@ -696,11 +712,12 @@ final class AppModel {
     var quitQuestion: (title: String, text: String, ok: String)? {
         if let live = recording.live, recording.recorderFailure == nil {
             return ("Stop recording and quit?",
-                    "Oatcake is recording “\(live.title)”. Quitting stops the recording. What’s been recorded so far is transcribed the next time you open Oatcake.",
+                    "Oatcake is recording “\(live.title)”. Quitting stops recording. What’s been recorded so far is transcribed the next time you open Oatcake.",
                     "Stop recording and quit")
         }
         var doing: [String] = []
         var after: [String] = []
+        if jobs.saving > 0 { doing.append("saving a meeting") }
         if jobs.isAnalysingAny {
             doing.append("transcribing a call")
             after.append("Transcribing starts again the next time you open Oatcake.")
@@ -744,6 +761,7 @@ final class AppModel {
     /// Why an update has to wait, if it does.
     var busyReason: String? {
         if recording.isRecording { return "Oatcake is recording a call. Install the update after you stop." }
+        if jobs.saving > 0 { return "Oatcake is saving a meeting. Try again in a moment." }
         if jobs.isAnalysingAny { return "Oatcake is transcribing a call. Install the update when it’s done." }
         if !jobs.summarising.isEmpty { return "Oatcake is writing a summary. Try again in a moment." }
         if !jobs.drafting.isEmpty { return "Oatcake is writing a draft for sharing. Try again in a moment." }

@@ -63,7 +63,7 @@ import Testing
         #expect(try fm.contentsOfDirectory(atPath: recordings.path).sorted() == ["r4", "r5"])
         #expect(trashed == ["r3"])
         #expect(Recordings.hasAudio(rec(waiting)) && Recordings.hasAudio(rec(broken)))
-        #expect(problems == ["The call audio of “Call” couldn’t be kept with its meeting: This recording has no audio to keep."])
+        #expect(problems == ["The call audio of “Call” couldn’t be kept with its meeting: This call has no audio to keep."])
         // With the Meetings folder missing altogether (a drive that isn't plugged in), nothing is taken for gone.
         let elsewhere = try recording("r6", saved: "2026-11-10 1400 Six", audio: true)
         Recordings.tidySaved(meetingsRoot: tmp.appendingPathComponent("Unplugged"), recordings: recordings)

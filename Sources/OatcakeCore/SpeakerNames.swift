@@ -90,8 +90,9 @@ extension Meetings {
         }
 
         var call: String?
-        let metaFile = try resolveInside(root, rel).appendingPathComponent("meeting.json")
-        if let data = try? Data(contentsOf: metaFile), var meta = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+        let dir = try resolveInside(root, rel)
+        let metaFile = dir.appendingPathComponent("meeting.json")
+        if let data = fileInside(root, dir, "meeting.json").flatMap({ try? Data(contentsOf: $0) }), var meta = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
             call = meta["recording"] as? String
             if let people = meta["participants"] as? [String] {
                 var renamed: [String] = []

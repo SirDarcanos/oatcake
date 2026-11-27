@@ -95,7 +95,7 @@ func exportAudio(recording dir: URL, to file: URL) throws {
     }
     defer { tracks.forEach { try? $0.handle.close() } }
     let total = tracks.map { $0.lead + $0.samples }.max() ?? 0
-    guard total > 0 else { throw OatcakeError("This recording has no audio to keep.") }
+    guard total > 0 else { throw OatcakeError("This call has no audio to keep.") }
 
     let tmp = file.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString.prefix(12)).\(file.lastPathComponent)")
     do {

@@ -42,6 +42,39 @@ import Testing
         #expect(relativePath(root, to: root) == "")
     }
 
+    /// Links are followed: one that leads out of the folder, nowhere, or round in a loop is refused,
+    /// one that leads to another place inside it isn't, and the folder itself can be a link.
+    @Test func pathsStayInsideThroughLinks() throws {
+        let fm = FileManager.default
+        let tmp = fm.temporaryDirectory.appendingPathComponent("oatcake-links-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: tmp) }
+        let real = tmp.appendingPathComponent("Meetings")
+        try fm.createDirectory(at: real.appendingPathComponent("Team"), withIntermediateDirectories: true)
+        let root = tmp.appendingPathComponent("Chosen")
+        try fm.createSymbolicLink(atPath: root.path, withDestinationPath: "Meetings")
+        for (name, target) in [("Out", ".."), ("Nowhere", "Missing"), ("Loop", "Loop"), ("In", "Team")] {
+            try fm.createSymbolicLink(atPath: real.appendingPathComponent(name).path, withDestinationPath: target)
+        }
+        for inside in ["", "Team", "In", "In/2026-11-05 1400 Weekly sync", "Not there yet/Weekly sync"] {
+            #expect(try resolveInside(root, inside).path == root.appendingPathComponent(inside).standardizedFileURL.path)
+        }
+        for outside in ["Out", "Out/Meetings/Team", "Nowhere", "Nowhere/Weekly sync", "Loop"] {
+            #expect(throws: OatcakeError.self) { try resolveInside(root, outside) }
+        }
+
+        // A file in a folder that's inside: the same, for the file itself.
+        let team = root.appendingPathComponent("Team")
+        try "Notes.".write(to: real.appendingPathComponent("Team/notes.md"), atomically: true, encoding: .utf8)
+        try "Elsewhere.".write(to: tmp.appendingPathComponent("summary.md"), atomically: true, encoding: .utf8)
+        for (name, target) in [("summary.md", "../../summary.md"), ("todo.md", "notes.md"), ("draft.md", "Missing.md")] {
+            try fm.createSymbolicLink(atPath: real.appendingPathComponent("Team/\(name)").path, withDestinationPath: target)
+        }
+        #expect(fileInside(root, team, "summary.md") == nil && fileInside(root, team, "draft.md") == nil)
+        for name in ["todo.md", "notes.md", "transcript.md"] {
+            #expect(fileInside(root, team, name) == team.appendingPathComponent(name))
+        }
+    }
+
     /// A file with a byte that isn't UTF-8 is read as far as it can be, not as nothing.
     @Test func readsWhatItCan() throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("oatcake-read-\(UUID().uuidString).md")

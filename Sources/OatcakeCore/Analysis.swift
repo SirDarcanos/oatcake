@@ -243,7 +243,7 @@ public func analyse(_ dir: URL, config: Config = Config.load(), voiceprints file
 /// What Who's who says about the recording itself.
 func warnings(_ meta: RecorderMeta) -> [String] {
     meta.interrupted == true
-        ? ["The recording stopped unexpectedly, so your lines may be slightly out of step with the call’s."]
+        ? ["Recording stopped unexpectedly, so your lines may be slightly out of step with the call’s."]
         : []
 }
 

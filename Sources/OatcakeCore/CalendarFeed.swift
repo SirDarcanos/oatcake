@@ -2,7 +2,8 @@
 // once an hour (sooner again after a failure), the events from a day ago to two weeks ahead kept in
 // that calendar's own cache file (CalendarSource.cacheFile, merged with the others' in
 // MergedCalendar), and which of them are calls. The feed's text is read in ICalReader.swift, and
-// its recurring events are expanded in Recurrence.swift.
+// its recurring events are expanded in Recurrence.swift. This Mac's own calendars give the same
+// events, read afresh rather than cached (MacCalendar.swift).
 
 import Foundation
 
@@ -247,6 +248,11 @@ public func findCallLink(_ text: String) -> String? {
     return nil
 }
 
+/// The events a calendar's cache keeps: from a day ago to two weeks ahead.
+public func calendarWindow(around now: Date) -> DateInterval {
+    DateInterval(start: now.addingTimeInterval(-86_400), end: now.addingTimeInterval(14 * 86_400))
+}
+
 /// More than any calendar's two weeks needs (a feed of 7,650 events is under 10 MB): a server that
 /// sends without end is stopped there rather than filling the memory.
 let calendarSizeLimit = 50_000_000
@@ -274,8 +280,8 @@ public func fetchCalendar(_ address: String, previous: CalendarCache) async -> C
         guard calendar.name == "VCALENDAR", calendar.closed else {
             throw OatcakeError("the address didn’t return a complete iCal feed")
         }
-        let now = Date()
-        let events = parseCalendar(calendar, from: now.addingTimeInterval(-86_400), to: now.addingTimeInterval(14 * 86_400))
+        let window = calendarWindow(around: Date())
+        let events = parseCalendar(calendar, from: window.start, to: window.end)
         return CalendarCache(checkedAt: checkedAt, updatedAt: checkedAt, error: nil, events: events)
     } catch {
         var cache = previous

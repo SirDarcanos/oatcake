@@ -113,8 +113,8 @@ public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: 
     if let existing {
         outRel = existing
         out = try resolveInside(config.meetingsRoot, existing)
-        guard savedRecording(out) == rec.id else { throw OatcakeError("The meeting saved from this recording couldn’t be found.") }
-        let kept = tryJSON(MeetingMeta.self, out.appendingPathComponent("meeting.json"))
+        guard savedRecording(out, in: config.meetingsRoot) == rec.id else { throw OatcakeError("The meeting saved from this call couldn’t be found.") }
+        let kept = fileInside(config.meetingsRoot, out, "meeting.json").flatMap { tryJSON(MeetingMeta.self, $0) }
         if let keptTitle = kept?.title?.trimmed, !keptTitle.isEmpty { title = keptTitle }
         template = kept?.template
     } else {
@@ -125,7 +125,7 @@ public func saveMeeting(_ config: Config, _ rec: Recording, decisions: [String: 
         outRel = folder.isEmpty ? name : folder + "/" + name
         out = try resolveInside(config.meetingsRoot, outRel)
         var number = 2
-        while let other = savedRecording(out), other != rec.id {
+        while let other = savedRecording(out, in: config.meetingsRoot), other != rec.id {
             outRel = (folder.isEmpty ? name : folder + "/" + name) + " (\(number))"
             out = try resolveInside(config.meetingsRoot, outRel)
             number += 1
@@ -219,8 +219,8 @@ func withoutTodos(of owners: Set<String>, in markdown: String) -> String {
 
 /// The recording a meeting folder was saved from: nil when there's no meeting there, "" for a
 /// meeting that names none (a Granola import, or a meeting.json that can't be read).
-private func savedRecording(_ meeting: URL) -> String? {
-    guard let data = try? Data(contentsOf: meeting.appendingPathComponent("meeting.json")) else { return nil }
+private func savedRecording(_ meeting: URL, in root: URL) -> String? {
+    guard let data = fileInside(root, meeting, "meeting.json").flatMap({ try? Data(contentsOf: $0) }) else { return nil }
     return ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["recording"] as? String ?? ""
 }
 
