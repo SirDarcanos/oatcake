@@ -53,11 +53,8 @@ struct NewRecordingView: View {
                     let returnStarts = !starting && focus != .prep && !model.searching
                     HStack(spacing: 10) {
                         Button(action: start) {
-                            HStack(spacing: 8) {
-                                Label(starting ? "Starting…" : "Start recording", systemImage: "circle.fill")
-                                if returnStarts { ShortcutHint("↩") }
-                            }
-                            .padding(.horizontal, 6)
+                            Label(starting ? "Starting…" : "Start recording", systemImage: "circle.fill")
+                                .padding(.horizontal, 6)
                         }
                         .help(returnStarts ? "Start recording (Return)" : "Start recording")
                         .buttonStyle(.borderedProminent)

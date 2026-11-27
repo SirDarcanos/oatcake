@@ -20,10 +20,11 @@ describes the menus.
 | ⌘Z | Put back what was just moved to the Trash | Edit › Undo |
 | ⌘, | Settings | Oatcake › Settings… |
 
-The sidebar’s recording button shows ⌘N. The Oatcake status menu in the macOS menu bar shows
-⌘N for New Recording and ⌘, for Settings. Neither is a system-wide shortcut. Start recording,
-Stop and Save also show their keys, as do the Ask, Search and Find fields. Hover over the new
-folder or calendar refresh icon to see its shortcut.
+The sidebar’s Record a call button shows ⌘N, and so does Record a Call… in Oatcake’s menu in the
+macOS menu bar, beside ⌘, for Settings. They work while that menu is open; neither is a
+system-wide shortcut. The Ask field shows ⌘L until it has the keyboard. Hover over a button or
+icon to see its key: Start recording, Stop, Save, Cancel, the new folder icon and the calendar
+refresh icon say it there.
 
 Go › Home, To-dos and All Meetings, Recording › Join Call and Show Live Notes, and Help › Oatcake
 Help (these pages) have no keys of their own.
@@ -48,7 +49,7 @@ and **Move to Trash**.
 
 | Keys | What it does | Menu |
 |---|---|---|
-| ⌘1, ⌘2, ⌘3 | Show Open, Done or All to-dos | View |
+| ⌘1, ⌘2, ⌘3 | Show Open, Done or All to-dos | View › Open To-dos, Done To-dos, All To-dos |
 
 These only change the status filter on the full To-dos page, not on Home.
 

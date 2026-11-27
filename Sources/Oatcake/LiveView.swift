@@ -94,15 +94,10 @@ struct LiveView: View {
                 Button("Cancel") { model.recording.cancelRecording(hasNotes: lines.contains { !$0.text.trimmed.isEmpty }) }
                     .help("Cancel recording")
             } else {
-                Button { model.recording.confirmStop() } label: {
-                    HStack(spacing: 8) {
-                        Label("Stop", systemImage: "stop.fill").labelStyle(.titleAndIcon)
-                        ShortcutHint("⇧⌘R")
-                    }
-                }
-                .tint(.red)
-                .buttonStyle(.borderedProminent)
-                .help("Stop recording (⇧⌘R)")
+                Button { model.recording.confirmStop() } label: { Label("Stop", systemImage: "stop.fill").labelStyle(.titleAndIcon) }
+                    .tint(.red)
+                    .buttonStyle(.borderedProminent)
+                    .help("Stop recording (⇧⌘R)")
             }
         }
     }

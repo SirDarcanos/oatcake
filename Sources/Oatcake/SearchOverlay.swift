@@ -78,7 +78,6 @@ struct SearchOverlay: View {
                            onReturn: { if rows.indices.contains(chosen) { open(rows[chosen]) } },
                            onEscape: { close() })
                 .accessibilityLabel("Search meetings")
-            ShortcutHint("⌥⌘F")
             if !search.isEmpty {
                 // Until every meeting's text has been looked through, the results are those found by title or folder.
                 Text(done ? "\(rows.count) meeting\(rows.count == 1 ? "" : "s")" : "Searching…")

@@ -122,7 +122,8 @@ private struct TabItems: View {
     var body: some View {
         if model.selection == .todos {
             ForEach(Array(TodosView.Status.allCases.enumerated()), id: \.offset) { i, status in
-                Button(status.title) { todoStatus = status }
+                // Named in full: a menu item called just Open reads as a command.
+                Button("\(status.title) To-dos") { todoStatus = status }
                     .keyboardShortcut(numberKey(i), modifiers: .command)
                     .disabled(todoStatus == nil || model.searching)
             }
