@@ -85,7 +85,7 @@ struct SidebarView: View {
                     Spacer()
                     // 24 points to click; the symbol stays at the frame's end, in line with the counts.
                     Button { newFolderIn = ""; draft = "" } label: { Image(systemName: "folder.badge.plus").frame(width: 24, height: 24, alignment: .trailing).contentShape(Rectangle()) }
-                        .buttonStyle(.borderless).help("New folder").accessibilityLabel("New folder")
+                        .buttonStyle(.borderless).help("New folder (⇧⌘N)").accessibilityLabel("New folder")
                         .padding(.trailing, 1.5) // This symbol's badge reaches further right than the refresh arrow.
                 }
                 .padding(.trailing, headerButtonInset)
@@ -111,11 +111,7 @@ struct SidebarView: View {
                         Label("New recording", systemImage: "circle.fill")
                             .labelStyle(NewRecordingLabelStyle())
                     }
-                    Text(verbatim: "⌘N")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize()
-                        .accessibilityHidden(true)
+                    ShortcutHint("⌘N")
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -292,7 +288,7 @@ struct SidebarView: View {
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Refresh calendars")
                 .disabled(calendar.fetching)
-                .help("Refresh calendars")
+                .help("Refresh calendars (⌘R)")
             }
             .padding(.trailing, headerButtonInset)
         }

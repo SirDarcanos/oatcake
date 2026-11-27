@@ -21,7 +21,9 @@ describes the menus.
 | ⌘, | Settings | Oatcake › Settings… |
 
 The sidebar’s recording button shows ⌘N. The Oatcake status menu in the macOS menu bar shows
-⌘N for New Recording and ⌘, for Settings. Neither is a system-wide shortcut.
+⌘N for New Recording and ⌘, for Settings. Neither is a system-wide shortcut. Start recording,
+Stop and Save also show their keys, as do the Ask, Search and Find fields. Hover over the new
+folder or calendar refresh icon to see its shortcut.
 
 Go › Home, To-dos and All Meetings, Recording › Join Call and Show Live Notes, and Help › Oatcake
 Help (these pages) have no keys of their own.

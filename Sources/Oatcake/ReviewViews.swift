@@ -292,12 +292,17 @@ struct ReviewView: View {
             .withoutCapsule()
         }
         ToolbarItem(placement: .automatic) {
-            Button(rechecking ? "Update meeting" : "Save") { save(analysis) }
-                .keyboardShortcut("s")
-                .buttonStyle(.borderedProminent)
-                .disabled(saved)
-                .help(rechecking ? "Rewrite the meeting’s transcript with these names, and use them in its summary and to-dos (⌘S)."
-                      : "Save the meeting. Its summary is written straight after (⌘S).")
+            Button { save(analysis) } label: {
+                HStack(spacing: 8) {
+                    Text(rechecking ? "Update meeting" : "Save")
+                    ShortcutHint("⌘S")
+                }
+            }
+            .keyboardShortcut("s")
+            .buttonStyle(.borderedProminent)
+            .disabled(saved)
+            .help(rechecking ? "Rewrite the meeting’s transcript with these names, and use them in its summary and to-dos (⌘S)."
+                  : "Save the meeting. Its summary is written straight after (⌘S).")
         }
     }
 

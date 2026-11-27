@@ -853,6 +853,8 @@ struct MeetingView: View {
                 .focused($findFocused)
                 .onSubmit { step(1, found) }
                 .onChange(of: query) { match = 0 }
+                .accessibilityHint("Press Command-F to focus this field.")
+            ShortcutHint("⌘F")
             // Stepping through matches is the transcript's; elsewhere the words are only marked.
             if stepping {
                 Text(query.trimmed.isEmpty ? "" : found.isEmpty ? "Not found" : "\(min(match, found.count - 1) + 1) of \(found.count)")
